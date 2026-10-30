@@ -1,0 +1,41 @@
+import { Theme } from "../theme.slint";
+import { ActionButton } from "action-button.slint";
+import { PanelHeading } from "panel-heading.slint";
+
+export component ViewerPanel inherits Rectangle {
+    in property <string> status;
+    in property <string> detail;
+    background: Theme.canvas;
+    PanelHeading { title: "Viewer"; detail: "No media"; }
+    Rectangle {
+        x: 0; width: 100%;
+        y: Theme.heading-height; height: parent.height - Theme.heading-height - 68px;
+        Rectangle {
+            width: min(parent.width - 32px, (parent.height - 24px) * 16 / 9);
+            height: self.width * 9 / 16;
+            x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2;
+            background: #0d0f10; border-width: 1px; border-color: Theme.line;
+            VerticalLayout {
+                x: 0; y: 0; width: 100%; height: 100%;
+                padding: Theme.inset; spacing: Theme.gap; alignment: center;
+                if parent.height > 150px : HorizontalLayout {
+                    height: 32px; alignment: center;
+                    Image { source: @image-url("../assets/viewer.svg"); width: 32px; height: 32px; horizontal-stretch: 0; }
+                }
+                Text { text: root.status; color: Theme.text; font-size: Theme.heading-size; font-weight: 600; horizontal-alignment: center; wrap: word-wrap; }
+                Text { text: root.detail; color: Theme.secondary; font-size: Theme.label-size; horizontal-alignment: center; wrap: word-wrap; }
+            }
+        }
+    }
+    HorizontalLayout {
+        x: 0; width: 100%;
+        y: parent.height - 54px; height: 32px;
+        padding-left: Theme.inset; padding-right: Theme.inset; spacing: Theme.gap;
+        Text { text: "00:00.000"; color: Theme.text; font-family: "Consolas"; font-size: Theme.body-size; vertical-alignment: center; }
+        Rectangle { horizontal-stretch: 1; }
+        ActionButton { text: "Play"; enabled: false; hint: "Playback requires the media backend; unavailable in Phase 0."; }
+        ActionButton { text: "Step"; enabled: false; hint: "Frame stepping is unavailable in Phase 0."; }
+        Rectangle { horizontal-stretch: 1; }
+        Text { text: "16:9 viewer"; color: Theme.secondary; font-size: Theme.label-size; vertical-alignment: center; }
+    }
+}

@@ -1,0 +1,24 @@
+import { Theme } from "../theme.slint";
+import { ScrollView } from "std-widgets.slint";
+import { ActionButton } from "action-button.slint";
+import { PanelHeading } from "panel-heading.slint";
+
+export component MediaPanel inherits Rectangle {
+    background: Theme.panel;
+    PanelHeading { title: "Media"; detail: "0 assets"; }
+    ScrollView {
+        x: 0; width: 100%;
+        y: Theme.heading-height; height: parent.height - Theme.heading-height;
+      VerticalLayout {
+        x: 0; y: 0; width: parent.width;
+        padding: Theme.inset; spacing: Theme.inset; alignment: start;
+        Image { source: @image-url("../assets/media.svg"); height: 40px; width: 40px; horizontal-stretch: 0; }
+        Text { text: "Your media starts here"; color: Theme.text; font-weight: 600; font-size: Theme.heading-size; wrap: word-wrap; }
+        Text { text: "Bring video, audio and images into your project."; color: Theme.secondary; font-size: Theme.body-size; wrap: word-wrap; }
+        ActionButton { text: "Import media"; enabled: false; hint: "Media import is unavailable in Phase 0."; }
+        Text { text: "Import arrives in Phase 1."; color: Theme.secondary; font-size: Theme.label-size; wrap: word-wrap; }
+        Rectangle { height: 1px; background: Theme.line; }
+        Text { text: "Original files stay untouched."; color: Theme.secondary; font-size: Theme.label-size; wrap: word-wrap; }
+      }
+    }
+}

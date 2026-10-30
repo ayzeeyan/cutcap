@@ -1,0 +1,140 @@
+import { AboutSlint } from "std-widgets.slint";
+import { Theme } from "theme.slint";
+import { TrackRow } from "models.slint";
+export { TrackRow } from "models.slint";
+import { ActionButton } from "components/action-button.slint";
+import { Splitter } from "components/splitter.slint";
+import { MediaPanel } from "components/media-panel.slint";
+import { ViewerPanel } from "components/viewer-panel.slint";
+import { InspectorPanel } from "components/inspector-panel.slint";
+import { TimelinePanel } from "components/timeline-panel.slint";
+
+export component AppWindow inherits Window {
+    title: root.project-name + " — CutCap";
+    preferred-width: 1120px;
+    preferred-height: 640px;
+    min-width: 1000px;
+    min-height: 600px;
+    default-font-family: "Segoe UI";
+    default-font-size: Theme.body-size;
+    background: Theme.canvas;
+    in property <string> preview-status;
+    in property <string> preview-detail;
+    in property <string> project-name: "Starting…";
+    in property <[TrackRow]> tracks;
+    in property <string> selection-title: "Project";
+    in property <string> selection-detail: "Project overview";
+    in property <string> timebase-label;
+    in property <bool> has-selection;
+    in property <bool> engine-ready;
+    in property <string> status-text: "Starting command worker…";
+    in property <bool> status-error;
+    in property <int> pending-count;
+    callback new-project();
+    callback add-track(bool);
+    callback select-track(int);
+    callback clear-selection();
+    private property <length> library-size: 240px;
+    private property <length> inspector-size: 264px;
+    private property <length> timeline-size: 280px;
+    private property <length> library-width: clamp(root.library-size, 190px, min(380px, root.width * 0.25));
+    private property <length> inspector-width: clamp(root.inspector-size, 230px, min(360px, root.width * 0.26));
+    private property <length> timeline-height: clamp(root.timeline-size, 180px, min(430px, workspace.height * 0.52));
+    private property <int> zoom: 100;
+    function reset-layout() { root.library-size = 240px; root.inspector-size = 264px; root.timeline-size = 280px; root.zoom = 100; }
+    public function focus-workspace() { keyboard.focus(); }
+
+    forward-focus: keyboard;
+    keyboard := FocusScope {
+        x: 0; y: 0; width: 100%; height: 100%;
+        KeyBinding { keys: @keys(Control + N); enabled: root.engine-ready; activated => { root.new-project(); } }
+        KeyBinding { keys: @keys(Control + Digit0); activated => { root.reset-layout(); } }
+        KeyBinding { keys: @keys(Control + Plus); activated => { root.zoom = min(200, root.zoom + 25); } }
+        KeyBinding { keys: @keys(Control + Equals); activated => { root.zoom = min(200, root.zoom + 25); } }
+        KeyBinding { keys: @keys(Control + HyphenMinus); activated => { root.zoom = max(50, root.zoom - 25); } }
+        KeyBinding { keys: @keys(Control + Shift + A); enabled: root.engine-ready; activated => { root.clear-selection(); } }
+        Rectangle {
+            x: 0; y: 0; width: 100%;
+            height: Theme.toolbar-height;
+            background: Theme.panel;
+            HorizontalLayout {
+                x: 0; y: 16px; width: 100%; height: 32px;
+                padding-left: Theme.inset; padding-right: Theme.inset; spacing: Theme.gap;
+                Image { source: @image-url("assets/mark.svg"); width: 32px; height: 32px; horizontal-stretch: 0; vertical-stretch: 0; }
+                Text { text: "CutCap"; color: Theme.text; font-size: 20px; font-weight: 600; vertical-alignment: center; horizontal-stretch: 0; }
+                Rectangle { width: 1px; height: 24px; background: Theme.line; horizontal-stretch: 0; vertical-stretch: 0; }
+                VerticalLayout {
+                    spacing: 2px; alignment: center;
+                    Text { text: root.project-name; color: Theme.text; font-weight: 600; font-size: Theme.body-size; overflow: elide; }
+                    Text { text: "In memory · not saved"; color: Theme.secondary; font-size: 11px; }
+                }
+                ActionButton { text: "New project"; enabled: root.engine-ready; hint: "Start a new empty project in memory · Ctrl+N"; clicked => { root.new-project(); } }
+                ActionButton { text: "Open"; enabled: false; hint: "Project loading is unavailable in Phase 0."; }
+                ActionButton { text: "Save"; enabled: false; hint: "Project persistence is unavailable in Phase 0."; }
+                Rectangle { horizontal-stretch: 1; }
+                ActionButton { text: "Reset layout"; subtle: true; hint: "Restore panel sizes and zoom · Ctrl+0"; clicked => { root.reset-layout(); } }
+                ActionButton { text: "About"; subtle: true; hint: "About CutCap and Slint"; clicked => { about.show(); } }
+                ActionButton { text: "Export"; enabled: false; hint: "Export requires the media pipeline; unavailable in Phase 0."; }
+            }
+        }
+        workspace := Rectangle {
+            x: 0; width: 100%;
+            y: Theme.toolbar-height; height: root.height - Theme.toolbar-height - 28px;
+            upper := Rectangle {
+                x: 0; y: 0; width: 100%;
+                height: parent.height - root.timeline-height - 6px;
+                MediaPanel { x: 0; y: 0; width: root.library-width; height: 100%; }
+                Splitter { x: root.library-width; y: 0; width: 6px; height: 100%; label: "Resize media panel"; adjust(delta) => { root.library-size = root.library-width + delta; } }
+                ViewerPanel {
+                    y: 0; height: 100%;
+                    x: root.library-width + 6px; width: parent.width - root.library-width - root.inspector-width - 12px;
+                    status: root.preview-status; detail: root.preview-detail;
+                }
+                Splitter { x: parent.width - root.inspector-width - 6px; y: 0; width: 6px; height: 100%; label: "Resize inspector"; adjust(delta) => { root.inspector-size = root.inspector-width - delta; } }
+                InspectorPanel {
+                    y: 0; height: 100%;
+                    x: parent.width - root.inspector-width; width: root.inspector-width;
+                    title: root.selection-title; detail: root.selection-detail; timebase: root.timebase-label;
+                    selected: root.has-selection; track-count: root.tracks.length;
+                    clear-selection => { root.clear-selection(); }
+                }
+            }
+            Splitter { x: 0; y: upper.height; width: 100%; height: 6px; horizontal: true; label: "Resize timeline"; adjust(delta) => { root.timeline-size = root.timeline-height - delta; } }
+            TimelinePanel {
+                x: 0; width: 100%;
+                y: parent.height - root.timeline-height; height: root.timeline-height;
+                tracks: root.tracks; ready: root.engine-ready; zoom <=> root.zoom;
+                add-track(audio) => { root.add-track(audio); }
+                select-track(index) => { root.select-track(index); }
+            }
+        }
+        Rectangle {
+            x: 0; width: 100%;
+            y: root.height - 28px; height: 28px; background: Theme.panel;
+            Rectangle { x: 0; y: 0; width: 100%; height: 1px; background: Theme.line; }
+            HorizontalLayout {
+                x: 0; y: 0; width: 100%; height: 100%;
+                padding-left: Theme.inset; padding-right: Theme.inset; spacing: Theme.inset;
+                Text { text: root.status-text; color: root.status-error ? Theme.error : Theme.secondary; font-size: 11px; vertical-alignment: center; overflow: elide; }
+                Text { text: root.pending-count > 0 ? root.pending-count + " pending" : "Phase 0 · native foundation"; color: Theme.secondary; font-size: 11px; vertical-alignment: center; horizontal-alignment: right; }
+            }
+        }
+    }
+    about := PopupWindow {
+        x: (root.width - self.width) / 2; y: Theme.toolbar-height + Theme.inset;
+        width: 440px; height: 310px; close-policy: close-on-click-outside;
+        Rectangle {
+            x: 0; y: 0; width: 100%; height: 100%;
+            background: Theme.raised; border-width: 1px; border-color: Theme.line; border-radius: Theme.radius;
+            VerticalLayout {
+                x: 0; y: 0; width: 100%; height: 100%;
+                padding: Theme.section; spacing: Theme.inset;
+                Text { text: "CutCap"; color: Theme.text; font-size: 24px; font-weight: 600; }
+                Text { text: "0.1.0 · Phase 0 native foundation"; color: Theme.secondary; font-size: Theme.body-size; }
+                Text { text: "An offline video editor, under construction.\nMedia playback and export are not available yet."; color: Theme.secondary; font-size: Theme.body-size; wrap: word-wrap; }
+                AboutSlint { }
+                ActionButton { text: "Close"; clicked => { about.close(); } }
+            }
+        }
+    }
+}

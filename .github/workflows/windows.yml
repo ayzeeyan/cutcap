@@ -1,0 +1,48 @@
+name: Windows quality
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: windows-2025
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      CARGO_TERM_COLOR: never
+      CARGO_INCREMENTAL: '0'
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Install repository toolchain
+        run: |
+          rustup show
+          rustc --version
+          cargo --version
+      - name: Cache Cargo and build output
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: windows-msvc-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock', '**/Cargo.toml', '.cargo/config.toml') }}
+          restore-keys: windows-msvc-
+      - name: Format
+        run: cargo fmt --all -- --check
+      - name: Clippy (including optional DX12 diagnostic)
+        run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+      - name: Test
+        run: cargo test --workspace --all-features --locked
+      - name: Build
+        run: cargo build --workspace --locked
+      - name: Release build
+        run: cargo build --release --locked

@@ -1,0 +1,66 @@
+import { ScrollView } from "std-widgets.slint";
+import { Theme } from "../theme.slint";
+import { TrackRow } from "../models.slint";
+import { ActionButton } from "action-button.slint";
+
+export component TimelinePanel inherits Rectangle {
+    in property <[TrackRow]> tracks;
+    in property <bool> ready;
+    in-out property <int> zoom: 100;
+    callback add-track(bool);
+    callback select-track(int);
+    background: Theme.panel;
+    private property <length> second-width: 20px * root.zoom / 100;
+    HorizontalLayout {
+        x: 0; y: 8px; width: 100%;
+        height: 32px; padding-left: Theme.inset; padding-right: Theme.inset; spacing: Theme.gap;
+        Text { text: "Timeline"; font-size: Theme.heading-size; font-weight: 600; color: Theme.text; vertical-alignment: center; }
+        Text { text: root.tracks.length + " tracks"; font-size: Theme.label-size; color: Theme.secondary; vertical-alignment: center; }
+        Rectangle { horizontal-stretch: 1; }
+        ActionButton { text: "+ Video"; enabled: root.ready && root.tracks.length < 128; hint: "Add an empty video track"; clicked => { root.add-track(false); } }
+        ActionButton { text: "+ Audio"; enabled: root.ready && root.tracks.length < 128; hint: "Add an empty audio track"; clicked => { root.add-track(true); } }
+        Rectangle { width: Theme.gap; horizontal-stretch: 0; }
+        ActionButton { text: "−"; enabled: root.zoom > 50; hint: "Zoom out · Ctrl+Minus"; clicked => { root.zoom = max(50, root.zoom - 25); } }
+        Text { text: root.zoom + "%"; color: Theme.text; font-size: Theme.label-size; width: 42px; horizontal-stretch: 0; vertical-alignment: center; horizontal-alignment: center; }
+        ActionButton { text: "+"; enabled: root.zoom < 200; hint: "Zoom in · Ctrl+Plus"; clicked => { root.zoom = min(200, root.zoom + 25); } }
+        ActionButton { text: "100%"; subtle: true; hint: "Reset timeline zoom"; clicked => { root.zoom = 100; } }
+    }
+    Rectangle { x: 0; y: 48px; width: 100%; height: 1px; background: Theme.line; }
+    scroll := ScrollView {
+        x: 0; width: 100%;
+        y: 49px; height: parent.height - 49px;
+        content-width: max(self.visible-width, Theme.track-header-width + 60 * root.second-width + 32px);
+        content-height: max(self.visible-height, 34px + root.tracks.length * Theme.track-height);
+        Rectangle {
+            x: 0; y: 0;
+            width: scroll.content-width; height: scroll.content-height; background: Theme.canvas;
+            Rectangle {
+                x: 0; y: 0; width: 100%;
+                height: 34px; background: Theme.panel;
+                Text { x: Theme.inset; y: 0; height: 100%; width: Theme.track-header-width - Theme.inset; text: "TRACKS"; color: Theme.secondary; font-size: 10px; font-weight: 600; vertical-alignment: center; }
+                for i in 13 : Rectangle {
+                    y: 0;
+                    x: Theme.track-header-width + i * 5 * root.second-width; width: 1px; height: 34px; background: Theme.line;
+                    Text { x: 6px; y: 8px; text: i * 5 + "s"; color: Theme.secondary; font-size: 11px; }
+                }
+            }
+            for row[index] in root.tracks : Rectangle {
+                x: 0; width: 100%;
+                y: 34px + index * Theme.track-height; height: Theme.track-height;
+                background: row.selected ? Theme.selection : Theme.panel;
+                Rectangle { x: Theme.track-header-width; y: 0; height: 100%; width: parent.width - Theme.track-header-width; background: row.selected ? #292522 : Theme.canvas; }
+                for i in 13 : Rectangle { x: Theme.track-header-width + i * 5 * root.second-width; y: 0; height: 100%; width: 1px; background: #24282c; }
+                ActionButton {
+                    x: Theme.gap; y: Theme.gap; width: Theme.track-header-width - 2 * Theme.gap; height: Theme.track-height - 2 * Theme.gap;
+                    text: row.name; hint: "Select " + row.name; subtle: !row.selected;
+                    enabled: root.ready;
+                    clicked => { root.select-track(index); }
+                }
+                Text { x: Theme.track-header-width + Theme.inset; y: 0; height: 100%; text: "Empty " + (row.kind == "VIDEO" ? "video" : "audio") + " track"; color: Theme.secondary; font-size: Theme.label-size; vertical-alignment: center; }
+                Rectangle { x: 0; y: parent.height - 1px; width: 100%; height: 1px; background: Theme.line; }
+            }
+            Rectangle { x: Theme.track-header-width; y: 0; width: 1px; height: max(34px, 34px + root.tracks.length * Theme.track-height); background: Theme.accent; }
+            Rectangle { x: Theme.track-header-width - 4px; y: 0; width: 9px; height: 8px; background: Theme.accent; }
+        }
+    }
+}

@@ -1,0 +1,3 @@
+[build]
+# Limit peak compiler memory on the primary 16 GB development machine.
+jobs = 4

@@ -1,0 +1,8 @@
+/target/
+/.artifacts/
+/.impeccable/
+*.pdb
+*.log
+.vs/
+.idea/
+.vscode/
