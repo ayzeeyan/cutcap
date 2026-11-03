@@ -1,7 +1,7 @@
 import { AboutSlint } from "std-widgets.slint";
 import { Theme } from "theme.slint";
-import { TrackRow } from "models.slint";
-export { TrackRow } from "models.slint";
+import { TrackRow, MediaRow } from "models.slint";
+export { TrackRow, MediaRow } from "models.slint";
 import { ActionButton } from "components/action-button.slint";
 import { Splitter } from "components/splitter.slint";
 import { MediaPanel } from "components/media-panel.slint";
@@ -30,24 +30,47 @@ export component AppWindow inherits Window {
     in property <string> status-text: "Starting command worker…";
     in property <bool> status-error;
     in property <int> pending-count;
+    in property <[MediaRow]> media-entries;
+    in property <int> media-count;
+    in property <bool> import-busy;
+    in property <string> media-status: "Import a local video.";
+    in property <bool> media-error;
+    in property <bool> inspecting-media;
+    in property <string> media-details;
+    in property <image> preview-frame;
+    in property <bool> has-frame;
+    in property <bool> preview-busy;
+    in property <float> preview-aspect: 16 / 9;
+    in property <bool> source-ready;
+    in property <string> source-title;
+    in property <string> frame-caption;
+    in property <int> source-position-ms;
+    in property <int> source-duration-ms;
+    callback import-media();
+    callback cancel-import();
+    callback select-media(int);
+    callback seek-source(int);
+    callback seek-text(string);
+    callback cancel-preview();
     callback new-project();
     callback add-track(bool);
     callback select-track(int);
     callback clear-selection();
     private property <length> library-size: 240px;
     private property <length> inspector-size: 264px;
-    private property <length> timeline-size: 280px;
+    private property <length> timeline-size: 210px;
     private property <length> library-width: clamp(root.library-size, 190px, min(380px, root.width * 0.25));
     private property <length> inspector-width: clamp(root.inspector-size, 230px, min(360px, root.width * 0.26));
     private property <length> timeline-height: clamp(root.timeline-size, 180px, min(430px, workspace.height * 0.52));
     private property <int> zoom: 100;
-    function reset-layout() { root.library-size = 240px; root.inspector-size = 264px; root.timeline-size = 280px; root.zoom = 100; }
+    function reset-layout() { root.library-size = 240px; root.inspector-size = 264px; root.timeline-size = 210px; root.zoom = 100; }
     public function focus-workspace() { keyboard.focus(); }
 
     forward-focus: keyboard;
     keyboard := FocusScope {
         x: 0; y: 0; width: 100%; height: 100%;
         KeyBinding { keys: @keys(Control + N); enabled: root.engine-ready; activated => { root.new-project(); } }
+        KeyBinding { keys: @keys(Control + I); enabled: root.engine-ready && !root.import-busy; activated => { root.import-media(); } }
         KeyBinding { keys: @keys(Control + Digit0); activated => { root.reset-layout(); } }
         KeyBinding { keys: @keys(Control + Plus); activated => { root.zoom = min(200, root.zoom + 25); } }
         KeyBinding { keys: @keys(Control + Equals); activated => { root.zoom = min(200, root.zoom + 25); } }
@@ -69,12 +92,12 @@ export component AppWindow inherits Window {
                     Text { text: "In memory · not saved"; color: Theme.secondary; font-size: 11px; }
                 }
                 ActionButton { text: "New project"; enabled: root.engine-ready; hint: "Start a new empty project in memory · Ctrl+N"; clicked => { root.new-project(); } }
-                ActionButton { text: "Open"; enabled: false; hint: "Project loading is unavailable in Phase 0."; }
-                ActionButton { text: "Save"; enabled: false; hint: "Project persistence is unavailable in Phase 0."; }
+                ActionButton { text: "Open"; enabled: false; hint: "Project loading is not implemented yet."; }
+                ActionButton { text: "Save"; enabled: false; hint: "Project persistence is not implemented yet."; }
                 Rectangle { horizontal-stretch: 1; }
                 ActionButton { text: "Reset layout"; subtle: true; hint: "Restore panel sizes and zoom · Ctrl+0"; clicked => { root.reset-layout(); } }
                 ActionButton { text: "About"; subtle: true; hint: "About CutCap and Slint"; clicked => { about.show(); } }
-                ActionButton { text: "Export"; enabled: false; hint: "Export requires the media pipeline; unavailable in Phase 0."; }
+                ActionButton { text: "Export"; enabled: false; hint: "Export is not implemented yet."; }
             }
         }
         workspace := Rectangle {
@@ -83,12 +106,19 @@ export component AppWindow inherits Window {
             upper := Rectangle {
                 x: 0; y: 0; width: 100%;
                 height: parent.height - root.timeline-height - 6px;
-                MediaPanel { x: 0; y: 0; width: root.library-width; height: 100%; }
+                MediaPanel {
+                    x: 0; y: 0; width: root.library-width; height: 100%;
+                    entries: root.media-entries; ready: root.engine-ready; busy: root.import-busy; error: root.media-error; status: root.media-status;
+                    import-media => {root.import-media();} cancel-import => {root.cancel-import();} select-media(index) => {root.select-media(index);}
+                }
                 Splitter { x: root.library-width; y: 0; width: 6px; height: 100%; label: "Resize media panel"; adjust(delta) => { root.library-size = root.library-width + delta; } }
                 ViewerPanel {
                     y: 0; height: 100%;
                     x: root.library-width + 6px; width: parent.width - root.library-width - root.inspector-width - 12px;
                     status: root.preview-status; detail: root.preview-detail;
+                    frame: root.preview-frame; has-frame: root.has-frame; busy: root.preview-busy; ready: root.source-ready; aspect: root.preview-aspect;
+                    source-title: root.source-title; caption: root.frame-caption; position-ms: root.source-position-ms; duration-ms: root.source-duration-ms;
+                    seek-source(ms) => {root.seek-source(ms);} seek-text(text) => {root.seek-text(text);} cancel-preview => {root.cancel-preview();}
                 }
                 Splitter { x: parent.width - root.inspector-width - 6px; y: 0; width: 6px; height: 100%; label: "Resize inspector"; adjust(delta) => { root.inspector-size = root.inspector-width - delta; } }
                 InspectorPanel {
@@ -96,6 +126,7 @@ export component AppWindow inherits Window {
                     x: parent.width - root.inspector-width; width: root.inspector-width;
                     title: root.selection-title; detail: root.selection-detail; timebase: root.timebase-label;
                     selected: root.has-selection; track-count: root.tracks.length;
+                    media-selected: root.inspecting-media; media-details: root.media-details;
                     clear-selection => { root.clear-selection(); }
                 }
             }
@@ -116,7 +147,7 @@ export component AppWindow inherits Window {
                 x: 0; y: 0; width: 100%; height: 100%;
                 padding-left: Theme.inset; padding-right: Theme.inset; spacing: Theme.inset;
                 Text { text: root.status-text; color: root.status-error ? Theme.error : Theme.secondary; font-size: 11px; vertical-alignment: center; overflow: elide; }
-                Text { text: root.pending-count > 0 ? root.pending-count + " pending" : "Phase 0 · native foundation"; color: Theme.secondary; font-size: 11px; vertical-alignment: center; horizontal-alignment: right; }
+                Text { text: root.pending-count > 0 ? root.pending-count + " pending" : "Phase 1 · source preview"; color: Theme.secondary; font-size: 11px; vertical-alignment: center; horizontal-alignment: right; }
             }
         }
     }
@@ -130,7 +161,7 @@ export component AppWindow inherits Window {
                 x: 0; y: 0; width: 100%; height: 100%;
                 padding: Theme.section; spacing: Theme.inset;
                 Text { text: "CutCap"; color: Theme.text; font-size: 24px; font-weight: 600; }
-                Text { text: "0.1.0 · Phase 0 native foundation"; color: Theme.secondary; font-size: Theme.body-size; }
+                Text { text: "0.2.0 · Phase 1 source preview"; color: Theme.secondary; font-size: Theme.body-size; }
                 Text { text: "An offline video editor, under construction.\nMedia playback and export are not available yet."; color: Theme.secondary; font-size: Theme.body-size; wrap: word-wrap; }
                 AboutSlint { }
                 ActionButton { text: "Close"; clicked => { about.close(); } }

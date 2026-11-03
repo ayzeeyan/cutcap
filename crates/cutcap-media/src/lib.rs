@@ -1,0 +1,44 @@
+//! Bounded external media adapter. No UI handles or project mutation.
+#![forbid(unsafe_code)]
+mod backend;
+mod cancel;
+mod frame;
+mod latest;
+mod probe;
+mod process;
+
+pub use backend::*;
+pub use cancel::Cancellation;
+pub use frame::*;
+pub use latest::*;
+pub use probe::parse_probe;
+
+#[derive(Debug, thiserror::Error)]
+pub enum MediaError {
+    #[error("Operation cancelled")]
+    Cancelled,
+    #[error("{0} exceeded its time limit")]
+    Timeout(&'static str),
+    #[error("{0}")]
+    Invalid(String),
+    #[error("Unsupported media: {0}")]
+    Unsupported(String),
+    #[error("Media resource limit: {0}")]
+    Budget(&'static str),
+    #[error("{stage} failed ({code:?}): {detail}")]
+    Process {
+        stage: &'static str,
+        code: Option<i32>,
+        detail: String,
+    },
+    #[error("{stage}: {source}")]
+    Io {
+        stage: &'static str,
+        #[source]
+        source: std::io::Error,
+    },
+    #[error("No frame at or after this source timestamp (try an earlier position)")]
+    NoFrame,
+    #[error("Media worker stopped unexpectedly")]
+    Worker,
+}

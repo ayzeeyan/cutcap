@@ -2,23 +2,43 @@ import { Theme } from "../theme.slint";
 import { ScrollView } from "std-widgets.slint";
 import { ActionButton } from "action-button.slint";
 import { PanelHeading } from "panel-heading.slint";
+import { MediaRow } from "../models.slint";
 
 export component MediaPanel inherits Rectangle {
+    in property <[MediaRow]> entries;
+    in property <bool> ready;
+    in property <bool> busy;
+    in property <bool> error;
+    in property <string> status: "Import a local video.";
+    callback import-media();
+    callback cancel-import();
+    callback select-media(int);
     background: Theme.panel;
-    PanelHeading { title: "Media"; detail: "0 assets"; }
+    PanelHeading { title: "Media"; detail: root.entries.length + (root.entries.length == 1 ? " video" : " videos"); }
+    HorizontalLayout {
+        x: 0; y: 52px; width: 100%; height: 32px;
+        padding-left: Theme.inset; padding-right: Theme.inset; spacing: Theme.gap;
+        ActionButton { text: "Import video"; enabled: root.ready && !root.busy; hint: "Choose a local source video · Ctrl+I"; clicked => { root.import-media(); } }
+        if root.busy : ActionButton { text: "Cancel"; hint: "Cancel the current import"; clicked => { root.cancel-import(); } }
+    }
+    Text { x: Theme.inset; y: 92px; width: parent.width - 2 * Theme.inset; height: 40px; text: root.status; color: root.error ? Theme.error : Theme.secondary; font-size: Theme.label-size; wrap: word-wrap; overflow: elide; }
     ScrollView {
         x: 0; width: 100%;
-        y: Theme.heading-height; height: parent.height - Theme.heading-height;
+        y: 140px; height: max(50px,parent.height - 140px);
       VerticalLayout {
         x: 0; y: 0; width: parent.width;
-        padding: Theme.inset; spacing: Theme.inset; alignment: start;
-        Image { source: @image-url("../assets/media.svg"); height: 40px; width: 40px; horizontal-stretch: 0; }
-        Text { text: "Your media starts here"; color: Theme.text; font-weight: 600; font-size: Theme.heading-size; wrap: word-wrap; }
-        Text { text: "Bring video, audio and images into your project."; color: Theme.secondary; font-size: Theme.body-size; wrap: word-wrap; }
-        ActionButton { text: "Import media"; enabled: false; hint: "Media import is unavailable in Phase 0."; }
-        Text { text: "Import arrives in Phase 1."; color: Theme.secondary; font-size: Theme.label-size; wrap: word-wrap; }
-        Rectangle { height: 1px; background: Theme.line; }
-        Text { text: "Original files stay untouched."; color: Theme.secondary; font-size: Theme.label-size; wrap: word-wrap; }
+        padding-left: Theme.inset; padding-right: Theme.inset; padding-bottom: Theme.inset; spacing: Theme.gap; alignment: start;
+        if root.entries.length == 0 : VerticalLayout {
+            spacing: Theme.inset;
+            Image { source: @image-url("../assets/media.svg"); height: 40px; width: 40px; horizontal-stretch: 0; }
+            Text { text: "Your sources start here"; color: Theme.text; font-weight: 600; font-size: Theme.heading-size; wrap: word-wrap; }
+            Text { text: "Import a local video to inspect its metadata and request a frame. Original files stay untouched."; color: Theme.secondary; font-size: Theme.body-size; wrap: word-wrap; }
+        }
+        for entry[index] in root.entries : Rectangle {
+            height: 96px; background: entry.selected ? Theme.selection : Theme.raised; border-radius: Theme.radius;
+            ActionButton { x: Theme.gap; y: Theme.gap; width: parent.width - 2 * Theme.gap; min-width: 0px; text: entry.name; subtle: true; hint: "Select this source video"; clicked => { root.select-media(index); } }
+            Text { x: Theme.inset; y: 44px; width: parent.width - 2 * Theme.inset; height: 44px; text: entry.detail; color: Theme.secondary; font-size: Theme.label-size; wrap: word-wrap; }
+        }
       }
     }
 }

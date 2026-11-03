@@ -89,6 +89,33 @@ pub struct SourceTime {
     pub timebase: Timebase,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Rounding {
+    Floor,
+    Ceil,
+}
+
+impl SourceTime {
+    /// Checked rational rescaling. No floating-point clock or implicit rounding.
+    pub fn rescale(self, to: Timebase, rounding: Rounding) -> Result<Self, TimeError> {
+        let numerator = i128::from(self.ticks)
+            .checked_mul(i128::from(self.timebase.numerator()))
+            .and_then(|n| n.checked_mul(i128::from(to.denominator())))
+            .ok_or(TimeError::Overflow)?;
+        let denominator = i128::from(self.timebase.denominator()) * i128::from(to.numerator());
+        let floor = numerator.div_euclid(denominator);
+        let ticks = if rounding == Rounding::Ceil && numerator.rem_euclid(denominator) != 0 {
+            floor + 1
+        } else {
+            floor
+        };
+        Ok(Self {
+            ticks: i64::try_from(ticks).map_err(|_| TimeError::Overflow)?,
+            timebase: to,
+        })
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum TimeError {
     #[error("timebase numerator and denominator must be nonzero")]
@@ -136,6 +163,53 @@ mod tests {
         assert_eq!(
             serde_json::from_str::<SourceTime>(&serde_json::to_string(&source).unwrap()).unwrap(),
             source
+        );
+    }
+
+    #[test]
+    fn source_rescaling_is_exact_with_explicit_signed_rounding_and_overflow() {
+        let milliseconds = Timebase::new(1, 1000).unwrap();
+        let frame_clock = Timebase::new(1001, 30_000).unwrap();
+        let frame = SourceTime {
+            ticks: 1,
+            timebase: frame_clock,
+        };
+        assert_eq!(
+            frame.rescale(milliseconds, Rounding::Floor).unwrap().ticks,
+            33
+        );
+        assert_eq!(
+            frame.rescale(milliseconds, Rounding::Ceil).unwrap().ticks,
+            34
+        );
+        let negative = SourceTime { ticks: -1, ..frame };
+        assert_eq!(
+            negative
+                .rescale(milliseconds, Rounding::Floor)
+                .unwrap()
+                .ticks,
+            -34
+        );
+        assert_eq!(
+            negative
+                .rescale(milliseconds, Rounding::Ceil)
+                .unwrap()
+                .ticks,
+            -33
+        );
+        let pts = SourceTime {
+            ticks: 90_090,
+            timebase: Timebase::new(1, 90_000).unwrap(),
+        };
+        assert_eq!(pts.rescale(frame_clock, Rounding::Floor).unwrap().ticks, 30);
+        assert_eq!(pts.rescale(frame_clock, Rounding::Ceil).unwrap().ticks, 30);
+        assert!(
+            SourceTime {
+                ticks: i64::MAX,
+                timebase: Timebase::new(u32::MAX, 1).unwrap()
+            }
+            .rescale(Timebase::new(1, u32::MAX).unwrap(), Rounding::Ceil)
+            .is_err()
         );
     }
 }

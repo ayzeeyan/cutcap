@@ -2,9 +2,9 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-use crate::{ClipId, ProjectId, RequestId, Timebase, TimelineTime, TrackId};
+use crate::{ClipId, MediaId, MediaSummary, ProjectId, RequestId, Timebase, TimelineTime, TrackId};
 
-pub const CONTRACT_VERSION: u32 = 1;
+pub const CONTRACT_VERSION: u32 = 2;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TrackKind {
@@ -33,20 +33,47 @@ pub struct CommandEnvelope {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type", content = "data")]
 pub enum Command {
-    NewProject { name: String },
+    NewProject {
+        name: String,
+    },
     GetSnapshot,
-    AddTrack { kind: TrackKind },
-    Select { selection: SelectionState },
-    // Reserved request shapes. Phase 0 returns Unsupported, with no side effects.
-    OpenProject { path: PathBuf },
-    ImportMedia { paths: Vec<PathBuf> },
-    RemoveClip { clip_id: ClipId },
-    Seek { position: TimelineTime },
-    SetPlayback { playing: bool },
+    AddTrack {
+        kind: TrackKind,
+    },
+    Select {
+        selection: SelectionState,
+    },
+    /// Only a validated probe result can be committed by the project owner.
+    RegisterMedia {
+        media: Box<MediaSummary>,
+    },
+    SelectMedia {
+        media_id: MediaId,
+    },
+    // Reserved request shapes. Currently Unsupported, with no side effects.
+    OpenProject {
+        path: PathBuf,
+    },
+    ImportMedia {
+        paths: Vec<PathBuf>,
+    },
+    RemoveClip {
+        clip_id: ClipId,
+    },
+    Seek {
+        position: TimelineTime,
+    },
+    SetPlayback {
+        playing: bool,
+    },
     Undo,
     Redo,
-    StartExport { destination: PathBuf },
-    Cancel { target: RequestId },
+    StartExport {
+        destination: PathBuf,
+    },
+    Cancel {
+        target: RequestId,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -68,6 +95,9 @@ pub struct ProjectSnapshot {
     pub media_count: usize,
     pub clip_count: usize,
     pub selection: SelectionState,
+    pub media: Vec<MediaSummary>,
+    /// Source viewer selection is independent of timeline selection/playhead.
+    pub source_media: Option<MediaId>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

@@ -2,9 +2,11 @@
 #![forbid(unsafe_code)]
 
 mod ids;
+mod media;
 mod messages;
 mod time;
 
 pub use ids::*;
+pub use media::*;
 pub use messages::*;
 pub use time::*;

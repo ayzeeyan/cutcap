@@ -4,16 +4,17 @@ Read this file before editing. It is the repository's primary engineering author
 
 ## Product and scope
 
-CutCap is a native, offline-first Windows 11 x64 non-linear video editor. Rust/MSVC, Slint, future independent wgpu/DX12 rendering and FFmpeg are the chosen stack. The baseline machine has a Core Ultra 7 255H, integrated Intel graphics and 16 GB RAM. Never assume dedicated-GPU memory, cloud availability or online accounts. Phase 0 is a shell and validated model, not a functioning media editor. Consult docs/ROADMAP.md before expanding scope.
+CutCap is a native, offline-first Windows 11 x64 non-linear video editor. Rust/MSVC, Slint, future independent wgpu/DX12 rendering and FFmpeg are the chosen stack. The baseline machine has a Core Ultra 7 255H, integrated Intel graphics and 16 GB RAM. Never assume dedicated-GPU memory, cloud availability or online accounts. Phase 1 adds real import and source still-frame seeking to the Phase 0 shell/model; playback and editing remain future work. Consult docs/ROADMAP.md before expanding scope.
 
 ## Architecture and ownership
 
 - Inspect the existing repository and call sites before modifying a module. State which modules a substantial task affects.
-- Dependency direction is `cutcap → cutcap-core → cutcap-contracts`, with the app also using contracts directly. Keep it acyclic. Core never imports Slint, wgpu, FFmpeg or file-system services.
+- Dependency direction is `cutcap → cutcap-core → cutcap-contracts` and `cutcap → cutcap-media → cutcap-contracts`, with the app also using contracts directly. Keep it acyclic. Core never imports Slint, wgpu, FFmpeg or file-system services.
 - Contracts contain stable IDs, exact time values, commands, view DTOs and boundary errors. Core owns domain invariants. The app owns process/window lifecycle, command worker, coordination and preview presentation.
 - One command owner mutates the project. The Slint event-loop thread owns UI handles/models. Workers send owned messages; they never mutate UI objects. A Weak handle may only be upgraded on its owning UI thread, or through Slint's documented event-loop dispatch API.
 - Do not decode, encode, probe files, generate waveforms, perform blocking I/O, wait on channels or do expensive model work in GUI callbacks. Current callbacks use `try_send`. Keep command/result queues bounded, drain batches bounded, and surface queue-full/disconnection errors.
 - New expensive tasks need their own bounded, cancellable execution path. Do not turn the command worker into a decoder. Document queue budgets, backpressure, ownership and shutdown order.
+- Preserve Phase 1's single probe and latest decoder (one active/pending/completed). Match ProjectId/MediaId/RequestId for successes and errors. Keep its ceiling source-PTS policy explicit, validate actual timestamps, and never use the ephemeral preview mailbox for durable results. Retest CLI compatibility, time/orientation/buffer contracts and child cleanup before changing the FFmpeg adapter.
 - Keep rendering, codec, presentation and serialized state separate. Preview/export must eventually evaluate the same timeline/effect semantics. A native compatibility adapter may change without rewriting the model or UI.
 - Major moves, public API changes, schema changes and contract changes need a decision entry and documentation updates in the same change. Never change an API silently. Preserve old data through an explicit migration or clearly reject unsupported versions.
 
@@ -62,7 +63,7 @@ CutCap is a native, offline-first Windows 11 x64 non-linear video editor. Rust/M
 
 - Rust is pinned by rust-toolchain.toml. Keep runtime/build Slint versions equal and commit Cargo.lock. Use PowerShell-compatible tooling. Four compiler jobs are the default on the 16 GB workstation.
 - Do not use Git's POSIX `link.exe` as the MSVC linker. Rust discovers Visual Studio; use Developer PowerShell or the installed VS environment if discovery fails.
-- Do not bundle the installed GPL-enabled FFmpeg. Phase 0 invokes/links no FFmpeg. Read LICENSE_REVIEW.md before adding native binaries, codecs, fonts or other assets.
+- Do not bundle the installed GPL-enabled FFmpeg. Phase 1 invokes external FFmpeg/FFprobe as owner-authorized development dependencies; it does not link/copy/package them. A subprocess does not automatically resolve distribution licensing. Read LICENSE_REVIEW.md before adding native binaries, codecs, fonts or other assets.
 - The application license is undecided and crates are non-publishable. Do not assign an application license or remove Slint attribution without an owner decision and documented tradeoffs. Avoid GPL-only/nonfree components that undermine the intended distribution route.
 - Never add credentials, secrets, telemetry, cloud services, release publishing or system-wide installation as incidental scaffolding.
 

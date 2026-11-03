@@ -23,6 +23,7 @@ export component ActionButton inherits Rectangle {
     label := Text {
         x: 0; y: 0; width: 100%; height: 100%;
         text: root.text;
+        overflow: elide;
         color: root.enabled ? Theme.text : Theme.disabled;
         font-size: Theme.label-size;
         font-weight: 600;

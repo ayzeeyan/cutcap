@@ -1,6 +1,6 @@
 # Licensing and distribution review
 
-Review date: 2026-10-30. This is an engineering inventory and distribution decision record, not a completed legal clearance. No CutCap application license is assigned. Packages set `publish = false`; no installer, public release or third-party binary bundle is produced.
+Review date: 2026-11-03 (Phase 1). This is an engineering inventory and distribution decision record, not a completed legal clearance. No CutCap application license is assigned. Packages set `publish = false`; no installer, public release or third-party binary bundle is produced.
 
 ## Application license — owner decision outstanding
 
@@ -14,11 +14,13 @@ Review the complete conditions, including the desktop scope, attribution, exclus
 
 ## FFmpeg
 
-FFmpeg is not linked, invoked by the app, copied into this repo or redistributed in Phase 0. The installed development CLI is `9.0.1-essentials_build-www.gyan.dev`, built with `--enable-gpl --enable-version3 --enable-static` and GPL libraries including x264/x265. It is not an LGPL-compatible shipping default. Do not treat PATH availability as permission to bundle it. A command-line subprocess boundary is not an automatic license clearance.
+Phase 1 invokes external FFmpeg and FFprobe, installed `9.0.1-essentials_build-www.gyan.dev`, built with `--enable-gpl --enable-version3 --enable-static` and GPL libraries including x264/x265. The owner explicitly authorized this local development dependency. These executables are not linked, copied into the repository, downloaded by scripts/CI, redistributed or packaged. They are discovered on PATH or explicitly configured through CUTCAP_FFMPEG/CUTCAP_FFPROBE. This is not an LGPL-compatible shipping default. PATH availability and a subprocess boundary are not automatic license clearance.
 
 The intended distribution investigation is a reproducible shared-library LGPL-compatible build without GPL/nonfree options. Archive the exact build configuration, matching source, modifications, licenses and notices; preserve user rights to replace/relink libraries and avoid conflicting reverse-engineering restrictions. Audit external codec libraries too. FFmpeg's [official compliance guidance](https://ffmpeg.org/legal.html) describes dynamic-linking and source/notice requirements. Optional GPL components change FFmpeg's applicable license; nonfree configurations may be unredistributable. Codec patents and jurisdiction/distributor obligations require separate review; an open-source license does not resolve them.
 
-Before Phase 1 shipping, decide subprocess versus FFI, selected FFmpeg ABI/version, Windows DLL loading/packaging, permitted codec set, source distribution and notices. Local developer experiments using the installed GPL CLI must stay clearly separate from distributable artifacts.
+Before shipping, review the chosen subprocess interaction/distribution model, exact executable build and compatible source/notices, user installation/replacement, codec libraries/patents and any later FFI/DLL loading/relinking obligations. Phase 1 does not settle whether a particular combined distribution is permissible under an eventual application license. Local development executables remain separate from repository artifacts. No auto-download/installer fallback is provided when they are missing; the app reports an error.
+
+Generated test videos in tests/fixtures contain synthetic colors/test patterns/tones authored for this task and are dedicated as CC0-1.0 content in their README. That dedication covers those fixtures only, not CutCap source or an FFmpeg executable. Generation uses the installed tool; copying generated media is not copying the tool. Review codec patent/distribution requirements independently before public release. No third-party footage, music or fonts were downloaded.
 
 ## Direct dependency inventory
 
@@ -26,7 +28,8 @@ Before Phase 1 shipping, decide subprocess versus FFI, selected FFmpeg ABI/versi
 |---|---|---|---|
 | slint / slint-build | 1.18.1 | GPL-3.0-only OR Slint royalty-free 2.0 OR Slint software 3.0 | Native UI / build compiler |
 | serde | 1.0.229 | MIT OR Apache-2.0 | Validated model/value serialization |
-| serde_json | 1.0.154 | MIT OR Apache-2.0 | Tests only; no disk persistence |
+| serde_json | 1.0.154 | MIT OR Apache-2.0 | Bounded FFprobe parsing, developer measurement reports and tests |
+| rfd | 0.17.2 | MIT | Native Windows asynchronous file picker; default features disabled |
 | uuid | 1.29.0 | Apache-2.0 OR MIT | Typed stable IDs |
 | thiserror | 2.0.21 | MIT OR Apache-2.0 | Typed errors |
 | tracing | 0.1.44 | MIT | Local diagnostics |

@@ -1,6 +1,6 @@
 # Windows 11 x64 setup
 
-## Required for Phase 0
+## Build requirements
 
 - Git for Windows.
 - Rust via rustup, with the `x86_64-pc-windows-msvc` host/target. This repository pins 1.99.1, rustfmt and Clippy; `rustup show` installs the local pinned toolchain if needed. No nightly.
@@ -44,6 +44,37 @@ cargo run -p cutcap --features gpu-diagnostics -- --gpu-info
 
 The optional diagnostic uses wgpu 30/DX12, enumerates adapters and prints name/backend/device type/driver. It creates no device or texture and is not a rendering benchmark. A DX12-compatible driver is needed for that command only. The UI deliberately selects Slint winit/software via public APIs; it does not rely on GPU video presentation or `SLINT_BACKEND` overrides.
 
+## Phase 1 external media runtime
+
+Install/configure FFmpeg **and FFprobe** explicitly; CutCap never installs, copies or packages them. The tested development build is 9.0.1-essentials_build-www.gyan.dev (GPLv3/static). The owner authorized local development use; distribution is not cleared. Read LICENSE_REVIEW.md before packaging. Native codec development headers/DLLs are unnecessary for this adapter.
+
+```powershell
+Get-Command ffmpeg, ffprobe
+ffmpeg -version
+ffprobe -version
+# Optional per-process configuration when the executables are not on PATH:
+$env:CUTCAP_FFMPEG = 'C:\path with spaces\ffmpeg.exe'
+$env:CUTCAP_FFPROBE = 'C:\path with spaces\ffprobe.exe'
+cargo run -p cutcap
+```
+
+Use Import video/Ctrl+I, choose a local MP4/MOV/M4V/MKV/WebM/AVI/TS, and inspect the real library/inspector. The first non-cover video stream is used; support depends on the installed decoder. Select an entry to request its initial frame. Use source slider, Source ms + Seek/Enter, or +1 s; timeline playhead stays zero. Ceiling selection may report NoFrame after the last PTS even inside nominal duration; try earlier. HDR/non-quarter turns/network media and files over current budgets are rejected. Playback/audio/export remain unavailable. Missing executables/files, invalid media and process failures appear as errors without a fake successful import.
+
+```powershell
+# Committed small fixtures require no generation for default tests.
+cargo test --workspace
+# Real external-process integration; never downloads tools:
+cargo test -p cutcap-media --test ffmpeg_integration -- --ignored --test-threads=1
+# Optional synthetic fixture regeneration and representative source generation:
+./scripts/generate-fixtures.ps1 -Performance
+cargo build --release
+./scripts/measure-preview.ps1 -Runs 3
+```
+
+The measurement script runs the **same release CutCap UI**, registers each generated 720p/1080p/4K source and presents ten frames per source. JSON/raw logs and sampled app working-set/private memory are in ignored .artifacts/performance. Timing ends at Slint image assignment, not physical display/scanout; memory excludes child processes and sampling can miss peaks. Run without concurrent Cargo builds and record background workload, hardware, sample count and variation. Do not use debug measurements as release performance. Developer CLI: `cutcap.exe --benchmark-preview <source-directory> <report.json>`; it drives existing media coordination, creates no separate prototype and writes the report after the event loop stops.
+
+Default CI needs no FFmpeg installation. It runs meaningful pure parsing/clock/buffer/latest-worker and subprocess ownership tests; external FFmpeg tests are explicitly ignored unless invoked with --ignored. The ignored child-process test is a helper invoked by its ownership tests, not an untested behavior claim.
+
 For debugging, run a debug build from PowerShell or use the MSVC Rust debugger in your editor. Set `$env:RUST_LOG = 'cutcap=debug'` and `$env:RUST_BACKTRACE = '1'` for a session as needed. Logs contain project/request state, not media buffers. Release suppresses the console window; to collect output, redirect stdout/stderr when launching with Start-Process and read the resulting files. No file-based rotating logger, crash dump collector or recovery system is implemented.
 
 ## Interactive smoke check
@@ -52,6 +83,6 @@ Launch, confirm all panels, select Video 1 / Audio 1, add both track kinds, clea
 
 ## Optional tools already installed (audited)
 
-Git 2.56.0.windows.4, CMake 4.5.0-rc2, FFmpeg/ffprobe 9.0.1, Rust/Cargo 1.99.1, Windows 11 10.0.26300, Intel Core Ultra 7 255H, 16,582,352,896 bytes reported RAM, Intel Graphics driver 32.0.101.9150. CMake is a release candidate but is not used by Phase 0. FFmpeg is a GPL/static Gyan build: development inspection only, not the distribution runtime; read LICENSE_REVIEW.md before media work.
+Git 2.56.0.windows.4, CMake 4.5.0-rc2, FFmpeg/ffprobe 9.0.1, Rust/Cargo 1.99.1, Windows 11 10.0.26300, Intel Core Ultra 7 255H, 16,582,352,896 bytes reported RAM, Intel Graphics driver 32.0.101.9150. CMake is a release candidate and unused. FFmpeg is the GPL/static Gyan development runtime; it is not a bundled distribution runtime.
 
 The GitHub workflow uses hosted Windows, formatting, all-features Clippy/tests, locked debug and release builds, a Cargo/build cache and read-only repository permission. No special credentials or automatic publishing. A configured workflow is not evidence of a remote run; the initial repository has no remote configured.

@@ -13,6 +13,10 @@ gpu-diagnostics = ["dep:wgpu", "dep:pollster"]
 [dependencies]
 cutcap-contracts.workspace = true
 cutcap-core.workspace = true
+cutcap-media.workspace = true
+rfd.workspace = true
+serde.workspace = true
+serde_json.workspace = true
 slint.workspace = true
 thiserror.workspace = true
 tracing.workspace = true

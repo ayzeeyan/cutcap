@@ -1,11 +1,14 @@
 //! The lightweight command owner. Future media jobs must not run in this loop.
 use cutcap_contracts::*;
 use cutcap_core::{Project, ProjectError, Track};
+use std::collections::BTreeMap;
 
 #[derive(Default)]
 pub struct Engine {
     project: Option<Project>,
     selection: SelectionState,
+    media_details: BTreeMap<MediaId, MediaSummary>,
+    source_media: Option<MediaId>,
 }
 
 impl Engine {
@@ -35,6 +38,8 @@ impl Engine {
             }
             self.project = Some(project);
             self.selection = SelectionState::None;
+            self.media_details.clear();
+            self.source_media = None;
         } else {
             let project = self
                 .project
@@ -48,6 +53,42 @@ impl Engine {
             }
             match envelope.command {
                 Command::GetSnapshot => {}
+                Command::RegisterMedia { media } => {
+                    let media = *media;
+                    media.metadata.validate().map_err(|error| {
+                        EngineError::new(ErrorCode::InvalidInput, error.to_string())
+                    })?;
+                    if self.media_details.len() >= 128 {
+                        return Err(EngineError::new(
+                            ErrorCode::InvalidInput,
+                            "Phase 1 supports at most 128 imported assets.",
+                        ));
+                    }
+                    if project.media().iter().any(|asset| asset.path == media.path) {
+                        return Err(EngineError::new(
+                            ErrorCode::InvalidInput,
+                            "This file is already in the library. Select its entry.",
+                        ));
+                    }
+                    project
+                        .add_media(cutcap_core::MediaAsset {
+                            id: media.id,
+                            path: media.path.clone(),
+                            kind: TrackKind::Video,
+                        })
+                        .map_err(domain_error)?;
+                    self.source_media = Some(media.id);
+                    self.media_details.insert(media.id, media);
+                }
+                Command::SelectMedia { media_id } => {
+                    if !self.media_details.contains_key(&media_id) {
+                        return Err(EngineError::new(
+                            ErrorCode::NotFound,
+                            "This media asset is no longer in this project.",
+                        ));
+                    }
+                    self.source_media = Some(media_id);
+                }
                 Command::AddTrack { kind } => {
                     let number = project
                         .tracks()
@@ -78,7 +119,7 @@ impl Engine {
                 _ => {
                     return Err(EngineError::new(
                         ErrorCode::Unsupported,
-                        "This operation is unavailable in Phase 0.",
+                        "This operation is unavailable in this milestone.",
                     ));
                 }
             }
@@ -107,6 +148,12 @@ impl Engine {
             media_count: project.media().len(),
             clip_count: project.clips().len(),
             selection: self.selection,
+            media: project
+                .media()
+                .iter()
+                .filter_map(|asset| self.media_details.get(&asset.id).cloned())
+                .collect(),
+            source_media: self.source_media,
         })
     }
 }
@@ -242,5 +289,73 @@ mod tests {
         });
         assert!(matches!(event, EngineEvent::Failed { request_id: id, .. } if id == request_id));
         assert_eq!(engine.snapshot().unwrap(), initial);
+    }
+
+    #[test]
+    fn real_asset_registration_is_atomic_scoped_and_selection_is_session_state() {
+        let mut engine = Engine::default();
+        let initial = create(&mut engine);
+        let metadata=cutcap_media::parse_probe(br#"{"streams":[{"index":0,"codec_type":"video","codec_name":"ffv1","width":320,"height":180,"time_base":"1/1000","start_pts":0,"duration_ts":3000}],"format":{"format_name":"matroska"}}"#).unwrap();
+        let media = MediaSummary {
+            id: MediaId::new(),
+            path: "C:/source video.mkv".into(),
+            metadata,
+        };
+        let register = |asset: MediaSummary| Command::RegisterMedia {
+            media: Box::new(asset),
+        };
+        assert!(matches!(
+            request(&mut engine, Some(ProjectId::new()), register(media.clone())),
+            EngineEvent::Failed {
+                error: EngineError {
+                    code: ErrorCode::StaleProject,
+                    ..
+                },
+                ..
+            }
+        ));
+        assert_eq!(engine.snapshot().unwrap(), initial);
+        let mut invalid = media.clone();
+        invalid.metadata.width = 0;
+        assert!(matches!(
+            request(&mut engine, Some(initial.id), register(invalid)),
+            EngineEvent::Failed { .. }
+        ));
+        assert_eq!(engine.snapshot().unwrap(), initial);
+        assert!(matches!(
+            request(&mut engine, Some(initial.id), register(media.clone())),
+            EngineEvent::Completed { .. }
+        ));
+        let registered = engine.snapshot().unwrap();
+        assert_eq!(registered.media_count, 1);
+        assert_eq!(registered.media, vec![media.clone()]);
+        assert_eq!(registered.source_media, Some(media.id));
+        assert_eq!(registered.selection, SelectionState::None);
+        let mut duplicate = media.clone();
+        duplicate.id = MediaId::new();
+        assert!(matches!(
+            request(&mut engine, Some(initial.id), register(duplicate)),
+            EngineEvent::Failed { .. }
+        ));
+        assert_eq!(engine.snapshot().unwrap(), registered);
+        assert!(matches!(
+            request(
+                &mut engine,
+                Some(initial.id),
+                Command::SelectMedia {
+                    media_id: MediaId::new()
+                }
+            ),
+            EngineEvent::Failed { .. }
+        ));
+        assert_eq!(engine.snapshot().unwrap(), registered);
+        let next = create(&mut engine);
+        assert!(next.media.is_empty());
+        assert_eq!(next.source_media, None);
+        assert!(matches!(
+            request(&mut engine, Some(initial.id), register(media)),
+            EngineEvent::Failed { .. }
+        ));
+        assert_eq!(engine.snapshot().unwrap(), next);
     }
 }
