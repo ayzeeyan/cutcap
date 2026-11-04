@@ -1,8 +1,20 @@
-# UI–engine and media contracts, version 3
+# UI–engine and media contracts, version 4
 
-## Phase 3A current contract
+## Phase 3B additions (current authority)
 
-CONTRACT_VERSION and native ABI are 3. The Phase 2 source transport remains separate from timeline time and retains its pixel/time ownership. Project schema stays 1; `.cutcap` envelope format 1 is specified in PROJECT_FORMAT.md.
+CONTRACT_VERSION and native ABI are 4 (ADR 020). Everything in the Phase 3A section below still holds.
+
+- **InsertClip { media_id, track_id }** appends the whole Ready video source to the end of a video track (start = the track's last clip end, duration = source `duration_ticks` floored to the project clock, source_in = stream start PTS) and selects the new clip. Rejections (InvalidInput/NotFound): source not registered or not Ready, unknown/non-video track, unknown or non-positive duration, shorter than one project tick, timeline overflow, and every core invariant (overlap, kind, limits). Rejection is atomic: no mutation, revision or history entry.
+- **RemoveClip { clip_id }** removes one clip; the media asset and the source file are untouched. A removed selected clip is deselected.
+- **Select { Clip }** is transient: no revision, no history, no dirtiness.
+- **Undo / Redo** reverse/reapply the newest clip edit exactly (identity, timing, source mapping, order); "Nothing to undo/redo." is an InvalidInput failure that changes nothing. A new edit clears redo; the history is bounded to 200 entries and reset by NewProject and adoption of an opened document. Revisions return to the saved value when an undo/redo lands exactly on it and no other mutation intervened; otherwise a fresh, never-reused revision is issued. AddTrack and relink are not undoable.
+- **ProjectSnapshot** adds `clips: Vec<ClipSummary>` (id, media, track, start, duration, source_in in exact ticks) and `history: HistoryStatus` (can_undo, can_redo, labels, depth).
+- **Timing.** TimelineTime is the project position (ticks of the project timebase); clip-local time is `t - start` in project ticks, in [0, duration); source time is `source_in + rescale(t - start, project → source timebase)` and stays a SourceTime distinct from TimelineTime. Display milliseconds are floored only for drawing; no float time feeds back. No timeline playback or evaluation exists yet: the timeline playhead stays at zero and source playback remains independent of clips.
+- **View.** SessionView carries `timeline_generation` and `history`; clips are fetched through the separate timeline document whenever the generation changes (never per playback frame). Clip rows: `id, track_id, track_index, media_id, name, start_ms, duration_ms, start_text, duration_text, end_text, availability, selected`. The inspector adds kind `clip` with Timeline (track, start, duration, end, exact ticks) and Source (file, source-in PTS, status) sections.
+
+## Phase 3A contract
+
+CONTRACT_VERSION and native ABI were 3 for Phase 3A. The Phase 2 source transport remains separate from timeline time and retains its pixel/time ownership. Project schema stays 1; `.cutcap` envelope format 1 is specified in PROJECT_FORMAT.md.
 
 SaveProject { optional path } captures a complete validated Project/source-expectation snapshot and owner revision. OpenProject { path } reads/validates separately before owner adoption. Both emit nonterminal Updated snapshots, then exactly one Completed or FileFailed terminal while the connection is live. FileFailed includes the unchanged live snapshot plus error/status; it is not a successful mutation. Busy/invalid preconditions use Failed. The existing request/result queues remain capacity 32 and pump drain <=8. Exactly one file operation exists; source probes/decoders remain isolated.
 
@@ -16,7 +28,7 @@ Source playback readiness is refined by ADR 019: playing/playing-seek preroll re
 
 ## Retained media/command foundation (read with the additions above)
 
-cutcap-contracts is the Rust source of truth, reached through ABI 3 in NATIVE_ABI.md. Source Play/Pause/Stop and continuous seek/clock/frame delivery are specified in PHASE_2_PLAYBACK_CONTRACT.md with the Phase 3A preroll amendment. They never move the project timeline playhead.
+cutcap-contracts is the Rust source of truth, reached through ABI 4 in NATIVE_ABI.md. Source Play/Pause/Stop and continuous seek/clock/frame delivery are specified in PHASE_2_PLAYBACK_CONTRACT.md with the Phase 3A preroll amendment. They never move the project timeline playhead.
 
 ## Reliable commands
 
@@ -33,7 +45,8 @@ A session submit rejection (try_send Busy/Internal, surfaced over the ABI as BUS
 | OpenProject, SaveProject | Validated background adoption / captured revision save, as specified above |
 | VerifyMedia | Reliable source verification/relink result; owner validates original identity before mutation |
 | ImportMedia { paths } | Batch operation Unsupported; UI import uses the single probe below |
-| RemoveClip, Seek(TimelineTime), SetPlayback, Undo, Redo | Unsupported; source seek is separate |
+| InsertClip, RemoveClip, Undo, Redo | Clip editing and bounded history (Phase 3B section) |
+| Seek(TimelineTime), SetPlayback | Unsupported; source seek is separate and no timeline transport exists |
 | StartExport, Cancel { target } | Reserved Unsupported; media uses a concrete Cancellation token |
 
 ProjectSnapshot owns ID/name/timebase, track summaries, counts, timeline SelectionState, bounded MediaSummary rows and optional source_media ID. It is a session view DTO, not persistence data. Metadata includes codec, coded size, pixel format, DAR/SAR, rotation, average/nominal rates, timebase/start/duration, estimate flag, container, video index/container ID, audio indices and available color fields. Unknown optional values remain None; invalid required values fail import. Decoded bytes never travel in reliable events.

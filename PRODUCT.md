@@ -15,7 +15,7 @@ An approachable, offline-first, non-linear video editor intended to grow from si
 Primary hardware: Core Ultra 7 255H, integrated Intel Arc, 16 GB RAM. Long editing sessions, a persistent viewer, media library, inspector and multitrack timeline. Keyboard operation and high-DPI Windows use are required.
 
 ## Capabilities and constraints
-Real local-video import, metadata, cancellable source preview/seeking, bounded video-only source playback and `.cutcap` Save/Open/Save As/relink are implemented through ABI 3. Timeline editing/playback, audio playback and export remain unavailable. Dirty/saved state and source readiness come from Rust; never fabricate media, progress or successful operations. Preserve original media. Application licensing remains an owner decision.
+Real local-video import, metadata, cancellable source preview/seeking, bounded video-only source playback `.cutcap` Save/Open/Save As/relink, and first timeline edits (append, select, remove clips; undo/redo) are implemented through ABI 4. Drag/trim/split, timeline playback, audio playback and export remain unavailable. Dirty/saved state and source readiness come from Rust; never fabricate media, progress or successful operations. Preserve original media. Application licensing remains an owner decision.
 
 ## Brand commitments
 CutCap is the product name. Original identity; do not copy CapCut branding. The user delegates visual and technical decisions and requests implementation without waiting for another developer.

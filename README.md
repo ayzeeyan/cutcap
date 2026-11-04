@@ -1,6 +1,6 @@
 # CutCap
 
-A native Windows video editor foundation: an Avalonia (C#/.NET 10) interface over a Rust engine. It imports local videos, shows real metadata and plays/seeks source video. Phase 3A adds real `.cutcap` project save/open, source revalidation and relinking through ABI 3. Timeline playback/editing, audio playback and export are not implemented.
+A native Windows video editor foundation: an Avalonia (C#/.NET 10) interface over a Rust engine. It imports local videos, shows real metadata and plays/seeks source video. Phase 3A adds real `.cutcap` project save/open, source revalidation and relinking. Phase 3B adds the first timeline edits through ABI 4: append a source video to a video track, select and remove clips, and Rust-owned undo/redo that keeps saved/dirty state exact. Drag/trim/split, timeline playback, audio playback and export are not implemented.
 
 ```powershell
 dotnet run --project apps/CutCap.Desktop      # builds the Rust engine DLL first

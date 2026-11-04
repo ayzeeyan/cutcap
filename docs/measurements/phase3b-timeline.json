@@ -1,0 +1,38 @@
+{
+  "phase": "3B timeline editing",
+  "machine": "Windows 11 Home 10.0.26300, Core Ultra 7 255H, integrated Intel graphics, 16 GB RAM, 150% display scaling",
+  "engine_commands_release": {
+    "source": "crates/cutcap-ffi/src/editing_tests.rs measure_command_latency_history_and_snapshot_size (--release, owner only, no queue)",
+    "rows": [
+      { "clips": 1001, "insert_us": 30.8, "undo_or_redo_us": 32.2, "snapshot_json_bytes": 255068 },
+      { "clips": 10001, "insert_us": 100.3, "undo_or_redo_us": 85.0, "snapshot_json_bytes": 2546442 },
+      { "clips": 50001, "insert_us": 1623.4, "undo_or_redo_us": 1875.2, "snapshot_json_bytes": 12750146 }
+    ],
+    "history": { "max_entries": 200, "entry_bytes_estimate": 156, "bytes_at_limit_estimate": 31200, "note": "size_of::<Edit>() plus label bytes; one clip value per entry, independent of clip count" },
+    "note": "snapshot_json_bytes is the in-process ProjectSnapshot size if serialized; snapshots cross the worker channel as owned values, not JSON"
+  },
+  "session_round_trip_release": {
+    "source": "crates/cutcap-ffi/src/timeline_tests.rs measure_large_timelines (--release, includes worker queue, pump and test-side JSON parsing)",
+    "rows": [
+      { "clips": 100, "undo_round_trip_ms": 6.3, "timeline_json_bytes": 33286, "timeline_build_us": 115.4, "view_json_bytes": 2504, "view_build_us": 19.1 },
+      { "clips": 1000, "undo_round_trip_ms": 16.3, "timeline_json_bytes": 333653, "timeline_build_us": 945, "view_json_bytes": 2509, "view_build_us": 12.3 },
+      { "clips": 5000, "undo_round_trip_ms": 59.6, "timeline_json_bytes": 1677320, "timeline_build_us": 6690.8, "view_json_bytes": 2512, "view_build_us": 107.8 }
+    ],
+    "note": "timeline document is rebuilt once per project snapshot (edits/opens); the view, re-serialized per playback frame, no longer carries clips. Before the split, the 5,000-clip view was 1.68 MB per change."
+  },
+  "persistence": { "clips": 5000, "save_ms": 110.4, "project_bytes": 2001671, "source": "generate_large_timeline_project (real FFmpeg, --release)" },
+  "desktop_layout_release": {
+    "source": "tests/CutCap.Desktop.Tests TimelineEditingTests.MeasureLayoutCullingAndHitTestAtTheClipLimit (explicit)",
+    "clips": 100000, "tracks": 4, "layout_build_ms": 22.36, "cull_per_frame_us": 6.2, "visible_clips_per_frame": 112, "hit_test_us": 1.10
+  },
+  "native_draw_debug": {
+    "source": "scripts/native-ui/timeline-draw.ps1 with CUTCAP_TRACE_TIMELINE=1 (Debug build, real window, 1778x1039 client)",
+    "clips": 5000, "drawn_per_frame": 18, "content_width_px": 300252,
+    "render_record_avg_us": [638.6, 447.7], "render_record_max_us": [3135.1, 506.6],
+    "note": "DrawingContext recording time of TimelineLanes.Render over 30-render windows while wheel-scrolling and zooming; GPU/compositor raster time is not included"
+  },
+  "native_ui_latency": {
+    "source": "docs/measurements/phase3b-native-scenario.txt",
+    "note": "click/keypress to UIA-observed lanes change: 195-843 ms. Dominated by UI Automation polling (0.5-0.7 s per tree walk on this machine while an external UIA client also walks the tree), not by the engine (sub-ms commands above)."
+  }
+}

@@ -1,6 +1,20 @@
-# CutCap native engine ABI, version 3
+# CutCap native engine ABI, version 4
 
-## Phase 3A additions (current authority)
+## Phase 3B additions (current authority)
+
+Rust `ABI_VERSION` and C# `NativeMethods.AbiVersion` are 4; CONTRACT_VERSION is 4 (ADR 020). The bump is required by AGENTS.md for new consumed view fields, and it is the guard that stops a stale ABI-3 DLL from passing the version check and failing on the first clip command. Every ABI 3 export, status number, frame layout and handle rule is unchanged.
+
+| New export | Semantics |
+|---|---|
+| `cutcap_session_insert_clip(u64, u8* media, usize, u8* track, usize)` | Enqueue InsertClip (append-to-end policy, ENGINE_UI_CONTRACT.md). Malformed/nil UUIDs or null pointers → `INVALID_ARGUMENT`; engine rejections arrive as view status. |
+| `cutcap_session_remove_clip(u64, u8* id, usize)` | Enqueue RemoveClip. |
+| `cutcap_session_select_clip(u64, u8* id, usize)` | Transient clip selection; the inspector follows it. |
+| `cutcap_session_undo(u64)` / `cutcap_session_redo(u64)` | Enqueue Undo/Redo; "Nothing to undo/redo." arrives as an error status. |
+| `cutcap_session_timeline(u64, u8* buf, usize cap, usize* len)` | Copies the timeline document `{generation, clips}` with the same buffer protocol as `cutcap_session_view`. |
+
+View additions: `timeline_generation` (u64; fetch the timeline document only when it differs from the last generation read) and `history` (`can_undo`, `can_redo`, `undo`, `redo` labels, `depth`). Clips are intentionally absent from the view: the view is re-serialized for each playback frame, the clip list only per edit. Clip timing crosses as floored display milliseconds plus Rust-formatted strings; exact ticks stay in Rust and appear in the inspector. The wrapper exposes InsertClip/RemoveClip/SelectClip/Undo/Redo/ReadTimeline (64 MiB ceiling, about 340 bytes per clip at the 100,000-clip core limit). Tests: `crates/cutcap-ffi/src/timeline_tests.rs` (ABI arguments, round trip, rejections) and `tests/CutCap.Interop.Tests/TimelineEditingTests.cs` (real DLL and FFmpeg).
+
+## Phase 3A additions (ABI 3, retained)
 
 Rust `ABI_VERSION` and C# `NativeMethods.AbiVersion` are 3; internal CONTRACT_VERSION is 3. Core schema remains 1; `.cutcap` envelope format is 1. All ABI 2 transport/frame layouts, status numbers and ownership rules below remain unchanged. The in-tree frontend refuses older/newer DLLs. Phase 2B's production transport is integrated, not a pending handoff.
 
@@ -21,7 +35,7 @@ Only the owner mutates documents/revisions. One file worker owns its immutable s
 
 Playback startup now waits for an actual successor PTS or EOF before anchoring the playing clock (ADR 019). Paused first frames remain immediate; true post-preroll starvation still freezes the clock in Buffering. No frame scheduling deadline or display-refresh assumption changed.
 
-## ABI 2 foundation retained by ABI 3
+## ABI 2 foundation retained by ABI 3 and 4
 
 `crates/cutcap-ffi` builds `cutcap_engine.dll` (Windows x64, `extern "C"`). The Avalonia frontend loads it through `src-dotnet/CutCap.Interop`. Sources of truth are abi.rs and NativeMethods.cs. ABI 3 is versioned independently of in-process contract 3, document format 1 and core schema 1.
 
