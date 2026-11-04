@@ -40,7 +40,7 @@ Date: 2026-11-04. Branch `claude/phase-2b-playback-ui`, based on `bab1659`. That
 | Assets | `Assets/Icons/pause.svg`, `stop.svg`, regenerated `Controls/IconData.g.cs` |
 | Tests | `tests/CutCap.Desktop.Tests/TransportTests.cs` (new, 19 tests), `tests/CutCap.Interop.Tests/PlaybackTests.cs` (+1 test) |
 | Scripts | `scripts/native-ui/playback-ui.ps1` (native scenario), `cadence.py`, `cadence-resources.py` |
-| Docs | this report, `docs/measurements/phase2b-cadence.json`, `phase2b-native-scenario.log`, `docs/images/phase2b-*.jpg`, ARCHITECTURE, DESIGN, DECISIONS (ADR 017), ROADMAP, README, PHASE_2_PLAYBACK_CONTRACT (integration status), `tests/ui_smoke.md` |
+| Docs | this report, `docs/measurements/phase2b-cadence.json`, `phase2b-native-scenario.txt`, `docs/images/phase2b-*.jpg`, ARCHITECTURE, DESIGN, DECISIONS (ADR 017), ROADMAP, README, PHASE_2_PLAYBACK_CONTRACT (integration status), `tests/ui_smoke.md` |
 
 No Rust, ABI or engine file changed. ABI 2 is used exactly as Sol defined it.
 
@@ -103,7 +103,7 @@ The throttle test caught a real overflow bug in the first version of `ScrubContr
 
 ## 7. Human-operated Windows test results
 
-`scripts/native-ui/playback-ui.ps1` drove the real app (Debug build) with real mouse and keyboard input. It is gated on CutCap owning the foreground. The log is in `docs/measurements/phase2b-native-scenario.log`; the engine transitions were cross-checked with `CUTCAP_TRACE_PLAYBACK=1`.
+`scripts/native-ui/playback-ui.ps1` drove the real app (Debug build) with real mouse and keyboard input. It is gated on CutCap owning the foreground. The log is in `docs/measurements/phase2b-native-scenario.txt`; the engine transitions were cross-checked with `CUTCAP_TRACE_PLAYBACK=1`.
 
 | Scenario | Observed |
 |---|---|

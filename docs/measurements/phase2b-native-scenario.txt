@@ -1,0 +1,26 @@
+14:41:37.580 selected 20 s 1080p | button=Play chip=- goto=00:00.000
+14:41:39.145 Play -> Pause after 236 ms
+14:41:42.691 Pause -> Play after 158 ms
+14:41:46.304 Space -> Pause after 223 ms
+14:41:47.010 Space -> Play after 185 ms
+14:41:48.797 Space in search field: button=Play search=' '
+14:41:54.088 paused seek 1500 | button=Play chip=- goto=00:01.500
+14:41:59.561 playing seek 1000 (immediately) | button=Pause chip=- goto=00:01.000
+14:42:01.325 playing seek 1000 (+1.2 s) | button=Pause chip=- goto=00:01.000
+14:42:04.919 after 6 rapid scrubs | button=Pause chip=- goto=00:14.197
+14:42:07.958 stopped | button=Play chip=- goto=00:00.000
+14:42:13.362 stopped seek 18500 | button=Play chip=- goto=00:18.500
+14:42:15.712 play from 18500: End of source after 1577 ms
+14:42:16.201 ended | button=Play chip=End of source goto=00:18.500
+14:42:17.689 replay -> Pause after 237 ms
+14:42:19.119 replaying | button=Pause chip=- goto=00:00.000
+14:42:21.657 after resize | button=Pause chip=- goto=00:00.000
+14:42:24.472 switched to 720p while playing | button=Play chip=- goto=00:00.000
+14:42:32.327 4K play then immediate pause | button=Play chip=- goto=00:00.000
+14:42:34.810 4K +2 s after early pause | button=Play chip=- goto=00:00.000
+14:42:43.307 VFR End of source after 2333 ms
+14:42:49.359 new project during playback: tiles=0 button=Play play-enabled=False
+14:42:58.224 corrupt: status=FFprobe could not read this video. It may be damaged or unsupported.
+14:43:09.822 close during 1080p playback | exited=True in 550 ms code=0 leftover=0
+14:43:27.903 pending seek chip=Seeking…
+14:43:28.436 close during pending 4K seek | exited=True in 532 ms code=0 leftover=0
