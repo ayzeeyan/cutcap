@@ -171,6 +171,45 @@ impl Project {
         Ok(())
     }
 
+    /// Inserts a validated clip at `index` in the clip order (clamped to the end).
+    /// Used to restore an exact earlier state (undo of a removal); validation
+    /// is identical to [`Project::insert_clip`].
+    pub fn insert_clip_at(&mut self, index: usize, clip: Clip) -> Result<(), ProjectError> {
+        self.insert_clip(clip)?;
+        let last = self.clips.len() - 1;
+        let index = index.min(last);
+        self.clips[index..].rotate_right(1);
+        Ok(())
+    }
+
+    /// Removes a clip, returning its former position and value. The media asset
+    /// and the source file are untouched; nothing else references a clip.
+    pub fn remove_clip(&mut self, id: ClipId) -> Result<(usize, Clip), ProjectError> {
+        let index = self
+            .clips
+            .iter()
+            .position(|clip| clip.id == id)
+            .ok_or(ProjectError::MissingReference)?;
+        Ok((index, self.clips.remove(index)))
+    }
+
+    pub fn clip(&self, id: ClipId) -> Option<&Clip> {
+        self.clips.iter().find(|clip| clip.id == id)
+    }
+
+    /// Timeline position just after the last clip on a track (zero when empty):
+    /// the append-to-end insertion point.
+    pub fn track_end(&self, track: TrackId) -> Result<TimelineTime, ProjectError> {
+        if !self.tracks.iter().any(|item| item.id == track) {
+            return Err(ProjectError::MissingReference);
+        }
+        let mut end = TimelineTime::ZERO;
+        for clip in self.clips.iter().filter(|clip| clip.track_id == track) {
+            end = end.max(clip.end()?);
+        }
+        Ok(end)
+    }
+
     /// Change only a source reference, preserving identity, ordering and clips.
     /// The host validates the replacement file; core never touches the filesystem.
     pub fn relink_media(&mut self, id: MediaId, path: PathBuf) -> Result<(), ProjectError> {

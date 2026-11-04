@@ -164,3 +164,62 @@ fn loading_rejects_missing_media_overlap_and_unknown_fields() {
     unknown["decoded_pixels"] = serde_json::json!([]);
     assert!(serde_json::from_value::<Project>(unknown).is_err());
 }
+
+#[test]
+fn removal_restoration_and_append_point_preserve_identity_and_order() {
+    let (mut project, first) = fixture();
+    let track = first.track_id;
+    assert_eq!(project.track_end(track), Ok(TimelineTime::ZERO));
+    project.insert_clip(first.clone()).unwrap();
+    let mut second = first.clone();
+    second.id = ClipId::new();
+    second.start = project.track_end(track).unwrap();
+    assert_eq!(second.start, TimelineTime(720_000));
+    project.insert_clip(second.clone()).unwrap();
+    assert_eq!(project.track_end(track), Ok(TimelineTime(1_440_000)));
+    let before = project.clone();
+
+    let (index, removed) = project.remove_clip(first.id).unwrap();
+    assert_eq!((index, &removed), (0, &first));
+    assert_eq!(project.clips().len(), 1);
+    assert_eq!(
+        project.media().len(),
+        1,
+        "removing a clip keeps its media asset"
+    );
+    assert_eq!(
+        project.remove_clip(first.id),
+        Err(ProjectError::MissingReference)
+    );
+
+    project.insert_clip_at(index, removed).unwrap();
+    assert_eq!(project, before, "exact identity, timing and order restored");
+    assert_eq!(project.clip(second.id), Some(&second));
+    assert_eq!(
+        project.track_end(TrackId::new()),
+        Err(ProjectError::MissingReference)
+    );
+}
+
+#[test]
+fn restoring_at_an_index_still_validates_overlap_and_kinds() {
+    let (mut project, clip) = fixture();
+    project.insert_clip(clip.clone()).unwrap();
+    let before = project.clone();
+    let mut overlapping = clip.clone();
+    overlapping.id = ClipId::new();
+    overlapping.start = TimelineTime(1);
+    assert_eq!(
+        project.insert_clip_at(0, overlapping),
+        Err(ProjectError::Overlap)
+    );
+    assert_eq!(project, before);
+    let mut late = clip;
+    late.id = ClipId::new();
+    late.start = TimelineTime(i64::MAX - 10);
+    assert!(matches!(
+        project.insert_clip_at(5, late),
+        Err(ProjectError::Time(_))
+    ));
+    assert_eq!(project, before);
+}
