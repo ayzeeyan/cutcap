@@ -1,6 +1,6 @@
 # CutCap
 
-A native Windows video editor foundation: an Avalonia (C#/.NET 10) interface over a Rust engine. It imports local videos, shows real metadata and decodes source still frames asynchronously. Playback, timeline editing, project saving and export are **not implemented**.
+A native Windows video editor foundation: an Avalonia (C#/.NET 10) interface over a Rust engine. It imports local videos, shows real metadata and decodes source still frames asynchronously. Phase 2 adds continuous source playback through ABI 2 and managed interop. Visual Play/Pause/Stop bindings remain a Claude frontend handoff; timeline editing, project saving and export are not implemented.
 
 ```powershell
 dotnet run --project apps/CutCap.Desktop      # builds the Rust engine DLL first
@@ -15,6 +15,7 @@ Requires Windows 11 x64, the pinned Rust/MSVC toolchain, the .NET 10 SDK (global
 - Native video picker, bounded metadata probe, real in-memory media registration, media grid with collections and name search, and a metadata inspector.
 - Asynchronous timestamped CPU-frame preview with exact source clocks, cancellable latest-only seeks, actual PTS captions and failure feedback. Seeks select the first frame at or after the request; after the last PTS a seek may report no frame.
 - Real empty video/audio tracks, adding tracks, track selection (click or arrow keys) and a fresh in-memory project, through a bounded command worker.
+- Persistent, bounded video-only playback engine: real CFR/VFR/B-frame PTS, monotonic clock, pause/resume, playing/paused seeks, buffering, EOF and cancellation. See the [playback contract](docs/PHASE_2_PLAYBACK_CONTRACT.md) and [Phase 2 report](docs/PHASE_2_PLAYBACK_REPORT.md) for API integration status and actual editor measurements.
 - Timeline ruler/lanes drawn by custom controls, zoom 50–200 % and two-axis scrolling.
 - Optional DX12 adapter diagnostic: `cargo run -p cutcap-ffi --features gpu-diagnostics --bin cutcap-gpu-info`.
 

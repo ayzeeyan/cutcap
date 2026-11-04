@@ -21,6 +21,7 @@ pub struct SessionView {
     pub source: SourceView,
     pub frame: Option<FrameView>,
     pub metrics: PreviewMetrics,
+    pub playback: crate::playback::PlaybackView,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -138,11 +139,13 @@ impl Default for SourceView {
 }
 
 /// Metadata of the latest presented frame. Pixels are copied separately.
-#[derive(Debug, Clone, Copy, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct FrameView {
     pub generation: u64,
     pub width: u32,
     pub height: u32,
+    pub actual: SourceTime,
+    pub epoch: String,
 }
 
 /// Last measured preview timings, for diagnostics and the migration report.

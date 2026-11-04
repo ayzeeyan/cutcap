@@ -32,11 +32,15 @@ pub struct Registration {
 pub struct PresentedFrame {
     pub generation: u64,
     pub image: RgbaFrame,
+    pub ticket: PreviewTicket,
+    pub actual: SourceTime,
 }
 
 pub struct MediaHost {
     backend: Arc<dyn MediaBackend>,
     decoder: LatestDecoder,
+    pub(crate) playback: crate::playback::Playback,
+    copy_ticket: Option<PreviewTicket>,
     probe: Option<ProbeJob>,
     selected: Option<(ProjectId, MediaSummary)>,
     /// Presentation gate: only this ticket may replace the displayed frame.
@@ -56,9 +60,12 @@ fn millis() -> Timebase {
 impl MediaHost {
     pub fn start(backend: Arc<dyn MediaBackend>) -> Result<Self, std::io::Error> {
         let decoder = LatestDecoder::start(backend.clone())?;
+        let playback = crate::playback::Playback::start(backend.clone())?;
         Ok(Self {
             backend,
             decoder,
+            playback,
+            copy_ticket: None,
             probe: None,
             selected: None,
             ticket: None,
@@ -80,6 +87,8 @@ impl MediaHost {
             generation: frame.generation,
             width: frame.image.width(),
             height: frame.image.height(),
+            actual: frame.actual,
+            epoch: frame.ticket.request_id.to_string(),
         })
     }
 
@@ -128,12 +137,16 @@ impl MediaHost {
     }
 
     fn clear_preview(&mut self) {
+        self.copy_ticket = None;
         self.ticket = None;
         self.frame = None;
         self.source = SourceView::default();
     }
 
     pub fn pending_selection(&mut self) {
+        if let Err(error) = self.playback.reset() {
+            tracing::error!("{error}");
+        }
         if let Err(error) = self.decoder.cancel() {
             tracing::error!("{error}");
         }
@@ -184,52 +197,146 @@ impl MediaHost {
         self.seek(0, status);
     }
 
-    pub fn seek(&mut self, milliseconds: i64, status: &mut StatusView) {
-        let Some((project_id, media)) = &self.selected else {
-            return;
-        };
+    fn request_for(&self, milliseconds: i64) -> Result<DecodeRequest, MediaError> {
+        let (project, media) = self
+            .selected
+            .as_ref()
+            .ok_or_else(|| MediaError::Invalid("Select a source first.".into()))?;
         if !(0..=MAX_MEDIA_SECONDS * 1000).contains(&milliseconds) {
-            self.fail("Source time must be between 0 and 24 hours.", status);
-            return;
+            return Err(MediaError::Invalid(
+                "Source time must be between 0 and 24 hours.".into(),
+            ));
         }
         let offset = SourceTime {
             ticks: milliseconds,
             timebase: millis(),
         }
-        .rescale(media.metadata.timebase, Rounding::Ceil);
-        let Some(ticks) = offset
-            .ok()
-            .and_then(|offset| media.metadata.start_pts.checked_add(offset.ticks))
-        else {
-            self.fail("Source time overflow.", status);
-            return;
-        };
-        let ticket = PreviewTicket {
-            project_id: *project_id,
-            media_id: media.id,
-            request_id: RequestId::new(),
-        };
-        let request = DecodeRequest {
-            ticket,
+        .rescale(media.metadata.timebase, Rounding::Ceil)
+        .map_err(|_| MediaError::Invalid("Source time overflow.".into()))?;
+        let ticks = media
+            .metadata
+            .start_pts
+            .checked_add(offset.ticks)
+            .ok_or_else(|| MediaError::Invalid("Source time overflow.".into()))?;
+        Ok(DecodeRequest {
+            ticket: PreviewTicket {
+                project_id: *project,
+                media_id: media.id,
+                request_id: RequestId::new(),
+            },
             media: media.clone(),
             position: SourceTime {
                 ticks,
                 timebase: media.metadata.timebase,
             },
-        };
-        match self.decoder.request(request) {
-            Ok(()) => {
+        })
+    }
+
+    pub fn seek(&mut self, milliseconds: i64, status: &mut StatusView) {
+        if self.selected.is_none() {
+            return;
+        }
+        let result = self.request_for(milliseconds).and_then(|request| {
+            let ticket = request.ticket;
+            if self.playback.active() {
+                self.decoder.cancel()?;
+                self.ticket = None;
+                self.playback.request(
+                    request,
+                    milliseconds,
+                    self.playback.view.desired_playing,
+                    true,
+                )?;
+            } else {
+                self.decoder.request(request)?;
                 self.ticket = Some((ticket, Instant::now()));
+            }
+            self.copy_ticket = Some(ticket);
+            Ok(())
+        });
+        match result {
+            Ok(()) => {
+                self.source.position_ms = milliseconds;
                 self.source.busy = true;
                 self.source.status = "Decoding source frame…".into();
                 self.source.detail = "A newer seek replaces this request.".into();
-                self.source.position_ms = milliseconds;
             }
             Err(error) => self.fail(&error.to_string(), status),
         }
     }
 
+    pub fn play(&mut self) -> Result<(), MediaError> {
+        if self.playback.active() && !matches!(self.playback.view.state, "ended" | "failed") {
+            self.playback.resume(Instant::now());
+        } else {
+            let ms = if self.playback.view.state == "ended" {
+                0
+            } else {
+                self.source.position_ms
+            };
+            let request = self.request_for(ms)?;
+            self.decoder.cancel()?;
+            self.ticket = None;
+            self.copy_ticket = Some(request.ticket);
+            self.playback.request(request, ms, true, false)?;
+            self.source.position_ms = ms;
+        }
+        self.sync_transport();
+        Ok(())
+    }
+
+    pub fn pause(&mut self) {
+        self.playback.pause(Instant::now());
+        self.sync_transport();
+    }
+
+    pub fn stop(&mut self, status: &mut StatusView) -> Result<(), MediaError> {
+        self.playback.reset()?;
+        if self.selected.is_some() {
+            self.seek(0, status);
+        }
+        Ok(())
+    }
+
+    fn sync_transport(&mut self) {
+        let state = self.playback.view.state;
+        self.source.busy = matches!(state, "starting" | "seeking" | "buffering");
+        self.source.status = match state {
+            "starting" => "Starting source playback…",
+            "seeking" => "Seeking source…",
+            "buffering" => "Buffering source…",
+            "playing" => "Playing source",
+            "paused" => "Source paused",
+            "ended" => "End of source",
+            "failed" => "Source playback failed",
+            _ => "Source stopped",
+        }
+        .into();
+        if state != "failed" {
+            self.source.detail = String::new();
+        }
+    }
+
+    pub fn copy_allowed(&self, generation: u64) -> bool {
+        self.frame.as_ref().is_some_and(|frame| {
+            frame.generation == generation && Some(frame.ticket) == self.copy_ticket
+        })
+    }
+
+    pub fn frame_copied(&mut self, generation: u64) -> Result<(), MediaError> {
+        if let Some(frame) = &self.frame
+            && self.playback.ticket() == Some(frame.ticket)
+        {
+            self.playback.copied(generation, frame.actual)?;
+        }
+        Ok(())
+    }
+
     pub fn cancel_preview(&mut self, status: &mut StatusView) {
+        if let Err(error) = self.playback.reset() {
+            tracing::error!("{error}");
+        }
+        self.copy_ticket = self.frame.as_ref().map(|frame| frame.ticket);
         if let Err(error) = self.decoder.cancel() {
             tracing::error!("{error}");
         }
@@ -341,6 +448,29 @@ impl MediaHost {
             }
             Ok(_) => {}
         }
+        match self.playback.tick(Instant::now()) {
+            Ok((frame, state_changed)) => {
+                changed |= state_changed;
+                if let Some(frame) = frame {
+                    let actual = frame.actual;
+                    self.ticket = Some((frame.ticket, self.playback.requested_at()));
+                    self.present(frame, status);
+                    if let Err(error) = self.playback.offered(self.generation, actual) {
+                        self.playback.fail(&error, Instant::now());
+                        self.fail(&error.to_string(), status);
+                    }
+                    changed = true;
+                }
+                if self.playback.active() {
+                    self.sync_transport();
+                }
+            }
+            Err(error) => {
+                self.playback.fail(&error, Instant::now());
+                self.fail(&user_message(&error), status);
+                changed = true;
+            }
+        }
         (registration, changed)
     }
 
@@ -392,6 +522,8 @@ impl MediaHost {
         self.frame = Some(PresentedFrame {
             generation: self.generation,
             image: decoded.image,
+            ticket: decoded.ticket,
+            actual: decoded.actual,
         });
         self.ticket = None;
         self.source.has_frame = true;
@@ -400,7 +532,9 @@ impl MediaHost {
         self.source.detail = String::new();
         self.source.caption = caption;
         self.metrics.decode_us = Some(decoded.decode_us);
-        self.metrics.request_to_ready_us = Some(ready_us);
+        if !self.playback.active() || self.playback.view.offered == 0 {
+            self.metrics.request_to_ready_us = Some(ready_us);
+        }
         self.metrics.frames_presented += 1;
     }
 
@@ -415,12 +549,14 @@ impl MediaHost {
             Ok(())
         };
         let decoder_result = self.decoder.shutdown();
+        let playback_result = self.playback.shutdown();
         if let Err(error) = probe_result
             && !matches!(error, MediaError::Cancelled)
         {
             return Err(error);
         }
-        decoder_result
+        decoder_result?;
+        playback_result
     }
 }
 

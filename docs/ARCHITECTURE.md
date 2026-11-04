@@ -1,13 +1,13 @@
 # CutCap architecture — Avalonia frontend over the Rust engine
 
-Phase 1's engine is unchanged. Since the Avalonia migration (docs/AVALONIA_MIGRATION_REPORT.md) the frontend is C#/.NET 10 + Avalonia 12; Rust keeps editing semantics, media processing, project state and all time arithmetic. The Slint frontend is retired; its last version is commit a3de692 on `claude/phase-2a-ui`.
+Since the Avalonia migration (docs/AVALONIA_MIGRATION_REPORT.md) the frontend is C#/.NET 10 + Avalonia 12; Rust keeps editing semantics, media processing, project state and all time arithmetic. Phase 2 adds source playback and ABI 2 (PHASE_2_PLAYBACK_CONTRACT.md). Production playback-button bindings remain a frontend handoff; the owner approved only an opt-in render diagnostics hook. The Slint frontend is retired; its last version is commit a3de692 on `claude/phase-2a-ui`.
 
 ## Workspace and ownership
 
 ```mermaid
 flowchart LR
   Desktop[CutCap.Desktop: Avalonia views / view models / frame presentation] --> Interop[CutCap.Interop: P/Invoke, SafeHandle, view DTOs]
-  Interop -- C ABI v1, cutcap_engine.dll --> Ffi[cutcap-ffi: session host / view mapping / ABI]
+  Interop -- C ABI v2, cutcap_engine.dll --> Ffi[cutcap-ffi: session host / view mapping / ABI]
   Ffi --> Core[cutcap-core: validated project]
   Ffi --> Media[cutcap-media: replaceable media adapter]
   Ffi --> Contracts[cutcap-contracts: IDs / exact time / DTOs]
@@ -25,6 +25,8 @@ Core remains independent of GUI, codecs, GPU, filesystem and threading. Contract
 | media/backend.rs, probe.rs | MediaBackend contract, FFmpeg policy and bounded metadata parsing |
 | media/process.rs, cancel.rs | Owned child processes, bounded pipe capture, timeout, cancellation and reaping |
 | media/frame.rs, latest.rs | Validated opaque RGBA8; bounded latest-request/result mailbox |
+| media/stream.rs, persistent.rs, clock.rs | Framed persistent decode, three-frame queue, latest epoch/reset and monotonic clock |
+| ffi/playback.rs | Source transport, two-frame lookahead, due/drop/buffering/EOF and copied-position accounting |
 | ffi/engine.rs, bridge.rs | Single project owner; reliable bounded channels (moved unchanged from the Slint app) |
 | ffi/media.rs | Probe job, latest decoder, ticket-gated presentation, latest frame (ported from media_ui/preview) |
 | ffi/session.rs | Request bookkeeping and pump (ported from the Slint coordinator) |
@@ -38,7 +40,7 @@ Core remains independent of GUI, codecs, GPU, filesystem and threading. Contract
 
 ## Lifecycle and data flow
 
-`App` creates `EngineHost`, the main window and its view models, then starts the session: `cutcap_session_create` verifies the ABI, starts the command worker and decoder and queues NewProject (two real empty tracks). A 16 ms `DispatcherTimer` on the UI thread calls pump, which drains at most eight reliable events, polls the probe and takes at most one decoded frame, then re-reads the view only when it changed. Nothing in the pump blocks.
+App creates EngineHost, the main window and its view models, then starts the session: cutcap_session_create verifies ABI 2, starts command/isolated/persistent workers and queues NewProject (two real empty tracks). A 16 ms UI timer drains at most eight reliable events, polls probe/frame work and selects at most one offered frame from bounded lookahead, then reads the view when changed. Decode, process I/O and waits stay off pump. Frame copying records delivery, not scanout. See PHASE_2_PLAYBACK_CONTRACT.md for clock/state/framing and PHASE_2_PLAYBACK_REPORT.md for measurements and pending visual bindings.
 
 Import opens Avalonia's native, window-parented, asynchronous picker (`StorageProvider`). The chosen path crosses the ABI as UTF-16. One probe thread canonicalizes and validates the file and invokes FFprobe; the session commits `RegisterMedia` through the project owner, which validates again. Only a successful snapshot adds a library entry and starts its preview.
 

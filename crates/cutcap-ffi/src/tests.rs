@@ -37,6 +37,19 @@ impl Controlled {
 }
 
 impl MediaBackend for Controlled {
+    fn stream(
+        &self,
+        request: &DecodeRequest,
+        cancel: &Cancellation,
+        emit: &mut (dyn FnMut(DecodedFrame) -> Result<(), MediaError> + Send),
+    ) -> Result<(), MediaError> {
+        for index in 0..30 {
+            let mut next = request.clone();
+            next.position.ticks += index * 100;
+            emit(self.decode(&next, cancel)?)?;
+        }
+        Ok(())
+    }
     fn probe(&self, path: &Path, _: &Cancellation) -> Result<ProbeResult, MediaError> {
         if path.to_string_lossy().contains("corrupt") {
             return Err(MediaError::Process {
@@ -113,6 +126,41 @@ fn imported(session: &mut Session, path: &str) -> Value {
             && v["frame"].is_object()
             && v["source"]["busy"] == false
     })
+}
+
+#[test]
+fn source_playback_state_is_independent_and_superseded_epochs_do_not_win() {
+    let mut session = session(Duration::from_millis(2));
+    imported(&mut session, r"C:\fixture.mkv");
+    session.play().unwrap();
+    let first = pump_until(&mut session, |v| {
+        v["playback"]["offered"].as_u64().is_some_and(|n| n > 0)
+    });
+    let epoch = first["playback"]["epoch"].clone();
+    let tracks = first["tracks"].clone();
+    session.pause();
+    let paused = view(&mut session);
+    thread::sleep(Duration::from_millis(30));
+    session.pump();
+    assert_eq!(
+        view(&mut session)["frame"]["generation"],
+        paused["frame"]["generation"]
+    );
+    session.play().unwrap();
+    assert_eq!(view(&mut session)["playback"]["epoch"], epoch);
+    for ms in [2200, 100, 800] {
+        session.seek(ms);
+    }
+    let latest = pump_until(&mut session, |v| {
+        v["playback"]["offered_pts"]["ticks"] == 800
+    });
+    assert_ne!(latest["playback"]["epoch"], epoch);
+    assert_eq!(latest["tracks"], tracks);
+    session.new_project().unwrap();
+    let next = ready(&mut session);
+    assert_eq!(next["playback"]["state"], "stopped");
+    assert!(next["frame"].is_null());
+    session.shutdown().unwrap();
 }
 
 #[test]

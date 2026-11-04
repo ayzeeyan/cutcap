@@ -3,6 +3,126 @@ use cutcap_media::*;
 use std::{path::PathBuf, sync::Mutex};
 
 static SERIAL: Mutex<()> = Mutex::new(());
+
+#[test]
+#[ignore = "requires external FFmpeg/FFprobe"]
+fn persistent_long_gop_bframes_match_independent_frame_pts_and_seek() {
+    let _guard = SERIAL.lock().unwrap();
+    let media = media("long-gop-bframes.mp4");
+    let oracle = std::process::Command::new(
+        std::env::var_os("CUTCAP_FFPROBE").unwrap_or_else(|| "ffprobe.exe".into()),
+    )
+    .args([
+        "-v",
+        "error",
+        "-select_streams",
+        "v:0",
+        "-show_frames",
+        "-show_entries",
+        "frame=pts,pict_type",
+        "-of",
+        "json",
+    ])
+    .arg(&media.path)
+    .output()
+    .unwrap();
+    assert!(oracle.status.success());
+    let json: serde_json::Value = serde_json::from_slice(&oracle.stdout).unwrap();
+    let frames = json["frames"].as_array().unwrap();
+    assert!(frames.iter().any(|f| f["pict_type"] == "B"));
+    let expected: Vec<i64> = frames.iter().map(|f| f["pts"].as_i64().unwrap()).collect();
+    for target in [media.metadata.start_pts, 37530] {
+        let request = DecodeRequest {
+            ticket: PreviewTicket {
+                project_id: ProjectId::new(),
+                media_id: media.id,
+                request_id: RequestId::new(),
+            },
+            position: SourceTime {
+                ticks: target,
+                timebase: media.metadata.timebase,
+            },
+            media: media.clone(),
+        };
+        let mut actual = Vec::new();
+        let mut pid = None;
+        FfmpegBackend::default()
+            .stream(&request, &Cancellation::default(), &mut |frame| {
+                if let Some(first) = pid {
+                    assert_eq!(first, frame.process_id);
+                } else {
+                    pid = Some(frame.process_id);
+                }
+                actual.push(frame.actual.ticks);
+                Ok(())
+            })
+            .unwrap();
+        assert_eq!(
+            actual,
+            expected
+                .iter()
+                .copied()
+                .filter(|pts| *pts >= target)
+                .collect::<Vec<_>>()
+        );
+    }
+}
+
+#[test]
+#[ignore = "requires external FFmpeg/FFprobe"]
+fn persistent_framed_vfr_packets_preserve_pts_and_colors() {
+    let _guard = SERIAL.lock().unwrap();
+    let media = media("colors-vfr.mkv");
+    let request = DecodeRequest {
+        ticket: PreviewTicket {
+            project_id: ProjectId::new(),
+            media_id: media.id,
+            request_id: RequestId::new(),
+        },
+        position: media.metadata.start(),
+        media,
+    };
+    let mut frames = Vec::new();
+    FfmpegBackend::default()
+        .stream(&request, &Cancellation::default(), &mut |frame| {
+            frames.push(frame);
+            Ok(())
+        })
+        .unwrap();
+    assert_eq!(
+        frames.iter().map(|f| f.actual.ticks).collect::<Vec<_>>(),
+        [0, 200, 700, 1500, 2300]
+    );
+    let pid = frames[0].process_id;
+    for (index, frame) in frames.iter().enumerate() {
+        assert_eq!(frame.process_id, pid);
+        color(frame, index % 3);
+    }
+    let offset = self::media("offset.mkv");
+    let request = DecodeRequest {
+        ticket: PreviewTicket {
+            project_id: ProjectId::new(),
+            media_id: offset.id,
+            request_id: RequestId::new(),
+        },
+        position: SourceTime {
+            ticks: 6250,
+            timebase: offset.metadata.timebase,
+        },
+        media: offset,
+    };
+    let mut first = None;
+    FfmpegBackend::default()
+        .stream(&request, &Cancellation::default(), &mut |frame| {
+            if first.is_none() {
+                color(&frame, 1);
+                first = Some(frame.actual.ticks);
+            }
+            Ok(())
+        })
+        .unwrap();
+    assert_eq!(first, Some(6250));
+}
 fn fixture(name: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../tests/fixtures")

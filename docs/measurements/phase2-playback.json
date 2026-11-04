@@ -1,0 +1,941 @@
+{
+  "date": "2026-11-04",
+  "hardware": "Intel Core Ultra 7 255H; integrated Intel Graphics; 16 GB RAM; Windows 11 x64",
+  "runtime": "Rust 1.99.1 MSVC; .NET 10.0.401; Avalonia 12.1.5; external FFmpeg 9.0.1 Gyan GPL static",
+  "method": "actual CutCap editor, original 16ms EngineHost pump; distinct FrameView.DrawImage generations, not physical scanout; generated playback controlled through public interop methods, visual Play remains frontend-owned",
+  "notes": "One actual editor process; nine sequential five-second episodes; 3 runs/resolution; all preview buffers 1280x720; 27 paused-transport seek-to-render samples. Normal desktop background workload; OS cache and power state uncontrolled. Render callback is DrawImage submission, not physical scanout. Memory is sampled host+decoder child during playback; import/probe peaks excluded. Upper-middle percentile convention.",
+  "error": null,
+  "sources": [
+    {
+      "name": "1080p.mp4",
+      "bytes": 4526385,
+      "sha256": "07350C1BE92B23E0D28F057BD0A2579D68D50FA52FE4FFD47166BBE208A6B395"
+    },
+    {
+      "name": "4k.mp4",
+      "bytes": 17024380,
+      "sha256": "E8FE9D82A5D8DA7789C9D686435D5369545812721C675983AD6CB37CF9DD769E"
+    },
+    {
+      "name": "720p.mp4",
+      "bytes": 2218912,
+      "sha256": "BA3926A887312BBCBA05B5A1B4EEFF3FD6FDE69B16315D34696CEE64D5D58B50"
+    }
+  ],
+  "runs": [
+    {
+      "source": "720p",
+      "run": 1,
+      "seconds": 5.1354436,
+      "decoded": 150,
+      "offered": 150,
+      "copied": 150,
+      "distinctRenders": 150,
+      "distinctRenderFps": 29.208771760242872,
+      "nativeDropped": 0,
+      "bufferStalls": 0,
+      "firstRenderMs": 128.9797,
+      "gapP50Ms": 25.8977,
+      "gapP95Ms": 52.0089,
+      "gapMaxMs": 72.1412,
+      "copyP50Us": 349.1,
+      "maxDispatcherGapMs": 66.20070000000032,
+      "peakTotalWorkingSetBytes": 421629952,
+      "peakTotalPrivateBytes": 328056832,
+      "cpuMachinePercent": 11.523773233533321,
+      "cpuOneCorePercent": 184.38037173653314,
+      "logicalProcessors": 16,
+      "scale": 1.5,
+      "clientWidth": 1282.6666666666667,
+      "clientHeight": 810,
+      "seeks": [
+        {
+          "requestedMs": 1250,
+          "renderLatencyMs": 141.1794,
+          "actual": {
+            "Ticks": 19456,
+            "Timebase": {
+              "Numerator": 1,
+              "Denominator": 15360
+            }
+          },
+          "readyUs": 131664
+        },
+        {
+          "requestedMs": 2750,
+          "renderLatencyMs": 188.8437,
+          "actual": {
+            "Ticks": 42496,
+            "Timebase": {
+              "Numerator": 1,
+              "Denominator": 15360
+            }
+          },
+          "readyUs": 176786
+        },
+        {
+          "requestedMs": 4800,
+          "renderLatencyMs": 238.1422,
+          "actual": {
+            "Ticks": 73728,
+            "Timebase": {
+              "Numerator": 1,
+              "Denominator": 15360
+            }
+          },
+          "readyUs": 226597
+        }
+      ]
+    },
+    {
+      "source": "720p",
+      "run": 2,
+      "seconds": 5.1071022,
+      "decoded": 150,
+      "offered": 150,
+      "copied": 150,
+      "distinctRenders": 150,
+      "distinctRenderFps": 29.370863187347222,
+      "nativeDropped": 0,
+      "bufferStalls": 0,
+      "firstRenderMs": 107.0294,
+      "gapP50Ms": 26.4667,
+      "gapP95Ms": 50.9806,
+      "gapMaxMs": 59.1947,
+      "copyP50Us": 358.6,
+      "maxDispatcherGapMs": 29.262800000000425,
+      "peakTotalWorkingSetBytes": 436686848,
+      "peakTotalPrivateBytes": 337969152,
+      "cpuMachinePercent": 10.72724885944127,
+      "cpuOneCorePercent": 171.6359817510603,
+      "logicalProcessors": 16,
+      "scale": 1.5,
+      "clientWidth": 1282.6666666666667,
+      "clientHeight": 810,
+      "seeks": [
+        {
+          "requestedMs": 1250,
+          "renderLatencyMs": 141.6687,
+          "actual": {
+            "Ticks": 19456,
+            "Timebase": {
+              "Numerator": 1,
+              "Denominator": 15360
+            }
+          },
+          "readyUs": 133967
+        },
+        {
+          "requestedMs": 2750,
+          "renderLatencyMs": 191.1573,
+          "actual": {
+            "Ticks": 42496,
+            "Timebase": {
+              "Numerator": 1,
+              "Denominator": 15360
+            }
+          },
+          "readyUs": 181693
+        },
+        {
+          "requestedMs": 4800,
+          "renderLatencyMs": 237.5993,
+          "actual": {
+            "Ticks": 73728,
+            "Timebase": {
+              "Numerator": 1,
+              "Denominator": 15360
+            }
+          },
+          "readyUs": 225949
+        }
+      ]
+    },
+    {
+      "source": "720p",
+      "run": 3,
+      "seconds": 5.1199619,
+      "decoded": 150,
+      "offered": 150,
+      "copied": 150,
+      "distinctRenders": 150,
+      "distinctRenderFps": 29.297093011571043,
+      "nativeDropped": 0,
+      "bufferStalls": 0,
+      "firstRenderMs": 114.1727,
+      "gapP50Ms": 26.3988,
+      "gapP95Ms": 50.0422,
+      "gapMaxMs": 54.8241,
+      "copyP50Us": 339,
+      "maxDispatcherGapMs": 36.72960000000057,
+      "peakTotalWorkingSetBytes": 434978816,
+      "peakTotalPrivateBytes": 336957440,
+      "cpuMachinePercent": 9.51774050310804,
+      "cpuOneCorePercent": 152.28384804972865,
+      "logicalProcessors": 16,
+      "scale": 1.5,
+      "clientWidth": 1282.6666666666667,
+      "clientHeight": 810,
+      "seeks": [
+        {
+          "requestedMs": 1250,
+          "renderLatencyMs": 141.7039,
+          "actual": {
+            "Ticks": 19456,
+            "Timebase": {
+              "Numerator": 1,
+              "Denominator": 15360
+            }
+          },
+          "readyUs": 131994
+        },
+        {
+          "requestedMs": 2750,
+          "renderLatencyMs": 186.3444,
+          "actual": {
+            "Ticks": 42496,
+            "Timebase": {
+              "Numerator": 1,
+              "Denominator": 15360
+            }
+          },
+          "readyUs": 177909
+        },
+        {
+          "requestedMs": 4800,
+          "renderLatencyMs": 235.2487,
+          "actual": {
+            "Ticks": 73728,
+            "Timebase": {
+              "Numerator": 1,
+              "Denominator": 15360
+            }
+          },
+          "readyUs": 224767
+        }
+      ]
+    },
+    {
+      "source": "1080p",
+      "run": 1,
+      "seconds": 5.1388716,
+      "decoded": 150,
+      "offered": 150,
+      "copied": 150,
+      "distinctRenders": 150,
+      "distinctRenderFps": 29.18928739141877,
+      "nativeDropped": 0,
+      "bufferStalls": 0,
+      "firstRenderMs": 122.9395,
+      "gapP50Ms": 26.0727,
+      "gapP95Ms": 49.879,
+      "gapMaxMs": 52.9672,
+      "copyP50Us": 380.5,
+      "maxDispatcherGapMs": 42.61030000000028,
+      "peakTotalWorkingSetBytes": 461086720,
+      "peakTotalPrivateBytes": 361934848,
+      "cpuMachinePercent": 10.204848521609296,
+      "cpuOneCorePercent": 163.27757634574874,
+      "logicalProcessors": 16,
+      "scale": 1.5,
+      "clientWidth": 1282.6666666666667,
+      "clientHeight": 810,
+      "seeks": [
+        {
+          "requestedMs": 1250,
+          "renderLatencyMs": 190.0351,
+          "actual": {
+            "Ticks": 19456,
+            "Timebase": {
+              "Numerator": 1,
+              "Denominator": 15360
+            }
+          },
+          "readyUs": 179977
+        },
+        {
+          "requestedMs": 2750,
+          "renderLatencyMs": 284.0344,
+          "actual": {
+            "Ticks": 42496,
+            "Timebase": {
+              "Numerator": 1,
+              "Denominator": 15360
+            }
+          },
+          "readyUs": 273096
+        },
+        {
+          "requestedMs": 4800,
+          "renderLatencyMs": 374.6315,
+          "actual": {
+            "Ticks": 73728,
+            "Timebase": {
+              "Numerator": 1,
+              "Denominator": 15360
+            }
+          },
+          "readyUs": 362694
+        }
+      ]
+    },
+    {
+      "source": "1080p",
+      "run": 2,
+      "seconds": 5.1282401,
+      "decoded": 150,
+      "offered": 150,
+      "copied": 150,
+      "distinctRenders": 150,
+      "distinctRenderFps": 29.24980053098528,
+      "nativeDropped": 0,
+      "bufferStalls": 0,
+      "firstRenderMs": 110.8472,
+      "gapP50Ms": 26.1485,
+      "gapP95Ms": 50.1738,
+      "gapMaxMs": 53.6249,
+      "copyP50Us": 343.2,
+      "maxDispatcherGapMs": 30.911400000000867,
+      "peakTotalWorkingSetBytes": 461115392,
+      "peakTotalPrivateBytes": 361590784,
+      "cpuMachinePercent": 10.397390032498674,
+      "cpuOneCorePercent": 166.35824051997878,
+      "logicalProcessors": 16,
+      "scale": 1.5,
+      "clientWidth": 1282.6666666666667,
+      "clientHeight": 810,
+      "seeks": [
+        {
+          "requestedMs": 1250,
+          "renderLatencyMs": 189.3379,
+          "actual": {
+            "Ticks": 19456,
+            "Timebase": {
+              "Numerator": 1,
+              "Denominator": 15360
+            }
+          },
+          "readyUs": 178843
+        },
+        {
+          "requestedMs": 2750,
+          "renderLatencyMs": 269.4013,
+          "actual": {
+            "Ticks": 42496,
+            "Timebase": {
+              "Numerator": 1,
+              "Denominator": 15360
+            }
+          },
+          "readyUs": 257104
+        },
+        {
+          "requestedMs": 4800,
+          "renderLatencyMs": 375.5127,
+          "actual": {
+            "Ticks": 73728,
+            "Timebase": {
+              "Numerator": 1,
+              "Denominator": 15360
+            }
+          },
+          "readyUs": 363580
+        }
+      ]
+    },
+    {
+      "source": "1080p",
+      "run": 3,
+      "seconds": 5.1280101,
+      "decoded": 150,
+      "offered": 150,
+      "copied": 150,
+      "distinctRenders": 150,
+      "distinctRenderFps": 29.251112434431437,
+      "nativeDropped": 0,
+      "bufferStalls": 0,
+      "firstRenderMs": 117.1469,
+      "gapP50Ms": 26.0322,
+      "gapP95Ms": 50.1851,
+      "gapMaxMs": 58.8261,
+      "copyP50Us": 372,
+      "maxDispatcherGapMs": 31.285100000000966,
+      "peakTotalWorkingSetBytes": 472977408,
+      "peakTotalPrivateBytes": 373166080,
+      "cpuMachinePercent": 9.407584337636152,
+      "cpuOneCorePercent": 150.52134940217843,
+      "logicalProcessors": 16,
+      "scale": 1.5,
+      "clientWidth": 1282.6666666666667,
+      "clientHeight": 810,
+      "seeks": [
+        {
+          "requestedMs": 1250,
+          "renderLatencyMs": 198.3288,
+          "actual": {
+            "Ticks": 19456,
+            "Timebase": {
+              "Numerator": 1,
+              "Denominator": 15360
+            }
+          },
+          "readyUs": 183170
+        },
+        {
+          "requestedMs": 2750,
+          "renderLatencyMs": 272.6171,
+          "actual": {
+            "Ticks": 42496,
+            "Timebase": {
+              "Numerator": 1,
+              "Denominator": 15360
+            }
+          },
+          "readyUs": 260633
+        },
+        {
+          "requestedMs": 4800,
+          "renderLatencyMs": 371.1665,
+          "actual": {
+            "Ticks": 73728,
+            "Timebase": {
+              "Numerator": 1,
+              "Denominator": 15360
+            }
+          },
+          "readyUs": 360324
+        }
+      ]
+    },
+    {
+      "source": "4k",
+      "run": 1,
+      "seconds": 5.1879062,
+      "decoded": 150,
+      "offered": 150,
+      "copied": 150,
+      "distinctRenders": 150,
+      "distinctRenderFps": 28.91339862698366,
+      "nativeDropped": 0,
+      "bufferStalls": 0,
+      "firstRenderMs": 191.9142,
+      "gapP50Ms": 26.0875,
+      "gapP95Ms": 50.9014,
+      "gapMaxMs": 57.2388,
+      "copyP50Us": 460.4,
+      "maxDispatcherGapMs": 37.359800000005635,
+      "peakTotalWorkingSetBytes": 579076096,
+      "peakTotalPrivateBytes": 480972800,
+      "cpuMachinePercent": 12.536668935918696,
+      "cpuOneCorePercent": 200.58670297469914,
+      "logicalProcessors": 16,
+      "scale": 1.5,
+      "clientWidth": 1282.6666666666667,
+      "clientHeight": 810,
+      "seeks": [
+        {
+          "requestedMs": 1250,
+          "renderLatencyMs": 452.1089,
+          "actual": {
+            "Ticks": 19456,
+            "Timebase": {
+              "Numerator": 1,
+              "Denominator": 15360
+            }
+          },
+          "readyUs": 441961
+        },
+        {
+          "requestedMs": 2750,
+          "renderLatencyMs": 768.1478,
+          "actual": {
+            "Ticks": 42496,
+            "Timebase": {
+              "Numerator": 1,
+              "Denominator": 15360
+            }
+          },
+          "readyUs": 757658
+        },
+        {
+          "requestedMs": 4800,
+          "renderLatencyMs": 1181.6127,
+          "actual": {
+            "Ticks": 73728,
+            "Timebase": {
+              "Numerator": 1,
+              "Denominator": 15360
+            }
+          },
+          "readyUs": 1170682
+        }
+      ]
+    },
+    {
+      "source": "4k",
+      "run": 2,
+      "seconds": 5.1866298,
+      "decoded": 150,
+      "offered": 150,
+      "copied": 150,
+      "distinctRenders": 150,
+      "distinctRenderFps": 28.9205140494122,
+      "nativeDropped": 0,
+      "bufferStalls": 0,
+      "firstRenderMs": 176.5058,
+      "gapP50Ms": 26.2154,
+      "gapP95Ms": 51.7693,
+      "gapMaxMs": 59.2387,
+      "copyP50Us": 424.8,
+      "maxDispatcherGapMs": 31.7387000000017,
+      "peakTotalWorkingSetBytes": 583282688,
+      "peakTotalPrivateBytes": 484499456,
+      "cpuMachinePercent": 12.803352573958527,
+      "cpuOneCorePercent": 204.85364118333644,
+      "logicalProcessors": 16,
+      "scale": 1.5,
+      "clientWidth": 1282.6666666666667,
+      "clientHeight": 810,
+      "seeks": [
+        {
+          "requestedMs": 1250,
+          "renderLatencyMs": 450.7788,
+          "actual": {
+            "Ticks": 19456,
+            "Timebase": {
+              "Numerator": 1,
+              "Denominator": 15360
+            }
+          },
+          "readyUs": 439292
+        },
+        {
+          "requestedMs": 2750,
+          "renderLatencyMs": 764.6628,
+          "actual": {
+            "Ticks": 42496,
+            "Timebase": {
+              "Numerator": 1,
+              "Denominator": 15360
+            }
+          },
+          "readyUs": 757314
+        },
+        {
+          "requestedMs": 4800,
+          "renderLatencyMs": 1192.0494,
+          "actual": {
+            "Ticks": 73728,
+            "Timebase": {
+              "Numerator": 1,
+              "Denominator": 15360
+            }
+          },
+          "readyUs": 1181740
+        }
+      ]
+    },
+    {
+      "source": "4k",
+      "run": 3,
+      "seconds": 5.1893168,
+      "decoded": 150,
+      "offered": 150,
+      "copied": 150,
+      "distinctRenders": 150,
+      "distinctRenderFps": 28.90553916461604,
+      "nativeDropped": 0,
+      "bufferStalls": 0,
+      "firstRenderMs": 185.5569,
+      "gapP50Ms": 26.5682,
+      "gapP95Ms": 51.1921,
+      "gapMaxMs": 56.0336,
+      "copyP50Us": 454.1,
+      "maxDispatcherGapMs": 35.98730000000069,
+      "peakTotalWorkingSetBytes": 596971520,
+      "peakTotalPrivateBytes": 498020352,
+      "cpuMachinePercent": 12.740266936487668,
+      "cpuOneCorePercent": 203.8442709838027,
+      "logicalProcessors": 16,
+      "scale": 1.5,
+      "clientWidth": 1282.6666666666667,
+      "clientHeight": 810,
+      "seeks": [
+        {
+          "requestedMs": 1250,
+          "renderLatencyMs": 450.1505,
+          "actual": {
+            "Ticks": 19456,
+            "Timebase": {
+              "Numerator": 1,
+              "Denominator": 15360
+            }
+          },
+          "readyUs": 439116
+        },
+        {
+          "requestedMs": 2750,
+          "renderLatencyMs": 776.5514,
+          "actual": {
+            "Ticks": 42496,
+            "Timebase": {
+              "Numerator": 1,
+              "Denominator": 15360
+            }
+          },
+          "readyUs": 752934
+        },
+        {
+          "requestedMs": 4800,
+          "renderLatencyMs": 1203.2705,
+          "actual": {
+            "Ticks": 73728,
+            "Timebase": {
+              "Numerator": 1,
+              "Denominator": 15360
+            }
+          },
+          "readyUs": 1185320
+        }
+      ]
+    }
+  ],
+  "decodePipeThroughput": [
+    {
+      "source": "720p",
+      "run": 1,
+      "result": {
+        "bytes": 552960000,
+        "first_pts": {
+          "ticks": 0,
+          "timebase": {
+            "denominator": 15360,
+            "numerator": 1
+          }
+        },
+        "fps": 259.9585799329307,
+        "frames": 150,
+        "last_pts": {
+          "ticks": 76288,
+          "timebase": {
+            "denominator": 15360,
+            "numerator": 1
+          }
+        },
+        "method": "unpaced decode + PAM pipe + validation; not presented FPS",
+        "pid": 23140,
+        "seconds": 0.577015
+      }
+    },
+    {
+      "source": "720p",
+      "run": 2,
+      "result": {
+        "bytes": 552960000,
+        "first_pts": {
+          "ticks": 0,
+          "timebase": {
+            "denominator": 15360,
+            "numerator": 1
+          }
+        },
+        "fps": 274.3016143747212,
+        "frames": 150,
+        "last_pts": {
+          "ticks": 76288,
+          "timebase": {
+            "denominator": 15360,
+            "numerator": 1
+          }
+        },
+        "method": "unpaced decode + PAM pipe + validation; not presented FPS",
+        "pid": 29408,
+        "seconds": 0.5468433
+      }
+    },
+    {
+      "source": "720p",
+      "run": 3,
+      "result": {
+        "bytes": 552960000,
+        "first_pts": {
+          "ticks": 0,
+          "timebase": {
+            "denominator": 15360,
+            "numerator": 1
+          }
+        },
+        "fps": 295.16670425122703,
+        "frames": 150,
+        "last_pts": {
+          "ticks": 76288,
+          "timebase": {
+            "denominator": 15360,
+            "numerator": 1
+          }
+        },
+        "method": "unpaced decode + PAM pipe + validation; not presented FPS",
+        "pid": 13572,
+        "seconds": 0.5081874
+      }
+    },
+    {
+      "source": "1080p",
+      "run": 1,
+      "result": {
+        "bytes": 552960000,
+        "first_pts": {
+          "ticks": 0,
+          "timebase": {
+            "denominator": 15360,
+            "numerator": 1
+          }
+        },
+        "fps": 204.2510081489344,
+        "frames": 150,
+        "last_pts": {
+          "ticks": 76288,
+          "timebase": {
+            "denominator": 15360,
+            "numerator": 1
+          }
+        },
+        "method": "unpaced decode + PAM pipe + validation; not presented FPS",
+        "pid": 32584,
+        "seconds": 0.7343905
+      }
+    },
+    {
+      "source": "1080p",
+      "run": 2,
+      "result": {
+        "bytes": 552960000,
+        "first_pts": {
+          "ticks": 0,
+          "timebase": {
+            "denominator": 15360,
+            "numerator": 1
+          }
+        },
+        "fps": 245.6714733655272,
+        "frames": 150,
+        "last_pts": {
+          "ticks": 76288,
+          "timebase": {
+            "denominator": 15360,
+            "numerator": 1
+          }
+        },
+        "method": "unpaced decode + PAM pipe + validation; not presented FPS",
+        "pid": 32312,
+        "seconds": 0.6105715
+      }
+    },
+    {
+      "source": "1080p",
+      "run": 3,
+      "result": {
+        "bytes": 552960000,
+        "first_pts": {
+          "ticks": 0,
+          "timebase": {
+            "denominator": 15360,
+            "numerator": 1
+          }
+        },
+        "fps": 252.86542889601145,
+        "frames": 150,
+        "last_pts": {
+          "ticks": 76288,
+          "timebase": {
+            "denominator": 15360,
+            "numerator": 1
+          }
+        },
+        "method": "unpaced decode + PAM pipe + validation; not presented FPS",
+        "pid": 11832,
+        "seconds": 0.5932009
+      }
+    },
+    {
+      "source": "4k",
+      "run": 1,
+      "result": {
+        "bytes": 552960000,
+        "first_pts": {
+          "ticks": 0,
+          "timebase": {
+            "denominator": 15360,
+            "numerator": 1
+          }
+        },
+        "fps": 123.63025914880403,
+        "frames": 150,
+        "last_pts": {
+          "ticks": 76288,
+          "timebase": {
+            "denominator": 15360,
+            "numerator": 1
+          }
+        },
+        "method": "unpaced decode + PAM pipe + validation; not presented FPS",
+        "pid": 28980,
+        "seconds": 1.2132952
+      }
+    },
+    {
+      "source": "4k",
+      "run": 2,
+      "result": {
+        "bytes": 552960000,
+        "first_pts": {
+          "ticks": 0,
+          "timebase": {
+            "denominator": 15360,
+            "numerator": 1
+          }
+        },
+        "fps": 125.8598218613644,
+        "frames": 150,
+        "last_pts": {
+          "ticks": 76288,
+          "timebase": {
+            "denominator": 15360,
+            "numerator": 1
+          }
+        },
+        "method": "unpaced decode + PAM pipe + validation; not presented FPS",
+        "pid": 2228,
+        "seconds": 1.1918021
+      }
+    },
+    {
+      "source": "4k",
+      "run": 3,
+      "result": {
+        "bytes": 552960000,
+        "first_pts": {
+          "ticks": 0,
+          "timebase": {
+            "denominator": 15360,
+            "numerator": 1
+          }
+        },
+        "fps": 129.15421297168086,
+        "frames": 150,
+        "last_pts": {
+          "ticks": 76288,
+          "timebase": {
+            "denominator": 15360,
+            "numerator": 1
+          }
+        },
+        "method": "unpaced decode + PAM pipe + validation; not presented FPS",
+        "pid": 19936,
+        "seconds": 1.1614023
+      }
+    }
+  ],
+  "priorExperimentSummary": [
+    {
+      "source": "720p",
+      "run": 1,
+      "rendered": 150,
+      "distinctRenderFps": 29.240348038895668,
+      "Decoded": 150,
+      "Copied": 150,
+      "Dropped": 0,
+      "BufferStalls": 0,
+      "maxDispatcherGapMs": 60.03150000000005
+    },
+    {
+      "source": "720p",
+      "run": 2,
+      "rendered": 149,
+      "distinctRenderFps": 29.210835557522813,
+      "Decoded": 150,
+      "Copied": 149,
+      "Dropped": 1,
+      "BufferStalls": 0,
+      "maxDispatcherGapMs": 61.93159999999989
+    },
+    {
+      "source": "720p",
+      "run": 3,
+      "rendered": 150,
+      "distinctRenderFps": 29.21745829616873,
+      "Decoded": 150,
+      "Copied": 150,
+      "Dropped": 0,
+      "BufferStalls": 0,
+      "maxDispatcherGapMs": 64.70429999999942
+    },
+    {
+      "source": "1080p",
+      "run": 1,
+      "rendered": 149,
+      "distinctRenderFps": 29.072706135681464,
+      "Decoded": 150,
+      "Copied": 149,
+      "Dropped": 1,
+      "BufferStalls": 0,
+      "maxDispatcherGapMs": 63.53129999999874
+    },
+    {
+      "source": "1080p",
+      "run": 2,
+      "rendered": 148,
+      "distinctRenderFps": 28.677239835817375,
+      "Decoded": 150,
+      "Copied": 148,
+      "Dropped": 2,
+      "BufferStalls": 0,
+      "maxDispatcherGapMs": 68.85710000000108
+    },
+    {
+      "source": "1080p",
+      "run": 3,
+      "rendered": 149,
+      "distinctRenderFps": 28.980063583426485,
+      "Decoded": 150,
+      "Copied": 150,
+      "Dropped": 0,
+      "BufferStalls": 0,
+      "maxDispatcherGapMs": 64.46789999999964
+    },
+    {
+      "source": "4k",
+      "run": 1,
+      "rendered": 149,
+      "distinctRenderFps": 28.680769674825132,
+      "Decoded": 150,
+      "Copied": 149,
+      "Dropped": 1,
+      "BufferStalls": 0,
+      "maxDispatcherGapMs": 47.52339999999822
+    },
+    {
+      "source": "4k",
+      "run": 2,
+      "rendered": 150,
+      "distinctRenderFps": 28.972135276307736,
+      "Decoded": 150,
+      "Copied": 150,
+      "Dropped": 0,
+      "BufferStalls": 0,
+      "maxDispatcherGapMs": 52.7957000000024
+    },
+    {
+      "source": "4k",
+      "run": 3,
+      "rendered": 150,
+      "distinctRenderFps": 28.899672148632636,
+      "Decoded": 150,
+      "Copied": 150,
+      "Dropped": 0,
+      "BufferStalls": 0,
+      "maxDispatcherGapMs": 42.803899999998976
+    }
+  ],
+  "binarySha256": "7FC1B3F7DAA574456E37E07DD71DFC58DF28DF65222DD4EC45666FC5CB6C96B3"
+}

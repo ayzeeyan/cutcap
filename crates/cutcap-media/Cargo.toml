@@ -12,3 +12,6 @@ thiserror.workspace = true
 
 [lints]
 workspace = true
+
+[target.'cfg(windows)'.dependencies]
+win-custody = "=0.1.2"

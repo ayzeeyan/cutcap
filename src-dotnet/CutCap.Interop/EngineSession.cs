@@ -46,6 +46,9 @@ public sealed class EngineSession : IDisposable
 
     public bool IsDisposed => _handle.IsClosed;
 
+    /// <summary>Last immutable view read on the owning thread; diagnostics need no extra ABI polling.</summary>
+    public SessionView? LastReadView { get; private set; }
+
     /// <summary>Loads the engine, verifies the ABI and starts a session with an empty project.</summary>
     public static EngineSession Start()
     {
@@ -113,6 +116,12 @@ public sealed class EngineSession : IDisposable
 
     public void CancelPreview() => Check(NativeMethods.CancelPreview(Handle));
 
+    /// <summary>Accepts source playback/resume; inspect Playback state for readiness.</summary>
+    public void Play() => Check(NativeMethods.Play(Handle));
+    public void Resume() => Play();
+    public void Pause() => Check(NativeMethods.Pause(Handle));
+    public void Stop() => Check(NativeMethods.Stop(Handle));
+
     /// <summary>Drains bounded worker results. True when the view changed since it was last read.</summary>
     public bool Pump()
     {
@@ -145,8 +154,9 @@ public sealed class EngineSession : IDisposable
             {
                 throw new EngineException(NativeStatus.Failed, "The engine reported an invalid view length.");
             }
-            return JsonSerializer.Deserialize(_viewBuffer.AsSpan(0, (int)length), ViewJsonContext.Default.SessionView)
+            LastReadView = JsonSerializer.Deserialize(_viewBuffer.AsSpan(0, (int)length), ViewJsonContext.Default.SessionView)
                 ?? throw new EngineException(NativeStatus.Failed, "The engine returned an empty view.");
+            return LastReadView;
         }
     }
 

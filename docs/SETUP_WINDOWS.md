@@ -76,6 +76,21 @@ Engine tracing goes to stderr (`RUST_LOG`, default `cutcap_engine=info,cutcap_me
 
 ## Interactive smoke check
 
+Phase 2 engine/interop playback is ABI 2. Claude still owns visual Play/Pause/Stop bindings; the opt-in probe below opens the existing editor and drives its public engine session for measurements. It does not replace views or simulate media time.
+
+```powershell
+./scripts/generate-playback-fixtures.ps1
+dotnet build tools/CutCap.PlaybackProbe -c Release
+# Actual Avalonia FrameView renders, seek latency, dispatcher gaps and host+child resources:
+tools/CutCap.PlaybackProbe/bin/Release/net10.0/win-x64/CutCap.PlaybackProbe.exe --ui .artifacts/playback/sources .artifacts/playback/ui.json
+# Offscreen ABI delivery (not rendered FPS):
+tools/CutCap.PlaybackProbe/bin/Release/net10.0/win-x64/CutCap.PlaybackProbe.exe .artifacts/playback/sources .artifacts/playback/delivery.json
+# Unpaced native decoder + framed pipe throughput (not presented FPS):
+cargo run -p cutcap-media --release --example measure_decode -- .artifacts/playback/sources/1080p.mp4
+```
+
+Run measurement modes sequentially without builds or another benchmark. PAM frame packets are paired with nonce/index/PTS/timebase/size records; missing records are errors. Windows children are resource-limited by a kill-on-close job (1 GiB commit each). Physical scanout is not measured by the render hook. See PHASE_2_PLAYBACK_REPORT.md for actual results and limits.
+
 See tests/ui_smoke.md. Record the actual DPI scale and window sizes tested; CI cannot validate a visible desktop.
 
 ## Optional tools already installed (audited)

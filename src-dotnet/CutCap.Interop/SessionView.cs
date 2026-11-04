@@ -18,7 +18,8 @@ public sealed record SessionView(
     InspectorView Inspector,
     SourceView Source,
     FrameView? Frame,
-    PreviewMetrics Metrics);
+    PreviewMetrics Metrics,
+    PlaybackView? Playback = null);
 
 public sealed record ProjectView(string Id, string Name, bool Saved, int ClipCount);
 
@@ -60,7 +61,23 @@ public sealed record SourceView(
     string Detail,
     string Caption);
 
-public sealed record FrameView(ulong Generation, uint Width, uint Height);
+public sealed record FrameView(ulong Generation, uint Width, uint Height,
+    SourceTimestamp? Actual = null, string? Epoch = null);
+
+public sealed record RationalTimebase(uint Numerator, uint Denominator);
+public sealed record SourceTimestamp(long Ticks, RationalTimebase Timebase);
+
+[JsonConverter(typeof(JsonStringEnumConverter<PlaybackState>))]
+public enum PlaybackState { Stopped, Starting, Playing, Paused, Seeking, Buffering, Ended, Failed }
+
+/// <summary>Source-only transport. Copied time acknowledges pixel delivery, not physical scanout.</summary>
+public sealed record PlaybackView(
+    PlaybackState State, bool DesiredPlaying, string? Epoch, long RequestedMs,
+    ulong ClockMs, ulong? OfferedMs, ulong? CopiedMs,
+    SourceTimestamp? OfferedPts, SourceTimestamp? CopiedPts,
+    ulong Decoded, ulong Offered, ulong Copied, ulong Dropped, ulong BufferStalls,
+    int Buffered, uint? ProcessId, string? Error,
+    string RequestedText, string CopiedText, string ClockText, ulong? RequestToReadyUs);
 
 public sealed record PreviewMetrics(ulong? ProbeUs, ulong? DecodeUs, ulong? RequestToReadyUs, ulong FramesPresented);
 

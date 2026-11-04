@@ -28,7 +28,7 @@ use std::{
 
 /// Bump on any incompatible change to a signature, struct layout, status code
 /// or view JSON field the frontend depends on.
-pub const ABI_VERSION: u32 = 1;
+pub const ABI_VERSION: u32 = 2;
 
 pub const CUTCAP_OK: i32 = 0;
 pub const CUTCAP_INVALID_ARGUMENT: i32 = 1;
@@ -399,11 +399,38 @@ pub extern "C" fn cutcap_session_cancel_import(handle: u64) -> i32 {
     })
 }
 
+/// Accepts source Play/Resume; decoding and scheduling remain asynchronous.
+#[unsafe(no_mangle)]
+pub extern "C" fn cutcap_session_play(handle: u64) -> i32 {
+    guard(|| with_session(handle, |s| Ok(s.play()?)))
+}
+#[unsafe(no_mangle)]
+pub extern "C" fn cutcap_session_pause(handle: u64) -> i32 {
+    guard(|| {
+        with_session(handle, |s| {
+            s.pause();
+            Ok(())
+        })
+    })
+}
+#[unsafe(no_mangle)]
+pub extern "C" fn cutcap_session_stop(handle: u64) -> i32 {
+    guard(|| with_session(handle, |s| Ok(s.stop()?)))
+}
+
 /// Requests the first frame at or after `milliseconds` into the selected source.
 #[unsafe(no_mangle)]
 pub extern "C" fn cutcap_session_seek(handle: u64, milliseconds: i64) -> i32 {
     guard(|| {
+        if !(0..=cutcap_contracts::MAX_MEDIA_SECONDS * 1000).contains(&milliseconds) {
+            return Err(Fail::argument(
+                "Source position must be between zero and 24 hours.",
+            ));
+        }
         with_session(handle, |s| {
+            if !s.source_ready() {
+                return Err(Fail::argument("Select a source before seeking."));
+            }
             s.seek(milliseconds);
             Ok(())
         })
@@ -519,7 +546,7 @@ pub unsafe extern "C" fn cutcap_session_copy_frame(
             let frame = s
                 .frame()
                 .ok_or_else(|| Fail::new(CUTCAP_NO_FRAME, "No frame is available."))?;
-            if frame.generation != generation {
+            if frame.generation != generation || !s.copy_allowed(generation) {
                 return Err(Fail::new(
                     CUTCAP_STALE_FRAME,
                     "A newer frame replaced this one.",
@@ -532,7 +559,11 @@ pub unsafe extern "C" fn cutcap_session_copy_frame(
                 .checked_mul(rows - 1)
                 .and_then(|n| n.checked_add(row))
                 .ok_or_else(|| Fail::argument("Destination size overflow."))?;
-            if dst.is_null() || dst_stride < row || dst_len < required {
+            if dst.is_null()
+                || dst_len > isize::MAX as usize
+                || dst_stride < row
+                || dst_len < required
+            {
                 return Err(Fail::argument(
                     "Destination buffer is too small for this frame.",
                 ));
@@ -544,6 +575,7 @@ pub unsafe extern "C" fn cutcap_session_copy_frame(
                 let start = index * dst_stride;
                 target[start..start + row].copy_from_slice(source);
             }
+            s.frame_copied(generation)?;
             Ok(())
         })
     })

@@ -33,7 +33,7 @@ public sealed class InteropTests
         return path.Split(Path.PathSeparator).Any(folder => folder.Length > 0 && File.Exists(Path.Combine(folder, name)));
     }
 
-    private static void RequireFfmpeg()
+    internal static void RequireFfmpeg()
     {
         Assert.SkipUnless(HasTool("ffprobe.exe", "CUTCAP_FFPROBE") && HasTool("ffmpeg.exe", "CUTCAP_FFMPEG"),
             "Requires the external development FFmpeg/FFprobe on PATH (never bundled).");

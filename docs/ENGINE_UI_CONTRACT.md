@@ -1,6 +1,6 @@
 # UI–engine and media contracts, version 2
 
-cutcap-contracts is the Rust source of truth. CONTRACT_VERSION is 2; Project schema stays 1. This is an in-process typed protocol, not a plugin/network ABI. Phase 1 adds RegisterMedia, SelectMedia, metadata DTOs and media snapshot fields. Producer, consumer, tests and docs change together. Since the Avalonia migration the session that consumes this protocol lives in `crates/cutcap-ffi` (ported from the Slint coordinator); the .NET frontend reaches it only through the versioned C ABI in NATIVE_ABI.md (ABI 1). The ABI does not change this contract.
+cutcap-contracts is the Rust source of truth. CONTRACT_VERSION is 2; Project schema stays 1. This is an in-process project protocol, not a plugin/network ABI. The session lives in cutcap-ffi; the .NET frontend reaches it through ABI 2 in NATIVE_ABI.md. Project commands below are unchanged. Source Play/Pause/Stop and continuous seek/clock/frame delivery are separately specified in PHASE_2_PLAYBACK_CONTRACT.md, which is the frontend handoff authority for playback. They never move the project timeline playhead.
 
 ## Reliable commands
 

@@ -175,6 +175,9 @@ impl Session {
         self.dirty = true;
         match view::parse_source_time(text) {
             Ok(ms) => {
+                if !self.source_ready() {
+                    return Err(SessionError::Invalid("Select a source before seeking."));
+                }
                 self.media.seek(i64::from(ms), &mut self.status);
                 Ok(())
             }
@@ -191,6 +194,34 @@ impl Session {
     pub fn cancel_preview(&mut self) {
         self.dirty = true;
         self.media.cancel_preview(&mut self.status);
+    }
+    pub fn play(&mut self) -> Result<(), SessionError> {
+        if self.current_project().is_none() || self.media.selected_media().is_none() {
+            return Err(SessionError::Invalid("Select a source before playback."));
+        }
+        self.media.play()?;
+        self.dirty = true;
+        Ok(())
+    }
+    pub fn pause(&mut self) {
+        self.media.pause();
+        self.dirty = true;
+    }
+    pub fn stop(&mut self) -> Result<(), SessionError> {
+        self.media.stop(&mut self.status)?;
+        self.dirty = true;
+        Ok(())
+    }
+    pub fn copy_allowed(&self, generation: u64) -> bool {
+        self.media.copy_allowed(generation)
+    }
+    pub fn source_ready(&self) -> bool {
+        self.current_project().is_some() && self.media.selected_media().is_some()
+    }
+    pub fn frame_copied(&mut self, generation: u64) -> Result<(), SessionError> {
+        self.media.frame_copied(generation)?;
+        self.dirty = true;
+        Ok(())
     }
 
     /// The project new work may target: none while a replacement is pending.
@@ -388,6 +419,7 @@ impl Session {
             source: self.media.source.clone(),
             frame: self.media.frame_view(),
             metrics: self.media.metrics,
+            playback: self.media.playback.view.clone(),
         }
     }
 

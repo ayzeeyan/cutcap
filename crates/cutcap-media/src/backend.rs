@@ -10,7 +10,7 @@ use std::{
 
 #[derive(Clone)]
 pub struct FfmpegBackend {
-    ffmpeg: PathBuf,
+    pub(crate) ffmpeg: PathBuf,
     ffprobe: PathBuf,
     pub probe_timeout: Duration,
     pub decode_timeout: Duration,
@@ -30,6 +30,18 @@ pub trait MediaBackend: Send + Sync + 'static {
         request: &DecodeRequest,
         cancellation: &Cancellation,
     ) -> Result<DecodedFrame, MediaError>;
+    /// Emit complete timestamped frames until EOF/cancellation. Called only on
+    /// the persistent worker; the callback applies bounded backpressure.
+    fn stream(
+        &self,
+        _request: &DecodeRequest,
+        _cancellation: &Cancellation,
+        _emit: &mut (dyn FnMut(DecodedFrame) -> Result<(), MediaError> + Send),
+    ) -> Result<(), MediaError> {
+        Err(MediaError::Unsupported(
+            "continuous decoding is unavailable for this backend".into(),
+        ))
+    }
 }
 
 pub struct ProbeResult {
@@ -61,7 +73,7 @@ impl FfmpegBackend {
             ..Self::default()
         }
     }
-    fn input(path: &Path) -> Result<PathBuf, MediaError> {
+    pub(crate) fn input(path: &Path) -> Result<PathBuf, MediaError> {
         let raw = path.as_os_str().to_string_lossy();
         if raw.len() > 32_768 || raw.starts_with("\\\\") && !raw.starts_with("\\\\?\\") {
             return Err(MediaError::Unsupported(
@@ -94,7 +106,7 @@ impl FfmpegBackend {
     }
 }
 
-fn input_limits(command: &mut Command) {
+pub(crate) fn input_limits(command: &mut Command) {
     command.args([
         "-protocol_whitelist",
         "file,pipe",
@@ -108,6 +120,14 @@ fn input_limits(command: &mut Command) {
 }
 
 impl MediaBackend for FfmpegBackend {
+    fn stream(
+        &self,
+        request: &DecodeRequest,
+        cancel: &Cancellation,
+        emit: &mut (dyn FnMut(DecodedFrame) -> Result<(), MediaError> + Send),
+    ) -> Result<(), MediaError> {
+        crate::stream::run(self, request, cancel, emit)
+    }
     fn probe(&self, path: &Path, cancellation: &Cancellation) -> Result<ProbeResult, MediaError> {
         if cancellation.is_cancelled() {
             return Err(MediaError::Cancelled);
@@ -282,7 +302,7 @@ impl MediaBackend for FfmpegBackend {
     }
 }
 
-fn format_micros(value: i64) -> String {
+pub(crate) fn format_micros(value: i64) -> String {
     let abs = value.unsigned_abs();
     format!(
         "{}{whole}.{fraction:06}",

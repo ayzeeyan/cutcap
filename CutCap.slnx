@@ -12,4 +12,7 @@
     <Project Path="tests/CutCap.Desktop.Tests/CutCap.Desktop.Tests.csproj" />
     <Project Path="tests/CutCap.Interop.Tests/CutCap.Interop.Tests.csproj" />
   </Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/CutCap.PlaybackProbe/CutCap.PlaybackProbe.csproj" />
+  </Folder>
 </Solution>
