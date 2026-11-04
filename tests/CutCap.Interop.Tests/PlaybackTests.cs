@@ -124,4 +124,63 @@ public sealed class PlaybackTests
             catch (ArgumentException) { /* Already reaped. */ }
         }
     }
+
+    // Phase 2B frontend paths: the UI copies every offered generation, as FrameView does.
+    private static SessionView UntilCopying(EngineSession session, Func<SessionView, bool> done)
+    {
+        var deadline = Stopwatch.StartNew();
+        while (deadline.Elapsed < TimeSpan.FromSeconds(15))
+        {
+            session.Pump(); CopyLikeFrameView(session); var view = session.ReadView();
+            if (done(view)) return view;
+            Thread.Sleep(5);
+        }
+        throw new TimeoutException("Playback did not reach its expected state.");
+    }
+
+    // A generation the engine no longer allows (old epoch) is Stale, never shown.
+    private static void CopyLikeFrameView(EngineSession session)
+    {
+        if (session.TryGetFrameInfo(out var frame))
+        {
+            var bytes = new byte[checked((int)(frame.Stride * frame.Height))];
+            Assert.NotEqual(FrameCopyResult.NoFrame, session.CopyFrame(frame.Generation, bytes, (int)frame.Stride));
+        }
+    }
+
+    [Fact]
+    public void PauseBeforeFirstFrameEndedReplayAndStopAreReportedOnlyAfterDelivery()
+    {
+        InteropTests.RequireFfmpeg();
+        using var session = EngineSession.Start(); Until(session, v => v.EngineReady); session.Import(Fixture("colors-cfr.mkv"));
+        Until(session, v => v.Frame is not null && !v.Source.Busy); Copy(session);
+        // Pause before the epoch's first frame: intent is honoured when it arrives.
+        session.Play(); session.Pause();
+        var accepted = session.ReadView().Playback!;
+        Assert.False(accepted.DesiredPlaying);
+        var paused = UntilCopying(session, v => v.Playback!.State == PlaybackState.Paused && v.Playback.Copied > 0);
+        var held = paused.Frame!.Generation;
+        Thread.Sleep(250); session.Pump();
+        Assert.Equal(held, session.ReadView().Frame!.Generation);
+        // Play to the end; Ended needs the final offered frame copied and keeps it.
+        session.Play();
+        var ended = UntilCopying(session, v => v.Playback!.State == PlaybackState.Ended);
+        Assert.False(ended.Playback!.DesiredPlaying);
+        Assert.True(ended.Playback.CopiedMs >= 2500, $"copied {ended.Playback.CopiedMs}");
+        var last = ended.Frame!.Generation;
+        Thread.Sleep(150); session.Pump();
+        Assert.Equal(last, session.ReadView().Frame!.Generation);
+        // Play at Ended restarts a new epoch from zero.
+        session.Play();
+        var replay = UntilCopying(session, v => v.Playback!.Copied > 0 && v.Playback.Epoch != ended.Playback.Epoch);
+        Assert.Equal(0, replay.Playback!.RequestedMs);
+        Assert.Equal(0ul, replay.Playback.CopiedMs);
+        // Stop is accepted at once; the zero frame is only claimed when it arrives.
+        session.Stop();
+        var stopped = session.ReadView();
+        Assert.Equal(PlaybackState.Stopped, stopped.Playback!.State);
+        Assert.Equal(0, stopped.Source.PositionMs);
+        var settled = UntilCopying(session, v => !v.Source.Busy && v.Frame is not null);
+        Assert.Equal(0, settled.Frame!.Actual!.Ticks);
+    }
 }

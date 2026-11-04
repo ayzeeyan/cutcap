@@ -34,13 +34,14 @@ Core remains independent of GUI, codecs, GPU, filesystem and threading. Contract
 | ffi/abi.rs | Versioned C ABI: handle registry, panic barrier, buffer validation (docs/NATIVE_ABI.md) |
 | ffi/bin/gpu_info.rs | Optional DX12 adapter enumeration (`--features gpu-diagnostics`) |
 | Interop/EngineSession.cs | Managed owner: ABI check, typed calls, view reads, frame copy into caller memory |
-| Desktop/Services/EngineHost.cs | UI-thread pump timer, view/frame notifications, command rejection → status |
+| Desktop/Services/EngineHost.cs | UI-thread pump (16 ms timer; plus one pump per compositor frame while playing, ADR 017), view/frame notifications, command rejection → status |
+| Desktop/ViewModels/Transport.cs | Pure ABI 2 state → transport controls/readout mapping; throttled scrub-to-seek controller |
 | Desktop/ViewModels | MVVM over the view; in-place list sync preserves item identity and focus |
 | Desktop/Controls | IconView, FrameView (bitmap presenter), TimelineScale/Ruler/Lanes (custom-drawn) |
 
 ## Lifecycle and data flow
 
-App creates EngineHost, the main window and its view models, then starts the session: cutcap_session_create verifies ABI 2, starts command/isolated/persistent workers and queues NewProject (two real empty tracks). A 16 ms UI timer drains at most eight reliable events, polls probe/frame work and selects at most one offered frame from bounded lookahead, then reads the view when changed. Decode, process I/O and waits stay off pump. Frame copying records delivery, not scanout. See PHASE_2_PLAYBACK_CONTRACT.md for clock/state/framing and PHASE_2_PLAYBACK_REPORT.md for measurements and pending visual bindings.
+App creates EngineHost, the main window and its view models, then starts the session: cutcap_session_create verifies ABI 2, starts command/isolated/persistent workers and queues NewProject (two real empty tracks). A 16 ms UI timer (and, while source playback is active, a `TopLevel.RequestAnimationFrame` callback once per compositor frame) drains at most eight reliable events, polls probe/frame work and selects at most one offered frame from bounded lookahead, then reads the view when changed. Decode, process I/O and waits stay off pump. Frame copying records delivery, not scanout. See PHASE_2_PLAYBACK_CONTRACT.md for clock/state/framing and PHASE_2_PLAYBACK_REPORT.md for measurements and pending visual bindings.
 
 Import opens Avalonia's native, window-parented, asynchronous picker (`StorageProvider`). The chosen path crosses the ABI as UTF-16. One probe thread canonicalizes and validates the file and invokes FFprobe; the session commits `RegisterMedia` through the project owner, which validates again. Only a successful snapshot adds a library entry and starts its preview.
 

@@ -52,6 +52,8 @@ Native FFmpeg libraries would avoid transport copies but need a reviewed Windows
 
 ## Claude integration checklist
 
+Integration status (2026-11-04, Phase 2B): Claude reviewed this contract and integrated it without changing it; see PHASE_2B_PLAYBACK_UI_REPORT.md for how each item below was implemented and tested. Two engine-side findings are reported there for the engine owner: offer timing against vsync, and a one-pump Buffering state (counted as a stall) at the start of every epoch.
+
 - Review this contract before enabling visual Play/Pause/Stop. Keep unavailable playback UI disabled until wired to ABI 2 capability/state.
 - Toggle Play/Pause from engine state and desired-playing intent; do not infer success from command return alone.
 - Render distinct Starting/Seeking/Buffering/Ended/Failed feedback from typed state, not guessed percentages.

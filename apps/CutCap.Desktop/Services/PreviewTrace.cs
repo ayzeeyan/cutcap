@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using CutCap.Interop;
 
 namespace CutCap.Desktop.Services;
 
@@ -43,5 +44,32 @@ internal static class PreviewTrace
             $"ui-present generation={generation} request_to_present_us={Stopwatch.GetElapsedTime(_request, now).TotalMicroseconds:F0} copy_us={copyMicroseconds:F0}{fromImport}");
         _request = 0;
         _import = 0;
+    }
+
+    private static readonly bool PlaybackEnabled = Environment.GetEnvironmentVariable("CUTCAP_TRACE_PLAYBACK") == "1";
+    private static string? _lastTransport;
+
+    /// <summary>Opt-in (CUTCAP_TRACE_PLAYBACK=1): a transport command the UI issued.</summary>
+    public static void Command(string name, long? milliseconds = null)
+    {
+        if (PlaybackEnabled)
+        {
+            Console.Error.WriteLine($"ui-command {name}{(milliseconds is { } ms ? $" ms={ms}" : "")} t={Stopwatch.GetTimestamp()}");
+        }
+    }
+
+    /// <summary>Opt-in: engine playback state transitions as the UI received them.</summary>
+    public static void Transport(PlaybackView? playback)
+    {
+        if (!PlaybackEnabled || playback is null)
+        {
+            return;
+        }
+        var line = $"{playback.State} desired={playback.DesiredPlaying} req={playback.RequestedMs} epoch={playback.Epoch}";
+        if (line != _lastTransport)
+        {
+            _lastTransport = line;
+            Console.Error.WriteLine($"ui-state {line} copied={playback.CopiedMs} t={Stopwatch.GetTimestamp()}");
+        }
     }
 }

@@ -38,11 +38,11 @@
         <Slider Name="Scrubber" Minimum="0" Maximum="{Binding ScrubMaximum}" Value="{Binding ScrubValue}"
                 IsEnabled="{Binding CanScrub}" SmallChange="100" LargeChange="1000" Margin="0,-6,0,-10"
                 AutomationProperties.Name="Source position"
-                ToolTip.Tip="Requests source frames only. Arrows step 100 ms, Page keys 1 s." />
+                ToolTip.Tip="Source position. Drag or use arrows (100 ms) and Page keys (1 s); works while playing or paused." />
         <Grid ColumnDefinitions="Auto,*,Auto" Height="38">
           <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
             <TextBlock Text="{Binding PositionText}" Classes="mono" Foreground="{StaticResource Accent}"
-                       AutomationProperties.Name="Requested source position" />
+                       AutomationProperties.Name="{Binding PositionName}" ToolTip.Tip="{Binding PositionName}" />
             <TextBlock Text="/" Classes="mono faint wide-only" />
             <TextBlock Text="{Binding DurationText}" Classes="mono faint wide-only" AutomationProperties.Name="Source duration" />
           </StackPanel>
@@ -55,9 +55,17 @@
                     AutomationProperties.Name="Back one second" ToolTip.Tip="Request the frame one second earlier">
               <c:IconView Glyph="Back" />
             </Button>
-            <Button Classes="tool round" IsEnabled="False" AutomationProperties.Name="Play"
-                    ToolTip.Tip="Playback needs the source transport (Phase 2). Only still frames can be requested today.">
-              <c:IconView Glyph="Play" Width="18" Height="18" />
+            <!-- Play/Pause follows the engine's state and intent, not the click. -->
+            <Button Classes="tool round play" Command="{Binding PlayPauseCommand}"
+                    AutomationProperties.Name="{Binding PlayName}" ToolTip.Tip="{Binding PlayHint}">
+              <Panel>
+                <c:IconView Glyph="Play" Width="18" Height="18" IsVisible="{Binding ShowPlayGlyph}" />
+                <c:IconView Glyph="Pause" Width="18" Height="18" IsVisible="{Binding ShowPause}" />
+              </Panel>
+            </Button>
+            <Button Classes="tool" Command="{Binding StopCommand}"
+                    AutomationProperties.Name="Stop" ToolTip.Tip="Stop and return to the start of the source">
+              <c:IconView Glyph="Stop" />
             </Button>
             <Button Classes="tool" Command="{Binding ForwardCommand}" IsEnabled="{Binding Ready}"
                     AutomationProperties.Name="Forward one second" ToolTip.Tip="Request the frame one second later">
@@ -95,7 +103,7 @@
             <TextBlock Text="{Binding Status}" Classes="title" HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap" />
             <TextBlock Text="{Binding Detail}" Classes="label muted" HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap" />
             <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,6,0,0">
-              <Button Classes="filled" Content="Cancel" Command="{Binding CancelPreviewCommand}" IsVisible="{Binding Busy}"
+              <Button Classes="filled" Content="Cancel" Command="{Binding CancelPreviewCommand}" IsVisible="{Binding ShowIsolatedBusy}"
                       AutomationProperties.Name="Cancel frame decoding" ToolTip.Tip="Stop the pending frame request" />
               <Button Classes="primary" Command="{Binding ImportCommand}" IsVisible="{Binding ShowImportAction}"
                       AutomationProperties.Name="Import media" ToolTip.Tip="Choose a local video file (Ctrl+I)">
@@ -107,6 +115,16 @@
             </StackPanel>
           </StackPanel>
 
+          <!-- Transient engine state, from the view only: no invented progress. -->
+          <Border IsVisible="{Binding ShowChip}" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="14,12,0,0"
+                  Padding="9,3" CornerRadius="10" Background="{StaticResource Overlay}"
+                  AutomationProperties.Name="{Binding Chip}">
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <Border Width="6" Height="6" CornerRadius="3" VerticalAlignment="Center"
+                      Background="{StaticResource Accent}" IsVisible="{Binding ChipBusy}" />
+              <TextBlock Text="{Binding Chip}" Classes="fine" VerticalAlignment="Center" />
+            </StackPanel>
+          </Border>
           <Border IsVisible="{Binding ShowBusyBanner}" VerticalAlignment="Top" Background="{StaticResource Overlay}" Padding="12,4,4,4">
             <Grid ColumnDefinitions="*,Auto">
               <TextBlock Text="Decoding the requested position. The last frame stays until it arrives."

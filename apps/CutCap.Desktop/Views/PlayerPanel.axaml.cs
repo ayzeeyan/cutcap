@@ -1,4 +1,6 @@
 using Avalonia.Controls;
+using Avalonia.Input;
+using Avalonia.Interactivity;
 using CutCap.Desktop.Services;
 using CutCap.Desktop.ViewModels;
 
@@ -11,6 +13,10 @@ public partial class PlayerPanel : UserControl
     public PlayerPanel()
     {
         InitializeComponent();
+        // Tunnel so a drag is marked before the slider moves its value on press.
+        Scrubber.AddHandler(PointerPressedEvent, (_, _) => _viewModel?.BeginScrub(), RoutingStrategies.Tunnel, handledEventsToo: true);
+        Scrubber.AddHandler(PointerReleasedEvent, (_, _) => _viewModel?.EndScrub(), RoutingStrategies.Tunnel | RoutingStrategies.Bubble, handledEventsToo: true);
+        Scrubber.AddHandler(PointerCaptureLostEvent, (_, _) => _viewModel?.EndScrub(), RoutingStrategies.Bubble, handledEventsToo: true);
     }
 
     protected override void OnDataContextChanged(EventArgs e)

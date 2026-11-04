@@ -16,6 +16,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
 {
     private readonly EngineHost _engine;
     private (StatusView Status, uint Pending)? _engineStatus;
+    private SessionView? _lastView;
 
     public MainWindowViewModel(EngineHost engine)
     {
@@ -128,11 +129,22 @@ public sealed partial class MainWindowViewModel : ObservableObject
             StatusText = view.Status.Text + (view.Pending > 0 ? $" · {view.Pending} pending" : "");
             StatusIsError = view.Status.Error;
         }
-        Library.Apply(view);
-        Player.Apply(view.Source, view.EngineReady && !view.Import.Busy);
-        Inspector.Apply(view.Inspector);
-        Timeline.Apply(view);
-        ImportCommand.NotifyCanExecuteChanged();
+        var changes = ViewChanges.Between(_lastView, view);
+        _lastView = view;
+        if (changes.Library)
+        {
+            Library.Apply(view);
+            ImportCommand.NotifyCanExecuteChanged();
+        }
+        Player.Apply(view.Source, view.Playback, view.EngineReady && !view.Import.Busy, view.EngineReady);
+        if (changes.Inspector)
+        {
+            Inspector.Apply(view.Inspector);
+        }
+        if (changes.Timeline)
+        {
+            Timeline.Apply(view);
+        }
     }
 
     private void ShowRejection(string message)

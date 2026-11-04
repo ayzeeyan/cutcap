@@ -32,6 +32,7 @@
     <Grid Classes="row" ColumnDefinitions="*,Auto"><TextBlock Text="Clear selection" /><Border Classes="key"><TextBlock Text="Ctrl+Shift+A" /></Border></Grid>
     <Grid Classes="row" ColumnDefinitions="*,Auto"><TextBlock Text="Reset layout and zoom" /><Border Classes="key"><TextBlock Text="Ctrl+0" /></Border></Grid>
     <Grid Classes="row" ColumnDefinitions="*,Auto"><TextBlock Text="Zoom the timeline" /><Border Classes="key"><TextBlock Text="Ctrl+Plus / Minus" /></Border></Grid>
+    <Grid Classes="row" ColumnDefinitions="*,Auto"><TextBlock Text="Play or pause the source" /><Border Classes="key"><TextBlock Text="Space" /></Border></Grid>
     <Grid Classes="row" ColumnDefinitions="*,Auto"><TextBlock Text="Step the source scrubber" /><Border Classes="key"><TextBlock Text="Arrows · Page Up/Down" /></Border></Grid>
     <Grid Classes="row" ColumnDefinitions="*,Auto"><TextBlock Text="Request the typed time" /><Border Classes="key"><TextBlock Text="Enter in Go to" /></Border></Grid>
     <Grid Classes="row" ColumnDefinitions="*,Auto"><TextBlock Text="Move a list selection" /><Border Classes="key"><TextBlock Text="Arrow keys" /></Border></Grid>

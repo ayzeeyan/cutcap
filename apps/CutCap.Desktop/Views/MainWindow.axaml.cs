@@ -1,4 +1,5 @@
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Platform.Storage;
 using CutCap.Desktop.ViewModels;
 
@@ -14,6 +15,28 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        // Tunnel: lists and tabs would otherwise consume Space as "select".
+        AddHandler(KeyDownEvent, OnPreviewKeyDown, Avalonia.Interactivity.RoutingStrategies.Tunnel);
+    }
+
+    /// <summary>
+    /// Space toggles source playback anywhere in the workspace except where it
+    /// already means something: text fields keep typing spaces and a focused
+    /// button (or toggle) keeps Space for activating itself. Enter is never taken.
+    /// </summary>
+    private void OnPreviewKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Space || e.KeyModifiers != KeyModifiers.None
+            || FocusManager?.GetFocusedElement() is TextBox or Avalonia.Controls.Primitives.ToggleButton or Button
+            || DataContext is not MainWindowViewModel { Player: var player })
+        {
+            return;
+        }
+        if (player.PlayPauseCommand.CanExecute(null))
+        {
+            player.PlayPauseCommand.Execute(null);
+        }
+        e.Handled = true;
     }
 
     protected override void OnDataContextChanged(EventArgs e)

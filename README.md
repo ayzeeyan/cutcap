@@ -1,6 +1,6 @@
 # CutCap
 
-A native Windows video editor foundation: an Avalonia (C#/.NET 10) interface over a Rust engine. It imports local videos, shows real metadata and decodes source still frames asynchronously. Phase 2 adds continuous source playback through ABI 2 and managed interop. Visual Play/Pause/Stop bindings remain a Claude frontend handoff; timeline editing, project saving and export are not implemented.
+A native Windows video editor foundation: an Avalonia (C#/.NET 10) interface over a Rust engine. It imports local videos, shows real metadata and decodes source still frames asynchronously. Phase 2 adds continuous source playback (video only) through ABI 2, with working Play/Pause/Stop, scrubbing and seeking in the player. Timeline playback and editing, audio, project saving and export are not implemented.
 
 ```powershell
 dotnet run --project apps/CutCap.Desktop      # builds the Rust engine DLL first
@@ -19,10 +19,11 @@ Requires Windows 11 x64, the pinned Rust/MSVC toolchain, the .NET 10 SDK (global
 - Timeline ruler/lanes drawn by custom controls, zoom 50–200 % and two-axis scrolling.
 - Optional DX12 adapter diagnostic: `cargo run -p cutcap-ffi --features gpu-diagnostics --bin cutcap-gpu-info`.
 
-Audio/Text/Stickers/Effects/Transitions/Filters/Adjustment, clip inspector tabs, timeline preview, Play, Undo/Redo, Split/Delete, Export and track visibility/mute/lock are visible but say they are not available yet. Closing or creating a new project discards in-memory assets and tracks; originals are never modified.
+Audio/Text/Stickers/Effects/Transitions/Filters/Adjustment, clip inspector tabs, timeline preview, Undo/Redo, Split/Delete, Export and track visibility/mute/lock are visible but say they are not available yet. Closing or creating a new project discards in-memory assets and tracks; originals are never modified.
 
 | Shortcut | Action |
 |---|---|
+| Space | Play / pause the source (not while typing) |
 | Ctrl+N | New in-memory project |
 | Ctrl+I | Import a local source video |
 | Ctrl+Plus / Ctrl+Minus | Timeline zoom (50–200%) |
