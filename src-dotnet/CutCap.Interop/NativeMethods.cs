@@ -1,0 +1,98 @@
+using System.Runtime.InteropServices;
+
+namespace CutCap.Interop;
+
+/// <summary>Status codes returned by every <c>cutcap_*</c> export (see docs/NATIVE_ABI.md).</summary>
+public enum NativeStatus
+{
+    Ok = 0,
+    InvalidArgument = 1,
+    InvalidHandle = 2,
+    AbiMismatch = 3,
+    BufferTooSmall = 4,
+    NoFrame = 5,
+    StaleFrame = 6,
+    Busy = 7,
+    Failed = 8,
+    Panic = 9,
+}
+
+/// <summary>Mirror of Rust <c>CutCapFrameInfo</c>: 24 bytes, 8-byte aligned.</summary>
+[StructLayout(LayoutKind.Sequential)]
+public struct NativeFrameInfo
+{
+    public ulong Generation;
+    public uint Width;
+    public uint Height;
+    public uint Stride;
+    public uint PixelFormat;
+}
+
+/// <summary>
+/// Raw C ABI. Only <see cref="EngineSession"/> calls these; nothing else in the
+/// frontend sees native pointers. All strings are passed as explicit
+/// pointer/length pairs (UTF-8, or UTF-16 for paths) with no terminators.
+/// </summary>
+internal static unsafe partial class NativeMethods
+{
+    private const string Library = "cutcap_engine";
+
+    /// <summary>The ABI this frontend was written against.</summary>
+    public const uint AbiVersion = 1;
+    public const uint PixelRgba8Opaque = 1;
+
+    [LibraryImport(Library, EntryPoint = "cutcap_abi_version")]
+    public static partial uint AbiVersionOfLibrary();
+
+    [LibraryImport(Library, EntryPoint = "cutcap_last_error")]
+    public static partial NativeStatus LastError(byte* buffer, nuint capacity, out nuint length);
+
+    [LibraryImport(Library, EntryPoint = "cutcap_session_create")]
+    public static partial NativeStatus SessionCreate(uint abiVersion, out ulong handle);
+
+    [LibraryImport(Library, EntryPoint = "cutcap_session_destroy")]
+    public static partial NativeStatus SessionDestroy(ulong handle);
+
+    [LibraryImport(Library, EntryPoint = "cutcap_session_new_project")]
+    public static partial NativeStatus NewProject(SessionSafeHandle session);
+
+    [LibraryImport(Library, EntryPoint = "cutcap_session_add_track")]
+    public static partial NativeStatus AddTrack(SessionSafeHandle session, uint kind);
+
+    [LibraryImport(Library, EntryPoint = "cutcap_session_select_track")]
+    public static partial NativeStatus SelectTrack(SessionSafeHandle session, byte* id, nuint length);
+
+    [LibraryImport(Library, EntryPoint = "cutcap_session_clear_selection")]
+    public static partial NativeStatus ClearSelection(SessionSafeHandle session);
+
+    [LibraryImport(Library, EntryPoint = "cutcap_session_select_media")]
+    public static partial NativeStatus SelectMedia(SessionSafeHandle session, byte* id, nuint length);
+
+    [LibraryImport(Library, EntryPoint = "cutcap_session_import")]
+    public static partial NativeStatus Import(SessionSafeHandle session, char* path, nuint length);
+
+    [LibraryImport(Library, EntryPoint = "cutcap_session_cancel_import")]
+    public static partial NativeStatus CancelImport(SessionSafeHandle session);
+
+    [LibraryImport(Library, EntryPoint = "cutcap_session_seek")]
+    public static partial NativeStatus Seek(SessionSafeHandle session, long milliseconds);
+
+    [LibraryImport(Library, EntryPoint = "cutcap_session_seek_text")]
+    public static partial NativeStatus SeekText(SessionSafeHandle session, byte* text, nuint length);
+
+    [LibraryImport(Library, EntryPoint = "cutcap_session_cancel_preview")]
+    public static partial NativeStatus CancelPreview(SessionSafeHandle session);
+
+    [LibraryImport(Library, EntryPoint = "cutcap_session_pump")]
+    public static partial NativeStatus Pump(SessionSafeHandle session, out uint changed);
+
+    [LibraryImport(Library, EntryPoint = "cutcap_session_view")]
+    public static partial NativeStatus View(SessionSafeHandle session, byte* buffer, nuint capacity, out nuint length);
+
+    [LibraryImport(Library, EntryPoint = "cutcap_session_frame_info")]
+    public static partial NativeStatus FrameInfo(SessionSafeHandle session, out NativeFrameInfo info);
+
+    [LibraryImport(Library, EntryPoint = "cutcap_session_copy_frame")]
+    public static partial NativeStatus CopyFrame(
+        SessionSafeHandle session, ulong generation, byte* destination, nuint length, nuint stride);
+}

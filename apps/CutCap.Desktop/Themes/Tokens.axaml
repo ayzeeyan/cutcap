@@ -1,0 +1,113 @@
+<ResourceDictionary xmlns="https://github.com/avaloniaui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <!-- CutCap design tokens: charcoal surfaces, one cyan accent. See DESIGN.md.
+       No purple or violet anywhere: track families are teal (video) and blue (audio). -->
+
+  <!-- Surfaces, darkest to lightest. -->
+  <Color x:Key="StageColor">#0C0D0F</Color>
+  <Color x:Key="GroundColor">#111315</Color>
+  <Color x:Key="SurfaceColor">#191B1E</Color>
+  <Color x:Key="WellColor">#1E2124</Color>
+  <Color x:Key="RaisedColor">#22252A</Color>
+  <Color x:Key="HoverColor">#2A2E34</Color>
+  <Color x:Key="PressedColor">#33373E</Color>
+  <Color x:Key="LineColor">#26292E</Color>
+  <Color x:Key="BorderColor">#30343A</Color>
+  <!-- Ink. -->
+  <Color x:Key="TextColor">#F1F3F4</Color>
+  <Color x:Key="MutedColor">#A5ADB5</Color>
+  <Color x:Key="FaintColor">#868E96</Color>
+  <!-- Accent: selection, focus, current time and the primary action only. -->
+  <Color x:Key="AccentColor">#22D9E6</Color>
+  <Color x:Key="AccentHoverColor">#50E6EE</Color>
+  <Color x:Key="AccentPressedColor">#1AB9C4</Color>
+  <Color x:Key="AccentInkColor">#04181A</Color>
+  <Color x:Key="AccentWashColor">#123236</Color>
+  <Color x:Key="AccentLaneColor">#102629</Color>
+  <!-- Track families carry information, not decoration. -->
+  <Color x:Key="VideoColor">#3CC4CF</Color>
+  <Color x:Key="VideoFillColor">#17616A</Color>
+  <Color x:Key="AudioColor">#6FA3F5</Color>
+  <Color x:Key="AudioFillColor">#26487F</Color>
+  <Color x:Key="SuccessColor">#4FD18B</Color>
+  <Color x:Key="ErrorColor">#FF8F84</Color>
+
+  <SolidColorBrush x:Key="Stage" Color="{StaticResource StageColor}" />
+  <SolidColorBrush x:Key="Ground" Color="{StaticResource GroundColor}" />
+  <SolidColorBrush x:Key="Surface" Color="{StaticResource SurfaceColor}" />
+  <SolidColorBrush x:Key="Well" Color="{StaticResource WellColor}" />
+  <SolidColorBrush x:Key="Raised" Color="{StaticResource RaisedColor}" />
+  <SolidColorBrush x:Key="Hover" Color="{StaticResource HoverColor}" />
+  <SolidColorBrush x:Key="Pressed" Color="{StaticResource PressedColor}" />
+  <SolidColorBrush x:Key="Line" Color="{StaticResource LineColor}" />
+  <SolidColorBrush x:Key="BorderLine" Color="{StaticResource BorderColor}" />
+  <SolidColorBrush x:Key="Text" Color="{StaticResource TextColor}" />
+  <SolidColorBrush x:Key="Muted" Color="{StaticResource MutedColor}" />
+  <SolidColorBrush x:Key="Faint" Color="{StaticResource FaintColor}" />
+  <SolidColorBrush x:Key="Accent" Color="{StaticResource AccentColor}" />
+  <SolidColorBrush x:Key="AccentHover" Color="{StaticResource AccentHoverColor}" />
+  <SolidColorBrush x:Key="AccentPressed" Color="{StaticResource AccentPressedColor}" />
+  <SolidColorBrush x:Key="AccentInk" Color="{StaticResource AccentInkColor}" />
+  <SolidColorBrush x:Key="AccentWash" Color="{StaticResource AccentWashColor}" />
+  <SolidColorBrush x:Key="AccentLane" Color="{StaticResource AccentLaneColor}" />
+  <SolidColorBrush x:Key="Video" Color="{StaticResource VideoColor}" />
+  <SolidColorBrush x:Key="VideoFill" Color="{StaticResource VideoFillColor}" />
+  <SolidColorBrush x:Key="Audio" Color="{StaticResource AudioColor}" />
+  <SolidColorBrush x:Key="AudioFill" Color="{StaticResource AudioFillColor}" />
+  <SolidColorBrush x:Key="Success" Color="{StaticResource SuccessColor}" />
+  <SolidColorBrush x:Key="Error" Color="{StaticResource ErrorColor}" />
+  <SolidColorBrush x:Key="Overlay" Color="#E00C0D0F" />
+  <LinearGradientBrush x:Key="TileGradient" StartPoint="0%,0%" EndPoint="100%,100%">
+    <GradientStop Offset="0" Color="#1D3438" />
+    <GradientStop Offset="0.75" Color="#181A1D" />
+  </LinearGradientBrush>
+  <LinearGradientBrush x:Key="MarkGradient" StartPoint="0%,0%" EndPoint="100%,100%">
+    <GradientStop Offset="0" Color="#2EE0E8" />
+    <GradientStop Offset="1" Color="#1A8FD9" />
+  </LinearGradientBrush>
+
+  <!-- Type. Inter (OFL 1.1, Avalonia.Fonts.Inter) for UI; a system monospace
+       for measured time only, where tabular digits matter. -->
+  <FontFamily x:Key="MonoFont">Cascadia Mono, Consolas, Courier New</FontFamily>
+  <x:Double x:Key="FineSize">11</x:Double>
+  <x:Double x:Key="LabelSize">12</x:Double>
+  <x:Double x:Key="BodySize">13</x:Double>
+  <x:Double x:Key="TitleSize">15</x:Double>
+  <CornerRadius x:Key="ControlRadius">5</CornerRadius>
+  <CornerRadius x:Key="PanelRadius">8</CornerRadius>
+
+  <!-- Fluent overrides so standard controls (TextBox, Slider, ScrollBar,
+       focus) use the CutCap accent and surfaces. -->
+  <Color x:Key="SystemAccentColor">#22D9E6</Color>
+  <Color x:Key="SystemAccentColorDark1">#1AB9C4</Color>
+  <Color x:Key="SystemAccentColorDark2">#1494A0</Color>
+  <Color x:Key="SystemAccentColorDark3">#0F6F78</Color>
+  <Color x:Key="SystemAccentColorLight1">#50E6EE</Color>
+  <Color x:Key="SystemAccentColorLight2">#7DEEF3</Color>
+  <Color x:Key="SystemAccentColorLight3">#AAF4F7</Color>
+  <SolidColorBrush x:Key="TextControlBackground" Color="#1E2124" />
+  <SolidColorBrush x:Key="TextControlBackgroundPointerOver" Color="#22252A" />
+  <SolidColorBrush x:Key="TextControlBackgroundFocused" Color="#0C0D0F" />
+  <SolidColorBrush x:Key="TextControlBorderBrush" Color="#30343A" />
+  <SolidColorBrush x:Key="TextControlBorderBrushPointerOver" Color="#3A3F46" />
+  <SolidColorBrush x:Key="TextControlBorderBrushFocused" Color="#22D9E6" />
+  <SolidColorBrush x:Key="TextControlForeground" Color="#F1F3F4" />
+  <SolidColorBrush x:Key="TextControlForegroundFocused" Color="#F1F3F4" />
+  <SolidColorBrush x:Key="TextControlPlaceholderForeground" Color="#868E96" />
+  <SolidColorBrush x:Key="TextControlSelectionHighlightColor" Color="#5522D9E6" />
+  <SolidColorBrush x:Key="TextControlBackgroundDisabled" Color="#1E2124" />
+  <SolidColorBrush x:Key="TextControlBorderBrushDisabled" Color="#26292E" />
+  <SolidColorBrush x:Key="TextControlForegroundDisabled" Color="#868E96" />
+  <SolidColorBrush x:Key="TextControlPlaceholderForegroundDisabled" Color="#5F666D" />
+  <SolidColorBrush x:Key="ToolTipBackground" Color="#22252A" />
+  <SolidColorBrush x:Key="ToolTipBorderBrush" Color="#30343A" />
+  <SolidColorBrush x:Key="ToolTipForeground" Color="#F1F3F4" />
+  <SolidColorBrush x:Key="SliderTrackFill" Color="#30343A" />
+  <SolidColorBrush x:Key="SliderTrackFillPointerOver" Color="#3A3F46" />
+  <SolidColorBrush x:Key="SliderThumbBackground" Color="#F1F3F4" />
+  <SolidColorBrush x:Key="SliderThumbBackgroundPointerOver" Color="#FFFFFF" />
+  <SolidColorBrush x:Key="SliderThumbBackgroundPressed" Color="#50E6EE" />
+  <SolidColorBrush x:Key="FlyoutPresenterBackground" Color="#22252A" />
+  <SolidColorBrush x:Key="FlyoutBorderThemeBrush" Color="#30343A" />
+  <SolidColorBrush x:Key="FocusStrokeColorOuter" Color="#22D9E6" />
+</ResourceDictionary>

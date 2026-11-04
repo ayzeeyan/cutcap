@@ -1,0 +1,37 @@
+[package]
+name = "cutcap-ffi"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+description = "CutCap engine host and versioned C ABI consumed by the Avalonia frontend"
+
+[lib]
+# cutcap_engine.dll for the .NET frontend; rlib so Rust tests can call the session directly.
+name = "cutcap_engine"
+crate-type = ["cdylib", "rlib"]
+
+[[bin]]
+name = "cutcap-gpu-info"
+path = "src/bin/gpu_info.rs"
+required-features = ["gpu-diagnostics"]
+
+[features]
+default = []
+gpu-diagnostics = ["dep:wgpu", "dep:pollster"]
+
+[dependencies]
+cutcap-contracts.workspace = true
+cutcap-core.workspace = true
+cutcap-media.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+uuid.workspace = true
+wgpu = { workspace = true, optional = true }
+pollster = { workspace = true, optional = true }
+
+[lints]
+workspace = true

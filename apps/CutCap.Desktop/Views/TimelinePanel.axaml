@@ -1,0 +1,113 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:CutCap.Desktop.ViewModels"
+             xmlns:c="using:CutCap.Desktop.Controls"
+             x:Class="CutCap.Desktop.Views.TimelinePanel"
+             x:DataType="vm:TimelineViewModel">
+  <Border Classes="panel">
+    <DockPanel>
+      <!-- Editing tools: those the engine cannot back yet are visible and disabled. -->
+      <Grid DockPanel.Dock="Top" Height="40" ColumnDefinitions="Auto,*,Auto" Margin="8,0,10,0">
+        <StackPanel Orientation="Horizontal" Spacing="2" VerticalAlignment="Center">
+          <Button Classes="tool" IsEnabled="False" AutomationProperties.Name="Undo" ToolTip.Tip="Undo arrives with the editing engine.">
+            <c:IconView Glyph="Undo" />
+          </Button>
+          <Button Classes="tool" IsEnabled="False" AutomationProperties.Name="Redo" ToolTip.Tip="Redo arrives with the editing engine.">
+            <c:IconView Glyph="Redo" />
+          </Button>
+          <Border Classes="vrule" Height="18" />
+          <Button Classes="tool" IsEnabled="False" AutomationProperties.Name="Split clip" ToolTip.Tip="Splitting clips arrives with the editing engine.">
+            <c:IconView Glyph="Scissors" />
+          </Button>
+          <Button Classes="tool" IsEnabled="False" AutomationProperties.Name="Delete clip" ToolTip.Tip="Deleting clips arrives with the editing engine.">
+            <c:IconView Glyph="Trash" />
+          </Button>
+          <Border Classes="vrule" Height="18" />
+          <Button Classes="tool" Command="{Binding AddVideoTrackCommand}" AutomationProperties.Name="Add video track"
+                  ToolTip.Tip="Add an empty video track">
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <c:IconView Glyph="VideoTrack" />
+              <TextBlock Text="Video track" VerticalAlignment="Center" />
+            </StackPanel>
+          </Button>
+          <Button Classes="tool" Command="{Binding AddAudioTrackCommand}" AutomationProperties.Name="Add audio track"
+                  ToolTip.Tip="Add an empty audio track">
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <c:IconView Glyph="AudioTrack" />
+              <TextBlock Text="Audio track" VerticalAlignment="Center" />
+            </StackPanel>
+          </Button>
+        </StackPanel>
+        <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="2" VerticalAlignment="Center">
+          <TextBlock Text="{Binding PlayheadText}" Classes="mono muted" VerticalAlignment="Center" Margin="0,0,6,0"
+                     AutomationProperties.Name="Timeline playhead position"
+                     ToolTip.Tip="Timeline playhead. It stays at zero until clips and timeline playback exist; the source preview never moves it." />
+          <Border Classes="vrule" Height="18" />
+          <Button Classes="tool" Command="{Binding ZoomOutCommand}" AutomationProperties.Name="Zoom out"
+                  ToolTip.Tip="Zoom the timeline view out (Ctrl+Minus)">
+            <c:IconView Glyph="ZoomOut" />
+          </Button>
+          <Slider Width="110" Minimum="50" Maximum="200" TickFrequency="25" IsSnapToTickEnabled="True"
+                  SmallChange="25" LargeChange="25" Value="{Binding Zoom}" VerticalAlignment="Center" Margin="2,-8,2,-8"
+                  AutomationProperties.Name="Timeline zoom" ToolTip.Tip="Timeline zoom, 50 to 200 percent" />
+          <Button Classes="tool" Command="{Binding ZoomInCommand}" AutomationProperties.Name="Zoom in"
+                  ToolTip.Tip="Zoom the timeline view in (Ctrl+Plus)">
+            <c:IconView Glyph="ZoomIn" />
+          </Button>
+          <Button Classes="tool" Command="{Binding ResetZoomCommand}" Content="{Binding ZoomText}" Width="48"
+                  AutomationProperties.Name="Reset zoom" ToolTip.Tip="Reset the timeline view to 100%" />
+        </StackPanel>
+      </Grid>
+      <Border DockPanel.Dock="Top" Classes="divider" Height="1" />
+
+      <Grid ColumnDefinitions="176,*" RowDefinitions="28,*">
+        <TextBlock Text="{Binding TrackCountText}" Classes="fine faint" VerticalAlignment="Center" Margin="12,0,0,0" />
+        <c:TimelineRuler Name="Ruler" Grid.Column="1" Zoom="{Binding Zoom}"
+                         AutomationProperties.Name="Timeline ruler" />
+
+        <!-- Track headers scroll vertically with the lanes and stay fixed horizontally. -->
+        <ScrollViewer Name="HeaderScroll" Grid.Row="1" VerticalScrollBarVisibility="Hidden" HorizontalScrollBarVisibility="Disabled">
+          <ListBox Name="Headers" ItemsSource="{Binding Tracks}" SelectedItem="{Binding SelectedTrack}"
+                   ItemContainerTheme="{StaticResource TrackHeaderItem}" Background="Transparent" Margin="4,0,4,12"
+                   ScrollViewer.VerticalScrollBarVisibility="Disabled"
+                   AutomationProperties.Name="Tracks">
+            <ListBox.ItemTemplate>
+              <DataTemplate x:DataType="vm:TrackViewModel">
+                <Grid ColumnDefinitions="Auto,*,Auto" AutomationProperties.Name="{Binding AccessibleName}">
+                  <Panel Width="26" Height="18">
+                    <Border CornerRadius="3" Background="{StaticResource VideoFill}" IsVisible="{Binding IsVideo}" />
+                    <Border CornerRadius="3" Background="{StaticResource AudioFill}" IsVisible="{Binding IsAudio}" />
+                    <TextBlock Text="{Binding Badge}" FontSize="11" FontWeight="Bold" Foreground="White"
+                               HorizontalAlignment="Center" VerticalAlignment="Center" />
+                  </Panel>
+                  <TextBlock Grid.Column="1" Text="{Binding Name}" Classes="label muted track-name" Margin="8,0"
+                             VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                  <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="2" Opacity="0.55">
+                    <Border Background="Transparent" Padding="3" IsVisible="{Binding IsVideo}"
+                            ToolTip.Tip="Track visibility arrives with the editing engine.">
+                      <c:IconView Glyph="Eye" Width="14" Height="14" Foreground="{StaticResource Muted}" />
+                    </Border>
+                    <Border Background="Transparent" Padding="3" IsVisible="{Binding IsAudio}"
+                            ToolTip.Tip="Track mute arrives with the editing engine.">
+                      <c:IconView Glyph="Volume" Width="14" Height="14" Foreground="{StaticResource Muted}" />
+                    </Border>
+                    <Border Background="Transparent" Padding="3" ToolTip.Tip="Track locking arrives with the editing engine.">
+                      <c:IconView Glyph="Lock" Width="14" Height="14" Foreground="{StaticResource Muted}" />
+                    </Border>
+                  </StackPanel>
+                </Grid>
+              </DataTemplate>
+            </ListBox.ItemTemplate>
+          </ListBox>
+        </ScrollViewer>
+
+        <ScrollViewer Name="LanesScroll" Grid.Row="1" Grid.Column="1"
+                      HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
+          <c:TimelineLanes Name="Lanes" Lanes="{Binding Lanes}" Zoom="{Binding Zoom}" HorizontalAlignment="Left"
+                           VerticalAlignment="Top" AutomationProperties.Name="Track lanes" />
+        </ScrollViewer>
+        <Border Grid.Row="1" Width="1" HorizontalAlignment="Right" Background="{StaticResource Line}" />
+      </Grid>
+    </DockPanel>
+  </Border>
+</UserControl>

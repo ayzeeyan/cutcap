@@ -1,13 +1,41 @@
 # CutCap desktop design system
 
-Mode: Operate. Product truth is in PRODUCT.md; architecture is in docs/ARCHITECTURE.md. The user explicitly delegated visual decisions and required a working native application, so this implementation uses the brief directly without an external concept approval flow.
+Mode: Operate. Product truth is in PRODUCT.md; architecture in docs/ARCHITECTURE.md. Implemented in Avalonia (`apps/CutCap.Desktop/Themes`). The workspace follows the organization and density of a conventional compact editor (the owner's CapCut reference) with an original CutCap identity: no CapCut logo, wordmark, Pro upsell, assets or exact visuals.
 
-The visual direction is a restrained contact sheet: regular time/track registrations, calm neutral viewing ground and a warm copper locator. It supports repeated precise operations during long editing sessions. Brand expression stays in the original cut-mark SVG, typography and the single locator/focus accent; it does not compete with future video pixels.
+## World
 
-`apps/cutcap/ui/theme.slint` owns semantic colors and shared metrics. Graphite canvas #151719, panel #1c1f22, raised control #25292d, line #363c42, foreground #edf0f3, secondary #b1b9c2, disabled #858f99 and copper #f3a17b. Normal text must maintain 4.5:1 contrast. Selection uses a warm dark fill and border/focus, never color alone for button labeling.
+Dark, compact, flat and calm. Charcoal panels float on a near-black ground with 6 px gutters that double as resize handles. One cyan marks what is live: current time, selection, keyboard focus and the primary action. Track families carry information colors: teal for video, blue for audio. **No purple or violet anywhere.** Systems the engine cannot back yet are present with an honest state, never faked: no invented clips, thumbnails, waveforms, presets or playback.
 
-Segoe UI is the native text family; Consolas is confined to measured timecode. Body 13 logical px, labels 12, panel headings 14 with 600 weight. 8/16/24 px grouping rhythm, 4 px control radii, 32 px actions, 44 px panel headings, 58 px tracks and 6 px focusable splitters. Fine ruler/status labels use 10–11 px and remain high contrast. Prefer semantic tokens for additional repeated values.
+## Tokens (Themes/Tokens.axaml)
 
-The toolbar carries project identity, real new-project/reset/about actions and disabled persistence/export. The initial window opens near the primary display's origin; native maximize/restore and resizing remain available. The viewer follows the actual oriented source aspect ratio, with a 16:9 empty state. The library shows real metadata entries, without invented thumbnails. Source seeking stays visibly separate from the timeline. The library/inspector clamp to preserve the center; the timeline has a 210 logical px default and clamped resizing. Its 60-second empty ruler is a view range, not project duration. Headers scroll with content. No decorative motion or fake jobs.
+- **Surfaces:** stage #0C0D0F (behind the picture), ground #111315, surface #191B1E (panels), well #1E2124 (inputs, lane bands), raised #22252A, hover #2A2E34, pressed #33373E.
+- **Lines:** line #26292E, border #30343A.
+- **Ink:** text #F1F3F4, muted #A5ADB5, faint #868E96 (≥4.5:1 on surface).
+- **Accent:** #22D9E6, hover #50E6EE, pressed #1AB9C4, ink on accent #04181A, wash #123236 (selected rows), lane #102629 (selected lane).
+- **Families:** video #3CC4CF on fill #17616A; audio #6FA3F5 on fill #26487F.
+- **Status:** success #4FD18B, error #FF8F84.
+- The Fluent `SystemAccentColor` family and TextBox/Slider/ToolTip/Flyout brushes are overridden with the same tokens, so stock controls cannot leak a default accent.
 
-All custom actions have names, disabled states, hover/focus styling, Windows accessibility roles and text tooltips. Tab/Shift+Tab, Enter/Space, global shortcuts and splitter arrows complement pointer controls. High-DPI sizing uses logical pixels; a complete screen-reader and scale-matrix audit remains future work. See PHASE_0_REPORT.md for actual visual/interaction tests.
+## Type and metrics
+
+Inter (bundled, OFL 1.1) for UI: body 13, labels 12, fine 11, panel titles 13 semibold, sheet titles 15. Cascadia Mono/Consolas only for measured time (source timecodes, ruler labels, tile durations). Controls are 28 px; title bar 44; panel headers 40; ruler 28; tracks 50; track header column 176. Radii: controls 5, panels 8, tiles 6. Shadows only on flyouts.
+
+## Layout
+
+- **Title bar:** mark and name, engine status (icon + text; errors in red), centred project name with "Not saved", New project, Shortcuts, Reset layout, About, a disabled primary Export, then Avalonia's Windows caption buttons. Drawn title text is hidden; the bar is a drag region. Labels drop below 1180 px.
+- **Asset workspace:** icon-over-label categories (Media, Audio, Text, Stickers, Effects, Transitions, Filters, Adjustment). Media shows a collection list (All media / With audio / Silent), search, Import and a tile grid; the other categories show "coming later" states.
+- **Player:** Source / Timeline (disabled) tabs, source name and actual-frame caption, the fitted picture on the stage, scrubber, cyan requested time / duration, centred transport with a disabled round Play, go-to field.
+- **Inspector:** Details / Video / Speed / Adjustment / Audio tabs. Details shows the selection's identity and collapsible metadata sections; the clip tabs explain they need a clip.
+- **Timeline:** disabled Undo/Redo/Split/Delete, Video track / Audio track, timeline playhead time, zoom out / slider / zoom in / percentage; track headers (V1/A1 badges, disabled eye/mute/lock) beside custom-drawn ruler and lanes with a white playhead.
+
+Upper columns are proportional (32 / 43 / 25 %) with minimums 290 / 340 / 240 px; the timeline takes 42 % of the workspace (minimum 170). Window minimum 960×600. Container queries drop secondary controls in narrow panels (player < 520 px hides start/end, duration and caption).
+
+## Components and states
+
+- **Buttons** (ControlThemes): tool (flat), filled (raised), primary (cyan). Every interactive element has hover, pressed, disabled (0.38 opacity) and a 1.5 px focus ring (`:focus-visible`), plus a tooltip; disabled tooltips stay available.
+- **Tabs:** CategoryTab (icon over label, cyan when selected) and ViewTab (cyan text and underline) on TabStrip; NavItem for vertical lists.
+- **Lists** keep item identity across engine updates; media tiles and track headers select through the engine on click or arrows and expose list-item semantics with full accessible names.
+- **Icons:** authored 16 px SVGs (1.5 px round stroke) in Assets/Icons, converted to path data by scripts/generate-icons.py and drawn by IconView in the inherited foreground.
+- **FrameView** draws the decoded frame with uniform fit; **TimelineRuler/TimelineLanes** draw only the viewport.
+
+No decorative motion.

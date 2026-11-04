@@ -1,16 +1,30 @@
 # Licensing and distribution review
 
-Review date: 2026-11-03 (Phase 1). This is an engineering inventory and distribution decision record, not a completed legal clearance. No CutCap application license is assigned. Packages set `publish = false`; no installer, public release or third-party binary bundle is produced.
+Review date: 2026-11-03 (Phase 1); frontend section updated 2026-11-04 (Avalonia migration). This is an engineering inventory and distribution decision record, not a completed legal clearance. No CutCap application license is assigned. Packages set `publish = false`; no installer, public release or third-party binary bundle is produced.
 
 ## Application license — owner decision outstanding
 
 Free of charge and offline-first do not determine a source-code license. MIT/Apache-2.0 permit broad reuse and proprietary forks (Apache also supplies an express patent grant); GPL-3.0 requires corresponding-source/compatible downstream distribution for covered derivatives; a proprietary gratis license restricts reuse and needs owner-drafted terms. The owner must choose based on contribution, fork, commercial and plugin goals. Do not add a LICENSE file selecting one by default. Dependencies retain their own licenses independently.
 
-## Slint 1.18.1
+## Frontend: Avalonia and .NET (since the migration)
 
-The runtime/compiler list GPL-3.0-only OR LicenseRef-Slint-Royalty-free-2.0 OR LicenseRef-Slint-Software-3.0. Slint is not LGPL. Intended provisional desktop route: the royalty-free 2.0 license, which permits desktop distribution under other application licenses and requires the specified attribution. CutCap's top-level About button contains the built-in AboutSlint widget. Preserve it and verify that it remains accessible. The alternative public webpage badge route exists, but no such distribution page currently exists.
+Slint has been removed from the build (ADR 012); its royalty-free attribution route no longer applies to current builds. Historical Slint builds remain in Git history under their original terms.
 
-Review the complete conditions, including the desktop scope, attribution, exclusions and terms for modifications, at [Slint terms](https://slint.dev/terms-and-conditions) and the [royalty-free 2.0 license](https://slint.dev/agreements/slint-royalty-free-license.pdf). Choosing Slint's GPL route would introduce different obligations for the application; do not assume a permissive application license overrides them. Commercial licensing remains an alternative, not a Phase 0 purchase. No Slint internals have been modified.
+The self-contained win-x64 publish ships the .NET 10 runtime and these frontend components. Declared licenses are from the packages' metadata; verify full texts and notices before any distribution.
+
+| Component | Version | Declared license | Notes |
+|---|---|---|---|
+| Avalonia (Base, Controls, Markup, Win32, Skia, Themes.Fluent, Desktop and its platform packages) | 12.1.5 | MIT | Avalonia.Desktop also pulls X11/macOS/FreeDesktop assemblies that are unused on Windows; a Win32-only package set would shrink the publish |
+| Avalonia.Angle.Windows.Natives (`av_libglesv2.dll`) | 2.1.27548.20260419 | BSD-3-Clause (ANGLE) | GPU-backed compositing on Windows |
+| SkiaSharp / libSkiaSharp | 3.119.4 | MIT / Skia BSD-3-Clause | 2D rendering |
+| HarfBuzzSharp / libHarfBuzzSharp | 8.3.1.3 | MIT / HarfBuzz "Old MIT" | Text shaping |
+| Avalonia.Fonts.Inter | 12.1.5 | MIT package; **Inter font SIL OFL 1.1** | Bundled UI typeface; OFL permits bundling with notice, forbids selling the font alone |
+| CommunityToolkit.Mvvm | 8.4.2 | MIT | Source-generated observable properties/commands |
+| MicroCom.Runtime, Tmds.DBus.Protocol | 0.11.6, transitive | MIT | Avalonia dependencies (D-Bus unused on Windows) |
+| .NET 10 runtime (self-contained) | 10.0 | MIT, with its THIRD-PARTY-NOTICES | Microsoft runtime redistribution terms apply |
+| xunit.v3, xunit.runner.visualstudio, Microsoft.NET.Test.Sdk | 3.2.2, 3.1.5, 18.10.1 | Apache-2.0 / Apache-2.0 / MIT | Tests only, not shipped |
+
+The About flyout names Avalonia (MIT), Inter (OFL 1.1) and the separately installed FFmpeg. A distribution would still need the complete notice texts (Avalonia, ANGLE, Skia, HarfBuzz, Inter, .NET third-party notices) in the package. The CutCap mark and app icon are original, generated from code (scripts and Assets); no CapCut asset, logo or wordmark is used.
 
 ## FFmpeg
 
@@ -22,14 +36,12 @@ Before shipping, review the chosen subprocess interaction/distribution model, ex
 
 Generated test videos in tests/fixtures contain synthetic colors/test patterns/tones authored for this task and are dedicated as CC0-1.0 content in their README. That dedication covers those fixtures only, not CutCap source or an FFmpeg executable. Generation uses the installed tool; copying generated media is not copying the tool. Review codec patent/distribution requirements independently before public release. No third-party footage, music or fonts were downloaded.
 
-## Direct dependency inventory
+## Direct Rust dependency inventory
 
 | Dependency | Selected version | Declared license | Use |
 |---|---|---|---|
-| slint / slint-build | 1.18.1 | GPL-3.0-only OR Slint royalty-free 2.0 OR Slint software 3.0 | Native UI / build compiler |
 | serde | 1.0.229 | MIT OR Apache-2.0 | Validated model/value serialization |
 | serde_json | 1.0.154 | MIT OR Apache-2.0 | Bounded FFprobe parsing, developer measurement reports and tests |
-| rfd | 0.17.2 | MIT | Native Windows asynchronous file picker; default features disabled |
 | uuid | 1.29.0 | Apache-2.0 OR MIT | Typed stable IDs |
 | thiserror | 2.0.21 | MIT OR Apache-2.0 | Typed errors |
 | tracing | 0.1.44 | MIT | Local diagnostics |
@@ -39,4 +51,4 @@ Generated test videos in tests/fixtures contain synthetic colors/test patterns/t
 
 Versions were queried from crates.io and locked with Cargo; exact transitive inventory is Cargo.lock / `cargo metadata --locked`. This table is not a complete transitive notice bundle. Before distributing, generate an SPDX/SBOM and notices for the actual target/features, inspect all selected dependencies/assets, retain license texts, and clear unresolved cases. Lockfile-only optional packages are not evidence of linkage.
 
-Segoe UI and Consolas are requested from the Windows installation, not bundled. Three original small SVG assets are part of CutCap source; no external images/fonts/media were downloaded for the UI. Application source licensing remains undecided, including those authored assets. See the phase report for the validation environment and actual supported functionality.
+Inter is bundled through Avalonia.Fonts.Inter; Cascadia Mono/Consolas are requested from the Windows installation for timecodes, not bundled. The 47 small icon SVGs and the mark are original CutCap source; no external images, fonts or media were downloaded for the UI. Application source licensing remains undecided, including those authored assets. See the phase report for the validation environment and actual supported functionality.

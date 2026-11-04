@@ -1,0 +1,14 @@
+//! CutCap engine host for the Avalonia frontend.
+//!
+//! `session` owns the command worker (`bridge`/`engine`) and the media host
+//! (`media`); `view` derives display DTOs; `abi` is the only module with
+//! `unsafe` and the only one the frontend links against.
+pub mod abi;
+mod bridge;
+mod engine;
+pub mod media;
+pub mod session;
+pub mod view;
+
+#[cfg(test)]
+mod tests;

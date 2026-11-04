@@ -1,0 +1,40 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="CutCap.Desktop.Views.ShortcutsView"
+             Width="360">
+  <UserControl.Styles>
+    <Style Selector="Border.key">
+      <Setter Property="Background" Value="{StaticResource Raised}" />
+      <Setter Property="BorderBrush" Value="{StaticResource BorderLine}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="3" />
+      <Setter Property="Padding" Value="6,1" />
+      <Setter Property="HorizontalAlignment" Value="Right" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="Grid.Column" Value="1" />
+    </Style>
+    <Style Selector="Border.key > TextBlock">
+      <Setter Property="FontSize" Value="11" />
+    </Style>
+    <Style Selector="Grid.row">
+      <Setter Property="Height" Value="28" />
+    </Style>
+    <Style Selector="Grid.row > TextBlock">
+      <Setter Property="Foreground" Value="{StaticResource Muted}" />
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+  </UserControl.Styles>
+  <StackPanel Margin="6">
+    <TextBlock Text="Keyboard shortcuts" Classes="title" Margin="0,0,0,8" />
+    <Grid Classes="row" ColumnDefinitions="*,Auto"><TextBlock Text="Import media" /><Border Classes="key"><TextBlock Text="Ctrl+I" /></Border></Grid>
+    <Grid Classes="row" ColumnDefinitions="*,Auto"><TextBlock Text="New project" /><Border Classes="key"><TextBlock Text="Ctrl+N" /></Border></Grid>
+    <Grid Classes="row" ColumnDefinitions="*,Auto"><TextBlock Text="Clear selection" /><Border Classes="key"><TextBlock Text="Ctrl+Shift+A" /></Border></Grid>
+    <Grid Classes="row" ColumnDefinitions="*,Auto"><TextBlock Text="Reset layout and zoom" /><Border Classes="key"><TextBlock Text="Ctrl+0" /></Border></Grid>
+    <Grid Classes="row" ColumnDefinitions="*,Auto"><TextBlock Text="Zoom the timeline" /><Border Classes="key"><TextBlock Text="Ctrl+Plus / Minus" /></Border></Grid>
+    <Grid Classes="row" ColumnDefinitions="*,Auto"><TextBlock Text="Step the source scrubber" /><Border Classes="key"><TextBlock Text="Arrows · Page Up/Down" /></Border></Grid>
+    <Grid Classes="row" ColumnDefinitions="*,Auto"><TextBlock Text="Request the typed time" /><Border Classes="key"><TextBlock Text="Enter in Go to" /></Border></Grid>
+    <Grid Classes="row" ColumnDefinitions="*,Auto"><TextBlock Text="Move a list selection" /><Border Classes="key"><TextBlock Text="Arrow keys" /></Border></Grid>
+    <Grid Classes="row" ColumnDefinitions="*,Auto"><TextBlock Text="Resize panels" /><Border Classes="key"><TextBlock Text="Arrows on a gutter" /></Border></Grid>
+  </StackPanel>
+</UserControl>

@@ -1,0 +1,15 @@
+<Solution>
+  <Configurations>
+    <Platform Name="x64" />
+  </Configurations>
+  <Folder Name="/apps/">
+    <Project Path="apps/CutCap.Desktop/CutCap.Desktop.csproj" />
+  </Folder>
+  <Folder Name="/src-dotnet/">
+    <Project Path="src-dotnet/CutCap.Interop/CutCap.Interop.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/CutCap.Desktop.Tests/CutCap.Desktop.Tests.csproj" />
+    <Project Path="tests/CutCap.Interop.Tests/CutCap.Interop.Tests.csproj" />
+  </Folder>
+</Solution>

@@ -1,12 +1,12 @@
 # UI–engine and media contracts, version 2
 
-cutcap-contracts is the Rust source of truth. CONTRACT_VERSION is 2; Project schema stays 1. This is an in-process typed protocol, not a plugin/network ABI. Phase 1 adds RegisterMedia, SelectMedia, metadata DTOs and media snapshot fields. Producer, consumer, tests and docs change together.
+cutcap-contracts is the Rust source of truth. CONTRACT_VERSION is 2; Project schema stays 1. This is an in-process typed protocol, not a plugin/network ABI. Phase 1 adds RegisterMedia, SelectMedia, metadata DTOs and media snapshot fields. Producer, consumer, tests and docs change together. Since the Avalonia migration the session that consumes this protocol lives in `crates/cutcap-ffi` (ported from the Slint coordinator); the .NET frontend reaches it only through the versioned C ABI in NATIVE_ABI.md (ABI 1). The ABI does not change this contract.
 
 ## Reliable commands
 
 CommandEnvelope { request_id, project_id, command } transfers owned values. Fresh non-nil RequestIds must not be reused. All commands except NewProject require the active ProjectId. Stale scope/invalid operations preserve previous state. NewProject atomically replaces a valid project, creates two empty tracks and clears session selections/metadata; invalid replacement preserves the old project.
 
-UI try_send rejection (Busy/Internal) means not accepted. Each accepted command produces exactly one terminal Completed(snapshot) or Failed(typed EngineError) while transport stays live. Teardown may abandon pending requests; no durable delivery/retry/deduplication promise exists. The coordinator removes terminal pending IDs and clears them on disconnection.
+A session submit rejection (try_send Busy/Internal, surfaced over the ABI as BUSY/FAILED) means not accepted. Each accepted command produces exactly one terminal Completed(snapshot) or Failed(typed EngineError) while transport stays live. Teardown may abandon pending requests; no durable delivery/retry/deduplication promise exists. The session removes terminal pending IDs and clears them on disconnection.
 
 | Command | Current behavior |
 |---|---|
@@ -24,21 +24,21 @@ EngineError carries Unsupported, InvalidInput, NotFound, StaleProject, Busy or I
 
 ## Import
 
-The UI owns one asynchronous rfd Windows dialog future and one cancellable probe task. The dialog is parented using Slint's public raw-window-handle API. Native Cancel returns no path. Active probe cancellation signals its token; the UI joins only after is_finished(), never waits in a callback.
+The Avalonia frontend owns the native, window-parented asynchronous file picker (StorageProvider); dialog Cancel returns no path and registers nothing. The chosen path crosses the ABI as UTF-16. The session owns one cancellable probe task; probe cancellation signals its token, and the session joins only after is_finished(), never in a UI call. 
 
-MediaBackend::probe(path, cancellation) runs off UI and returns ProbeResult with owned canonical path, validated metadata and subprocess duration. No Project mutation occurs there. The UI checks captured ProjectId/cancellation and submits RegisterMedia with an existing typed MediaId. Only the successful owner's snapshot adds a library row and requests its initial preview. New Project invalidates older dialog/probe work; another import waits for the sole probe to finish cancellation.
+MediaBackend::probe(path, cancellation) runs off UI and returns ProbeResult with owned canonical path, validated metadata and subprocess duration. No Project mutation occurs there. The session checks captured ProjectId/cancellation and submits RegisterMedia with an existing typed MediaId. Only the successful owner's snapshot adds a library row and requests its initial preview. New Project invalidates older dialog/probe work; another import waits for the sole probe to finish cancellation.
 
 Core MediaAsset stores original path/ID and Video kind. Audio presence is metadata, not an editable per-stream reference. Metadata is session-only; no file watcher/persistence exists. A missing/replaced file at seek yields a typed failure. Future reopen must re-probe/fingerprint instead of trusting cached metadata.
 
 ## Source frame requests
 
-The replaceable MediaBackend trait imports no Slint/core types. DecodeRequest owns:
+The replaceable MediaBackend trait imports no UI/core types. DecodeRequest owns:
 
 - PreviewTicket { project_id, media_id, request_id }, using existing stable/request IDs.
 - A MediaSummary and requested SourceTime in the selected stream's exact rational clock.
 - Cancellation is independently passed by reference to the worker-owned token.
 
-UI whole milliseconds are relative to source start. Checked ceil rescaling and checked start-PTS addition form the request. Slider floats are presentation only. SourceTime is distinct from TimelineTime; no nominal frame-rate multiplication occurs.
+UI whole milliseconds are relative to source start. Checked ceil rescaling and checked start-PTS addition form the request. Slider doubles in the frontend are presentation only; the ABI takes integer milliseconds. SourceTime is distinct from TimelineTime; no nominal frame-rate multiplication occurs.
 
 Policy: **first actual PTS at or after request**, not nearest/floor/current display interval. A reliable integer stream start_pts is required; a rounded decimal start_time is not presented as observed source PTS. Demux preroll plus explicit filtering is tested against CFR, VFR and positive-offset media. A time between VFR PTS 200 and 700 selects 700. After the last PTS, NoFrame is valid even before nominal duration; estimated duration and slider endpoint do not guarantee a frame.
 
@@ -48,16 +48,16 @@ RgbaFrame private storage is top-down packed RGBA8, straight **opaque** alpha 25
 
 ## Latest results and cancellation
 
-LatestDecoder holds one active request/token, one replaceable pending request and one completed DecodeOutcome { ticket, result }. Its small mutex/condition variable owns no Project or Slint objects. Idle workers sleep. A new request cancels active work, replaces pending work, clears old completed data and installs the desired ticket.
+LatestDecoder holds one active request/token, one replaceable pending request and one completed DecodeOutcome { ticket, result }. Its small mutex/condition variable owns no Project or UI objects. Idle workers sleep. A new request cancels active work, replaces pending work, clears old completed data and installs the desired ticket.
 
-The worker publishes only if ticket still matches desired, cancellation is false and shutdown has not begun. The UI independently checks its presenter's expected ticket for **successes and failures**. New selection immediately invalidates presentation; queued selection snapshots start decoding only when they match the UI's latest desired media. Cancel clears pending/completed work and expected ticket, retains the last valid image and reports cancellation. Another seek remains possible.
+The worker publishes only if ticket still matches desired, cancellation is false and shutdown has not begun. The session's presentation gate independently checks its expected ticket for **successes and failures**. New selection immediately invalidates presentation; queued selection snapshots start decoding only when they match the UI's latest desired media. Cancel clears pending/completed work and expected ticket, retains the last valid image and reports cancellation. Another seek remains possible.
 
 This mailbox intentionally coalesces obsolete **ephemeral preview outcomes**, not project mutations/import registration/durable export terminal results. Those retain reliable paths. MediaError distinguishes Cancelled, Timeout, Invalid, Unsupported, Budget, Process(stage/code/detail), Io(stage/source), NoFrame and Worker. Probe terminal results stay in its JoinHandle until consumed. Current preview errors are surfaced; no invented progress percentage is shown. Changing source clears its old image; a failed seek retains the selected source's last valid frame.
 
 ## Threads and shutdown
 
-- UI/main owns Slint components/models/weak upgrades, dialog polling and image creation/assignment. Rc<RefCell<...>> stays local.
-- The project worker solely owns Engine/Project and session selections. Two channels each hold 32; UI drains ≤8 per 33 ms tick; worker result sends apply backpressure.
+- The Avalonia UI thread owns views, view models, the pump timer and the frame bitmap. It calls the session only through short non-blocking ABI functions and pulls the view/frame; no native callbacks exist.
+- The project worker solely owns Engine/Project and session selections. Two channels each hold 32; pump drains ≤8 per 16 ms tick; worker result sends apply backpressure.
 - One probe thread owns one FFprobe process. One decoder worker owns one FFmpeg process. Each process has two bounded pipe readers.
 - Direct argument spawning uses stdin null/no console. Probe timeout 15 s, decode 20 s; cooperative condition-variable wake/check ≤10 ms. Error/cancel/timeout paths kill/reap before reader joins. This configuration launches no helper children.
 - On close, stop timer, cancel/join media, drop reliable results before requests and join project worker. Tests cover saturated queues, active child termination/reaping and decoder shutdown.
@@ -66,4 +66,4 @@ See ARCHITECTURE.md for byte/source/input budgets and filesystem/OS limitations.
 
 ## Future extensions
 
-Playback needs persistent bounded decoding, real frame durations, presentation clock and audio policy; the 33 ms coordination timer is not a playback clock. Export terminal results need a reliable job path separate from the latest-preview mailbox. Persistence must bound bytes/allocations and migrate/validate before Project replacement. Changing color/alpha, frame selection, queues or public compatibility requires a decision and regression evidence.
+Playback needs persistent bounded decoding, real frame durations, presentation clock and audio policy; the 16 ms pump timer is not a playback clock. Export terminal results need a reliable job path separate from the latest-preview mailbox. Persistence must bound bytes/allocations and migrate/validate before Project replacement. Changing color/alpha, frame selection, queues or public compatibility requires a decision and regression evidence.
