@@ -11,13 +11,15 @@ permissions:
 jobs:
   verify:
     runs-on: windows-2025
-    timeout-minutes: 45
+    timeout-minutes: 60
     defaults:
       run:
         shell: pwsh
     env:
       CARGO_TERM_COLOR: never
       CARGO_INCREMENTAL: '0'
+      DOTNET_NOLOGO: '1'
+      DOTNET_CLI_TELEMETRY_OPTOUT: '1'
     steps:
       - uses: actions/checkout@v7
         with:
@@ -27,6 +29,10 @@ jobs:
           rustup show
           rustc --version
           cargo --version
+      - name: Install .NET SDK (global.json)
+        uses: actions/setup-dotnet@v5
+        with:
+          global-json-file: global.json
       - name: Cache Cargo and build output
         uses: actions/cache@v6
         with:
@@ -46,3 +52,13 @@ jobs:
         run: cargo build --workspace --locked
       - name: Release build
         run: cargo build --release --locked
+      # The runner has no FFmpeg, so media interop tests report as skipped;
+      # ABI, handle, error and ownership tests still run against the real DLL.
+      - name: .NET build and test (Debug)
+        run: |
+          dotnet build CutCap.slnx -c Debug
+          dotnet test CutCap.slnx -c Debug --no-build
+      - name: .NET release build
+        run: dotnet build CutCap.slnx -c Release
+      - name: Publish win-x64 (not uploaded)
+        run: dotnet publish apps/CutCap.Desktop/CutCap.Desktop.csproj -c Release -r win-x64 --self-contained true -o artifacts/publish/win-x64

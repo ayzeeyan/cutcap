@@ -1,0 +1,125 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:CutCap.Desktop.ViewModels"
+             xmlns:c="using:CutCap.Desktop.Controls"
+             x:Class="CutCap.Desktop.Views.PlayerPanel"
+             x:DataType="vm:PlayerViewModel">
+  <UserControl.Styles>
+    <!-- Narrow players keep the essentials: requested time, step buttons, go-to. -->
+    <ContainerQuery Name="player" Query="max-width:520">
+      <Style Selector=":is(Control).wide-only">
+        <Setter Property="IsVisible" Value="False" />
+      </Style>
+    </ContainerQuery>
+  </UserControl.Styles>
+  <Border Classes="panel" Container.Name="player" Container.Sizing="Width">
+    <DockPanel>
+      <Grid DockPanel.Dock="Top" Height="40" ColumnDefinitions="Auto,*" Margin="12,0,12,0">
+        <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+          <TextBlock Text="Player" FontWeight="SemiBold" VerticalAlignment="Center" />
+          <TabStrip SelectedIndex="0" ItemContainerTheme="{StaticResource ViewTab}" AutomationProperties.Name="Preview source">
+            <TabStripItem Content="Source" ToolTip.Tip="Real frames decoded from the selected media asset" />
+            <TabStripItem Content="Timeline" IsEnabled="False"
+                          ToolTip.Tip="Timeline preview arrives with timeline playback." />
+          </TabStrip>
+        </StackPanel>
+        <Grid Grid.Column="1" ColumnDefinitions="*,Auto" Margin="12,0,0,0" VerticalAlignment="Center">
+          <TextBlock Text="{Binding Title}" Classes="label" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                     TextAlignment="Right" />
+          <!-- Actual displayed frame (first PTS at or after the request). -->
+          <TextBlock Grid.Column="1" Text="{Binding Caption}" Classes="fine faint wide-only" VerticalAlignment="Center"
+                     TextTrimming="CharacterEllipsis" MaxWidth="230" Margin="10,0,0,0" IsVisible="{Binding HasFrame}"
+                     AutomationProperties.Name="Displayed frame" />
+        </Grid>
+      </Grid>
+
+      <!-- Source transport. Nothing here moves the timeline playhead. -->
+      <StackPanel DockPanel.Dock="Bottom" Margin="12,0,12,8">
+        <Slider Name="Scrubber" Minimum="0" Maximum="{Binding ScrubMaximum}" Value="{Binding ScrubValue}"
+                IsEnabled="{Binding CanScrub}" SmallChange="100" LargeChange="1000" Margin="0,-6,0,-10"
+                AutomationProperties.Name="Source position"
+                ToolTip.Tip="Requests source frames only. Arrows step 100 ms, Page keys 1 s." />
+        <Grid ColumnDefinitions="Auto,*,Auto" Height="38">
+          <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+            <TextBlock Text="{Binding PositionText}" Classes="mono" Foreground="{StaticResource Accent}"
+                       AutomationProperties.Name="Requested source position" />
+            <TextBlock Text="/" Classes="mono faint wide-only" />
+            <TextBlock Text="{Binding DurationText}" Classes="mono faint wide-only" AutomationProperties.Name="Source duration" />
+          </StackPanel>
+          <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center" HorizontalAlignment="Center">
+            <Button Classes="tool wide-only" Command="{Binding GoToStartCommand}" IsEnabled="{Binding Ready}"
+                    AutomationProperties.Name="Go to source start" ToolTip.Tip="Request the first frame">
+              <c:IconView Glyph="ToStart" />
+            </Button>
+            <Button Classes="tool" Command="{Binding BackCommand}" IsEnabled="{Binding Ready}"
+                    AutomationProperties.Name="Back one second" ToolTip.Tip="Request the frame one second earlier">
+              <c:IconView Glyph="Back" />
+            </Button>
+            <Button Classes="tool round" IsEnabled="False" AutomationProperties.Name="Play"
+                    ToolTip.Tip="Playback needs the source transport (Phase 2). Only still frames can be requested today.">
+              <c:IconView Glyph="Play" Width="18" Height="18" />
+            </Button>
+            <Button Classes="tool" Command="{Binding ForwardCommand}" IsEnabled="{Binding Ready}"
+                    AutomationProperties.Name="Forward one second" ToolTip.Tip="Request the frame one second later">
+              <c:IconView Glyph="Forward" />
+            </Button>
+            <Button Classes="tool wide-only" Command="{Binding GoToEndCommand}" IsEnabled="{Binding CanScrub}"
+                    AutomationProperties.Name="Go to source end"
+                    ToolTip.Tip="Request the last reported position; the final frame may come earlier">
+              <c:IconView Glyph="ToEnd" />
+            </Button>
+          </StackPanel>
+          <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="4" HorizontalAlignment="Right" VerticalAlignment="Center">
+            <TextBox Classes="compact mono" Width="96" Text="{Binding GoToText}" IsEnabled="{Binding Ready}"
+                     PlaceholderText="00:00.000" AutomationProperties.Name="Go to source time"
+                     ToolTip.Tip="Accepts 1500 (milliseconds), 1.5s or 00:01.500. Enter requests the frame.">
+              <TextBox.KeyBindings>
+                <KeyBinding Gesture="Enter" Command="{Binding GoToCommand}" />
+              </TextBox.KeyBindings>
+            </TextBox>
+            <Button Classes="filled" Content="Go" Command="{Binding GoToCommand}" IsEnabled="{Binding Ready}"
+                    AutomationProperties.Name="Request frame at typed time" ToolTip.Tip="Request the frame at this time" />
+          </StackPanel>
+        </Grid>
+      </StackPanel>
+
+      <!-- Stage: the decoded picture, fitted with its real aspect ratio. -->
+      <Border Background="{StaticResource Stage}">
+        <Panel>
+          <c:FrameView Name="Frame" Margin="8" AutomationProperties.Name="Decoded source frame" />
+
+          <StackPanel IsVisible="{Binding ShowEmptyState}" VerticalAlignment="Center" HorizontalAlignment="Center"
+                      Spacing="8" MaxWidth="360" Margin="20">
+            <c:IconView Glyph="Fit" Width="34" Height="34" Foreground="{StaticResource Faint}" StrokeThickness="1.1"
+                        HorizontalAlignment="Center" />
+            <TextBlock Text="{Binding Status}" Classes="title" HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap" />
+            <TextBlock Text="{Binding Detail}" Classes="label muted" HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap" />
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,6,0,0">
+              <Button Classes="filled" Content="Cancel" Command="{Binding CancelPreviewCommand}" IsVisible="{Binding Busy}"
+                      AutomationProperties.Name="Cancel frame decoding" ToolTip.Tip="Stop the pending frame request" />
+              <Button Classes="primary" Command="{Binding ImportCommand}" IsVisible="{Binding ShowImportAction}"
+                      AutomationProperties.Name="Import media" ToolTip.Tip="Choose a local video file (Ctrl+I)">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                  <c:IconView Glyph="Import" />
+                  <TextBlock Text="Import media" VerticalAlignment="Center" />
+                </StackPanel>
+              </Button>
+            </StackPanel>
+          </StackPanel>
+
+          <Border IsVisible="{Binding ShowBusyBanner}" VerticalAlignment="Top" Background="{StaticResource Overlay}" Padding="12,4,4,4">
+            <Grid ColumnDefinitions="*,Auto">
+              <TextBlock Text="Decoding the requested position. The last frame stays until it arrives."
+                         Classes="label" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+              <Button Grid.Column="1" Classes="tool" Content="Cancel" Command="{Binding CancelPreviewCommand}"
+                      AutomationProperties.Name="Cancel frame decoding" />
+            </Grid>
+          </Border>
+          <Border IsVisible="{Binding ShowDetailBanner}" VerticalAlignment="Top" Background="{StaticResource Overlay}" Padding="12,7">
+            <TextBlock Text="{Binding BannerText}" Classes="label" TextTrimming="CharacterEllipsis" />
+          </Border>
+        </Panel>
+      </Border>
+    </DockPanel>
+  </Border>
+</UserControl>

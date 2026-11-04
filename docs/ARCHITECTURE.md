@@ -1,43 +1,52 @@
-# CutCap architecture — Phase 1
+# CutCap architecture — Avalonia frontend over the Rust engine
+
+Phase 1's engine is unchanged. Since the Avalonia migration (docs/AVALONIA_MIGRATION_REPORT.md) the frontend is C#/.NET 10 + Avalonia 12; Rust keeps editing semantics, media processing, project state and all time arithmetic. The Slint frontend is retired; its last version is commit a3de692 on `claude/phase-2a-ui`.
 
 ## Workspace and ownership
 
 ```mermaid
 flowchart LR
-  App[cutcap: Slint / coordination / presentation] --> Core[cutcap-core: validated project]
-  App --> Media[cutcap-media: replaceable media adapter]
-  App --> Contracts[cutcap-contracts: IDs / exact time / DTOs]
+  Desktop[CutCap.Desktop: Avalonia views / view models / frame presentation] --> Interop[CutCap.Interop: P/Invoke, SafeHandle, view DTOs]
+  Interop -- C ABI v1, cutcap_engine.dll --> Ffi[cutcap-ffi: session host / view mapping / ABI]
+  Ffi --> Core[cutcap-core: validated project]
+  Ffi --> Media[cutcap-media: replaceable media adapter]
+  Ffi --> Contracts[cutcap-contracts: IDs / exact time / DTOs]
   Core --> Contracts
   Media --> Contracts
 ```
 
-Core remains independent of GUI, codecs, GPU, filesystem and threading. Contracts are a leaf. The app owns window lifecycle, project worker and media coordination. The media crate contains a functioning probe/decode adapter and tests; it imports no Slint/core types and never mutates Project. No codec DLL, webview or async runtime is linked. rfd 0.17.2 supplies the native asynchronous picker, parented using Slint's stable raw-window-handle-06 feature.
+Core remains independent of GUI, codecs, GPU, filesystem and threading. Contracts are a leaf. `cutcap-ffi` owns the session (command worker, media host), derives display DTOs and is the only crate with `unsafe` (isolated in `abi.rs`). The .NET side holds no project state: every displayed value comes from the latest engine view, and every action is an engine call.
 
 | Module | Responsibility |
 |---|---|
 | contracts/ids.rs, time.rs | Distinct non-nil UUID identities; exact source/project clocks; checked floor/ceil rescaling |
 | contracts/media.rs, messages.rs | Validated metadata DTOs, commands, snapshots and errors; contract version 2 |
-| core/project.rs | Schema 1 validated project graph and atomic mutations; unchanged in Phase 1 |
+| core/project.rs | Schema 1 validated project graph and atomic mutations |
 | media/backend.rs, probe.rs | MediaBackend contract, FFmpeg policy and bounded metadata parsing |
 | media/process.rs, cancel.rs | Owned child processes, bounded pipe capture, timeout, cancellation and reaping |
 | media/frame.rs, latest.rs | Validated opaque RGBA8; bounded latest-request/result mailbox |
-| app/engine.rs, bridge.rs | Single project owner; reliable channels; metadata session cache/source selection |
-| app/coordinator.rs, media_ui.rs | UI callbacks/models, native picker, probe completion and request correlation |
-| app/preview.rs | UI-thread CPU buffer → Slint image adapter; presentation timing |
-| app/benchmark.rs | Developer driver of the same real import/registration/preview path |
-| app/gpu.rs | Optional independent DX12 enumeration; no compositor or texture sharing |
+| ffi/engine.rs, bridge.rs | Single project owner; reliable bounded channels (moved unchanged from the Slint app) |
+| ffi/media.rs | Probe job, latest decoder, ticket-gated presentation, latest frame (ported from media_ui/preview) |
+| ffi/session.rs | Request bookkeeping and pump (ported from the Slint coordinator) |
+| ffi/view.rs | View DTOs and exact-time formatting; tested source-time grammar |
+| ffi/abi.rs | Versioned C ABI: handle registry, panic barrier, buffer validation (docs/NATIVE_ABI.md) |
+| ffi/bin/gpu_info.rs | Optional DX12 adapter enumeration (`--features gpu-diagnostics`) |
+| Interop/EngineSession.cs | Managed owner: ABI check, typed calls, view reads, frame copy into caller memory |
+| Desktop/Services/EngineHost.cs | UI-thread pump timer, view/frame notifications, command rejection → status |
+| Desktop/ViewModels | MVVM over the view; in-place list sync preserves item identity and focus |
+| Desktop/Controls | IconView, FrameView (bitmap presenter), TimelineScale/Ruler/Lanes (custom-drawn) |
 
 ## Lifecycle and data flow
 
-Main initializes tracing and the Slint winit/software window, then starts the cheap project worker and independent latest-frame decoder. NewProject installs two real empty tracks. A 33 ms UI timer drains at most eight reliable events, polls dialog/probe completion and takes at most one completed preview. Slint objects and weak-handle upgrades stay on the event-loop thread. VecModels update in place to preserve focus/repeater identity; project replacement explicitly restores workspace focus.
+`App` creates `EngineHost`, the main window and its view models, then starts the session: `cutcap_session_create` verifies the ABI, starts the command worker and decoder and queues NewProject (two real empty tracks). A 16 ms `DispatcherTimer` on the UI thread calls pump, which drains at most eight reliable events, polls the probe and takes at most one decoded frame, then re-reads the view only when it changed. Nothing in the pump blocks.
 
-Import opens the native picker. One named probe thread canonicalizes/validates the local file, invokes FFprobe and returns metadata. The UI joins only after is_finished(), checks cancellation/ProjectId, then sends RegisterMedia to the project owner. The owner validates again, adds a genuine MediaAsset and retains metadata in its session cache. Only a successful snapshot adds a library entry and initiates its preview.
+Import opens Avalonia's native, window-parented, asynchronous picker (`StorageProvider`). The chosen path crosses the ABI as UTF-16. One probe thread canonicalizes and validates the file and invokes FFprobe; the session commits `RegisterMedia` through the project owner, which validates again. Only a successful snapshot adds a library entry and starts its preview.
 
-Source selection is independent of timeline Track/Clip selection. SelectMedia changes it through the owner. The UI immediately invalidates the old preview and waits for the matching snapshot. Relative whole milliseconds at the UI edge are converted with checked rational ceil rescaling into source ticks, then added to start PTS. The timeline playhead stays at zero. Every request carries PreviewTicket { project_id, media_id, request_id }.
+Source selection is independent of timeline Track/Clip selection. Relative whole milliseconds are converted in Rust with checked rational ceil rescaling into source ticks, then added to start PTS. The timeline playhead stays at zero. Every request carries `PreviewTicket { project_id, media_id, request_id }`. One active decode, one replaceable pending request and one replaceable outcome bound the backlog; the decoder and the session's presentation gate independently reject stale successes and errors.
 
-One active decode, one replaceable pending request and one replaceable completed outcome bound the preview backlog. New seeks cancel active work; the decoder and presenter independently reject stale successes/errors. Owned frame buffers bypass reliable project channels. preview.rs calls public SharedPixelBuffer<Rgba8Pixel>::clone_from_slice and Image::from_rgba8 on the UI thread: one explicit full-frame copy, with possible additional renderer storage/copies. No zero-copy claim.
+Frame presentation: the session keeps the latest validated RGBA8 frame with a generation number. `FrameView` asks for the frame info and has the engine copy the pixels once, row by row, straight into a reused `WriteableBitmap` (RGBA8888, opaque, no conversion), then invalidates itself. Frames never pass through view-model property notifications. One full-frame copy per presentation; Avalonia's compositor may upload/copy further. No zero-copy claim.
 
-After the event loop, stop the timer, cancel/join media tasks, close reliable results before requests, then join the project worker. Cancelled children are killed/reaped before pipe readers are joined. Native dialog cancellation uses its own Cancel action; dropping rfd's future has no documented programmatic dialog-close guarantee.
+Shutdown: after the window closes, the pump timer stops and the session is disposed; destroy cancels the probe and decoder (killing and reaping FFmpeg children), drops reliable results before requests and joins the command worker. Measured ~0.1 s, including during an active decode.
 
 ## Domain and compatibility
 
@@ -49,7 +58,7 @@ Timeline ticks use the project clock (default 1/720000 s), never preview frame r
 
 ## Media and presentation boundary
 
-MediaBackend accepts path or DecodeRequest plus Cancellation and returns typed probe/frame results. Future libavcodec/libavformat or hardware implementations can replace FfmpegBackend without changing core or importing codecs into Slint. They must preserve cancellation, timestamp and buffer semantics.
+MediaBackend accepts path or DecodeRequest plus Cancellation and returns typed probe/frame results. Future libavcodec/libavformat or hardware implementations can replace FfmpegBackend without changing core or importing codecs into the frontend. They must preserve cancellation, timestamp and buffer semantics.
 
 The subprocess adapter is tested with external FFmpeg/FFprobe 9.0.1, invoked directly with argument arrays (Unicode/spaces tested), stdin null and no console. No executable is copied or bundled. The frame policy is **first original PTS at or after request**. One-second demux preroll with -copyts -noaccurate_seek -seek_timestamp 1 plus explicit PTS selection preserves nonzero starts. Automatic accurate-seek discard was disabled after the offset regression fixture exposed incorrect selection.
 
@@ -61,7 +70,7 @@ FFmpeg auto-orients quarter-turn matrices. DAR/SAR and rotation determine a squa
 
 | Resource | Bound |
 |---|---|
-| Project request/result queues | 32 each; UI try_send and ≤8 events per 33 ms tick |
+| Project request/result queues | 32 each; non-blocking submit and ≤8 events per 16 ms pump |
 | Imports | One probe/picker, ≤128 registered metadata assets |
 | Decode | One active, one pending, one completed outcome |
 | Preview | ≤1280×720 RGBA8; ≤3,686,400 bytes/frame; exact stride/length/alpha |
@@ -72,12 +81,12 @@ FFmpeg auto-orients quarter-turn matrices. DAR/SAR and rotation determine a squa
 | Inspection | 8 MiB probe input; 5 s analyzed media duration; file/pipe protocols |
 | Diagnostics | ≤256 presentation samples; ≤128 probe timing records |
 
-The old displayed image, incoming raw frame and new Slint copy can coexist (about three preview buffers, 11,059,200 bytes). Renderer caches and source/reference surfaces are additional. These budgets do not cap aggregate FFmpeg RSS or constitute an OS sandbox. File canonicalization/metadata calls run off UI but cannot be interrupted by the process timeout; pathological local filesystems, reparse/device paths and codec behavior need future hardening.
+The previous session frame, an incoming decoded frame and the frontend bitmap can coexist (about three preview buffers, 11,059,200 bytes). Renderer caches and source/reference surfaces are additional. These budgets do not cap aggregate FFmpeg RSS or constitute an OS sandbox. File canonicalization/metadata calls run off UI but cannot be interrupted by the process timeout; pathological local filesystems, reparse/device paths and codec behavior need future hardening.
 
 ## UI and next rendering decision
 
-Existing shell, tracks, splitters, zoom, scrolling, About/attribution and keyboard behavior remain. Import/source selection/seeking now work; library/inspector show real metadata, with estimated durations marked. Open/Save/Play/Export remain disabled. No playback clock, audio output, waveform or timeline editing exists.
+The Avalonia shell (DESIGN.md) has a custom title bar over Avalonia-drawn Windows caption buttons, an asset workspace with category tabs, a player, a context inspector and a full-width timeline. Panels resize with grid splitters and proportional columns with minimums (window minimum 960×600). Responsive rules use Avalonia container queries. Unsupported systems (Audio/Text/Stickers/Effects/Transitions/Filters/Adjustment, clip inspector tabs, Timeline preview, Play, Undo/Redo, Split/Delete, Export, track visibility/mute/lock) are visible with honest states or disabled with tooltips.
 
-Default timeline height is 210 logical px to give the viewer more room. Viewer aspect follows the oriented frame. Ctrl+I imports; existing Ctrl+N, Ctrl+0, zoom and clear-timeline-selection shortcuts remain. Window remains 1120×640, minimum 1000×600, initially at physical (32,16). Actual Windows/DPI evidence is in PHASE_1_REPORT.md.
+The timeline ruler and lanes are custom-drawn controls that draw only the viewport; `TimelineScale` keeps time ↔ pixel conversion independent of rendering and is unit-tested. Track headers are a list with keyboard selection through the engine. There are no clips yet; a future clip surface belongs in the lanes control, not one control per clip.
 
-wgpu 30.0.1 remains optional DX12 diagnostics. No unstable Slint interop is enabled. Phase 1 measurements assess request-based CPU presentation, ending at UI assignment, not physical scanout/playback pacing. Retain CPU presentation for the next transport experiment; investigate GPU interop against measured playback bottlenecks. Preview/export must eventually share timeline evaluation semantics, which do not exist yet.
+wgpu 30.0.1 remains an optional DX12 diagnostic. The CPU frame path is measured (docs/measurements, AVALONIA_MIGRATION_REPORT.md). GPU interop with Avalonia's compositor is deliberately not attempted until playback measurements show the CPU path is the bottleneck; any experiment must keep the CPU fallback.

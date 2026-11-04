@@ -1,0 +1,90 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:CutCap.Desktop.ViewModels"
+             xmlns:i="using:CutCap.Interop"
+             xmlns:c="using:CutCap.Desktop.Controls"
+             x:Class="CutCap.Desktop.Views.InspectorPanel"
+             x:DataType="vm:InspectorViewModel">
+  <Border Classes="panel">
+    <DockPanel>
+      <Grid DockPanel.Dock="Top" MinHeight="40" Margin="8,4,6,4">
+        <TabStrip ItemsSource="{Binding Tabs}" SelectedIndex="{Binding SelectedTab}"
+                  ItemContainerTheme="{StaticResource ViewTab}" VerticalAlignment="Center"
+                  AutomationProperties.Name="Inspector sections">
+          <TabStrip.ItemsPanel>
+            <ItemsPanelTemplate>
+              <WrapPanel Orientation="Horizontal" />
+            </ItemsPanelTemplate>
+          </TabStrip.ItemsPanel>
+        </TabStrip>
+      </Grid>
+      <Border DockPanel.Dock="Top" Classes="divider" Height="1" />
+
+      <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+        <StackPanel Margin="12,12,12,14">
+          <!-- Identity of the current selection. -->
+          <Grid ColumnDefinitions="Auto,*,Auto" Margin="0,0,0,12">
+            <Border Width="64" Height="36" CornerRadius="4" Margin="0,0,10,0" Background="{StaticResource TileGradient}"
+                    IsVisible="{Binding IsSource}">
+              <c:IconView Glyph="Film" Foreground="{StaticResource Faint}" HorizontalAlignment="Center" />
+            </Border>
+            <StackPanel Grid.Column="1" Spacing="3" VerticalAlignment="Center">
+              <StackPanel Orientation="Horizontal" Spacing="6">
+                <TextBlock Text="{Binding Title}" FontWeight="SemiBold" FontSize="14" TextTrimming="CharacterEllipsis" />
+                <Border IsVisible="{Binding IsSource}" Background="{StaticResource VideoFill}" CornerRadius="3" Padding="5,1"
+                        VerticalAlignment="Center">
+                  <TextBlock Text="Video" FontSize="10" FontWeight="SemiBold" Foreground="White" />
+                </Border>
+              </StackPanel>
+              <TextBlock Text="{Binding Detail}" Classes="label muted" TextWrapping="Wrap" />
+            </StackPanel>
+            <Button Grid.Column="2" Classes="tool" Command="{Binding ClearSelectionCommand}" IsVisible="{Binding IsTrack}"
+                    VerticalAlignment="Top" AutomationProperties.Name="Clear selection"
+                    ToolTip.Tip="Return to the project overview (Ctrl+Shift+A)">
+              <c:IconView Glyph="Close" Width="13" Height="13" />
+            </Button>
+          </Grid>
+          <Border Classes="divider" Height="1" />
+
+          <ItemsControl ItemsSource="{Binding Sections}" IsVisible="{Binding ShowDetails}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="vm:SectionViewModel">
+                <StackPanel>
+                  <ToggleButton Theme="{StaticResource SectionToggle}" IsChecked="{Binding IsExpanded}"
+                                AutomationProperties.Name="{Binding Title}">
+                    <Grid ColumnDefinitions="*,Auto">
+                      <TextBlock Text="{Binding Title}" VerticalAlignment="Center" />
+                      <c:IconView Grid.Column="1" Glyph="ChevronDown" Width="14" Height="14" Foreground="{StaticResource Muted}"
+                                  IsVisible="{Binding IsExpanded}" />
+                      <c:IconView Grid.Column="1" Glyph="ChevronRight" Width="14" Height="14" Foreground="{StaticResource Muted}"
+                                  IsVisible="{Binding !IsExpanded}" />
+                    </Grid>
+                  </ToggleButton>
+                  <ItemsControl ItemsSource="{Binding Rows}" IsVisible="{Binding IsExpanded}" Margin="4,0,4,10">
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate x:DataType="i:RowView">
+                        <Grid ColumnDefinitions="104,*" Margin="0,4">
+                          <TextBlock Text="{Binding Label}" Classes="label faint" TextWrapping="Wrap" Margin="0,0,8,0" />
+                          <TextBlock Grid.Column="1" Text="{Binding Value}" Classes="label" TextWrapping="Wrap" />
+                        </Grid>
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+                  <Border Classes="divider" Height="1" />
+                </StackPanel>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+
+          <!-- Clip tabs: an honest placeholder until clips exist. -->
+          <StackPanel IsVisible="{Binding ShowClipPlaceholder}" Spacing="8" Margin="0,24,0,0">
+            <c:IconView Glyph="Sliders" Width="26" Height="26" Foreground="{StaticResource Faint}" HorizontalAlignment="Center"
+                        StrokeThickness="1.2" />
+            <TextBlock Text="{Binding PlaceholderTitle}" FontWeight="SemiBold" HorizontalAlignment="Center" TextAlignment="Center" />
+            <TextBlock Text="{Binding PlaceholderDetail}" Classes="label faint" TextWrapping="Wrap" TextAlignment="Center" />
+          </StackPanel>
+        </StackPanel>
+      </ScrollViewer>
+    </DockPanel>
+  </Border>
+</UserControl>

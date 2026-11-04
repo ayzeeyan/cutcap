@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <RootNamespace>CutCap.Interop</RootNamespace>
+    <IsAotCompatible>true</IsAotCompatible>
+    <CargoProfile Condition="'$(Configuration)' == 'Release'">release</CargoProfile>
+    <CargoProfile Condition="'$(Configuration)' != 'Release'">debug</CargoProfile>
+    <CutCapNativeLibrary>$(CutCapRoot)target\$(CargoProfile)\cutcap_engine.dll</CutCapNativeLibrary>
+  </PropertyGroup>
+  <!-- The Rust engine is built by Cargo; MSBuild only copies the result. Set
+       CutCapSkipCargo=true when a pipeline has already built it. -->
+  <Target Name="BuildCutCapEngine" BeforeTargets="BeforeBuild" Condition="'$(CutCapSkipCargo)' != 'true'">
+    <Exec Command="cargo build -p cutcap-ffi --locked" Condition="'$(CargoProfile)' == 'debug'" WorkingDirectory="$(CutCapRoot)" />
+    <Exec Command="cargo build -p cutcap-ffi --release --locked" Condition="'$(CargoProfile)' == 'release'" WorkingDirectory="$(CutCapRoot)" />
+  </Target>
+  <ItemGroup>
+    <None Include="$(CutCapNativeLibrary)" Link="cutcap_engine.dll" CopyToOutputDirectory="PreserveNewest" Visible="false" />
+  </ItemGroup>
+</Project>

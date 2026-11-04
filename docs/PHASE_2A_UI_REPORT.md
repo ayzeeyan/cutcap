@@ -1,3 +1,5 @@
+> **Historical.** This report describes the Slint frontend, retired by the Avalonia migration (docs/AVALONIA_MIGRATION_REPORT.md). Its last version is commit a3de692 on `claude/phase-2a-ui`; the Night Cut screenshots are docs/images/phase2a-night-*.jpg.
+
 # Phase 2A — Native editor UI/UX
 
 Date: 2026-11-03. Windows 11 x64, branch `claude/phase-2a-ui` from Phase 1 commit 8155d32. Author: Claude Opus 5.5 (UI/UX). This report separates implemented, verified and unverified behaviour. `docs/PHASE_2_PLAYBACK_CONTRACT.md` did not exist, so no playback API was used or invented; all work stays within contract version 2 and project schema 1.

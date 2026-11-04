@@ -1,0 +1,280 @@
+<ResourceDictionary xmlns="https://github.com/avaloniaui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <!-- One button vocabulary: tool (flat), filled (raised) and primary (cyan).
+       Every interactive control has hover, pressed, disabled and a visible
+       keyboard focus ring. -->
+  <ControlTheme x:Key="ToolButton" TargetType="Button">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="Foreground" Value="{StaticResource Text}" />
+    <Setter Property="BorderBrush" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="1.5" />
+    <Setter Property="CornerRadius" Value="{StaticResource ControlRadius}" />
+    <Setter Property="Padding" Value="7,0" />
+    <Setter Property="MinHeight" Value="28" />
+    <Setter Property="MinWidth" Value="28" />
+    <Setter Property="FontSize" Value="12" />
+    <Setter Property="HorizontalContentAlignment" Value="Center" />
+    <Setter Property="VerticalContentAlignment" Value="Center" />
+    <Setter Property="Cursor" Value="Hand" />
+    <Setter Property="ToolTip.ShowOnDisabled" Value="True" />
+    <Setter Property="Template">
+      <ControlTemplate>
+        <ContentPresenter Name="PART_ContentPresenter"
+                          Background="{TemplateBinding Background}"
+                          BorderBrush="{TemplateBinding BorderBrush}"
+                          BorderThickness="{TemplateBinding BorderThickness}"
+                          CornerRadius="{TemplateBinding CornerRadius}"
+                          Padding="{TemplateBinding Padding}"
+                          Foreground="{TemplateBinding Foreground}"
+                          Content="{TemplateBinding Content}"
+                          ContentTemplate="{TemplateBinding ContentTemplate}"
+                          HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
+                          VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}" />
+      </ControlTemplate>
+    </Setter>
+    <Style Selector="^:pointerover">
+      <Setter Property="Background" Value="{StaticResource Hover}" />
+    </Style>
+    <Style Selector="^:pressed">
+      <Setter Property="Background" Value="{StaticResource Pressed}" />
+    </Style>
+    <Style Selector="^:disabled">
+      <Setter Property="Opacity" Value="0.38" />
+      <Setter Property="Cursor" Value="Arrow" />
+    </Style>
+    <Style Selector="^:focus-visible">
+      <Setter Property="BorderBrush" Value="{StaticResource Accent}" />
+    </Style>
+  </ControlTheme>
+
+  <ControlTheme x:Key="FilledButton" TargetType="Button" BasedOn="{StaticResource ToolButton}">
+    <Setter Property="Background" Value="{StaticResource Raised}" />
+    <Setter Property="Padding" Value="10,0" />
+    <Style Selector="^:pointerover">
+      <Setter Property="Background" Value="{StaticResource Hover}" />
+    </Style>
+    <Style Selector="^:pressed">
+      <Setter Property="Background" Value="{StaticResource Pressed}" />
+    </Style>
+  </ControlTheme>
+
+  <ControlTheme x:Key="PrimaryButton" TargetType="Button" BasedOn="{StaticResource ToolButton}">
+    <Setter Property="Background" Value="{StaticResource Accent}" />
+    <Setter Property="Foreground" Value="{StaticResource AccentInk}" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="Padding" Value="12,0" />
+    <Style Selector="^:pointerover">
+      <Setter Property="Background" Value="{StaticResource AccentHover}" />
+    </Style>
+    <Style Selector="^:pressed">
+      <Setter Property="Background" Value="{StaticResource AccentPressed}" />
+    </Style>
+    <Style Selector="^:focus-visible">
+      <Setter Property="BorderBrush" Value="{StaticResource Text}" />
+    </Style>
+  </ControlTheme>
+
+  <!-- Icon-over-label tool category across the top of the asset workspace. -->
+  <ControlTheme x:Key="CategoryTab" TargetType="TabStripItem">
+    <Setter Property="Foreground" Value="{StaticResource Muted}" />
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderBrush" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="1.5" />
+    <Setter Property="CornerRadius" Value="{StaticResource ControlRadius}" />
+    <Setter Property="Padding" Value="2,6,2,5" />
+    <Setter Property="MinWidth" Value="38" />
+    <Setter Property="Cursor" Value="Hand" />
+    <Setter Property="Template">
+      <ControlTemplate>
+        <ContentPresenter Name="PART_ContentPresenter"
+                          Background="{TemplateBinding Background}"
+                          BorderBrush="{TemplateBinding BorderBrush}"
+                          BorderThickness="{TemplateBinding BorderThickness}"
+                          CornerRadius="{TemplateBinding CornerRadius}"
+                          Padding="{TemplateBinding Padding}"
+                          Foreground="{TemplateBinding Foreground}"
+                          Content="{TemplateBinding Content}"
+                          ContentTemplate="{TemplateBinding ContentTemplate}"
+                          HorizontalContentAlignment="Center" />
+      </ControlTemplate>
+    </Setter>
+    <Style Selector="^:pointerover">
+      <Setter Property="Foreground" Value="{StaticResource Text}" />
+      <Setter Property="Background" Value="#802A2E34" />
+    </Style>
+    <Style Selector="^:selected">
+      <Setter Property="Foreground" Value="{StaticResource Accent}" />
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <Style Selector="^:focus-visible">
+      <Setter Property="BorderBrush" Value="{StaticResource Accent}" />
+    </Style>
+  </ControlTheme>
+
+  <!-- Text tab in panel headers: selected is cyan with an underline. -->
+  <ControlTheme x:Key="ViewTab" TargetType="TabStripItem">
+    <Setter Property="Foreground" Value="{StaticResource Muted}" />
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderBrush" Value="Transparent" />
+    <Setter Property="FontSize" Value="12" />
+    <Setter Property="Padding" Value="6,0" />
+    <Setter Property="MinHeight" Value="30" />
+    <Setter Property="Cursor" Value="Hand" />
+    <Setter Property="ToolTip.ShowOnDisabled" Value="True" />
+    <Setter Property="Template">
+      <ControlTemplate>
+        <Panel>
+          <Border Name="focus" CornerRadius="{StaticResource ControlRadius}" BorderThickness="1.5"
+                  BorderBrush="{TemplateBinding BorderBrush}" Background="{TemplateBinding Background}" />
+          <ContentPresenter Name="PART_ContentPresenter" Padding="{TemplateBinding Padding}"
+                            Foreground="{TemplateBinding Foreground}"
+                            Content="{TemplateBinding Content}" ContentTemplate="{TemplateBinding ContentTemplate}"
+                            VerticalContentAlignment="Center" HorizontalContentAlignment="Center" />
+          <Border Name="underline" Height="2" CornerRadius="1" Margin="6,0" VerticalAlignment="Bottom"
+                  Background="{StaticResource Accent}" IsVisible="False" />
+        </Panel>
+      </ControlTemplate>
+    </Setter>
+    <Style Selector="^:pointerover">
+      <Setter Property="Foreground" Value="{StaticResource Text}" />
+    </Style>
+    <Style Selector="^:selected">
+      <Setter Property="Foreground" Value="{StaticResource Accent}" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+    <Style Selector="^:selected /template/ Border#underline">
+      <Setter Property="IsVisible" Value="True" />
+    </Style>
+    <Style Selector="^:disabled">
+      <Setter Property="Opacity" Value="0.45" />
+    </Style>
+    <Style Selector="^:focus-visible">
+      <Setter Property="BorderBrush" Value="{StaticResource Accent}" />
+    </Style>
+  </ControlTheme>
+
+  <!-- Vertical category list beside the asset content. -->
+  <ControlTheme x:Key="NavItem" TargetType="ListBoxItem">
+    <Setter Property="Foreground" Value="{StaticResource Muted}" />
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderBrush" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="1.5" />
+    <Setter Property="CornerRadius" Value="{StaticResource ControlRadius}" />
+    <Setter Property="Padding" Value="10,0" />
+    <Setter Property="MinHeight" Value="30" />
+    <Setter Property="FontSize" Value="12" />
+    <Setter Property="Margin" Value="0,0,0,2" />
+    <Setter Property="Cursor" Value="Hand" />
+    <Setter Property="Template">
+      <ControlTemplate>
+        <ContentPresenter Name="PART_ContentPresenter"
+                          Background="{TemplateBinding Background}"
+                          BorderBrush="{TemplateBinding BorderBrush}"
+                          BorderThickness="{TemplateBinding BorderThickness}"
+                          CornerRadius="{TemplateBinding CornerRadius}"
+                          Padding="{TemplateBinding Padding}"
+                          Foreground="{TemplateBinding Foreground}"
+                          Content="{TemplateBinding Content}"
+                          ContentTemplate="{TemplateBinding ContentTemplate}"
+                          VerticalContentAlignment="Center" />
+      </ControlTemplate>
+    </Setter>
+    <Style Selector="^:pointerover">
+      <Setter Property="Background" Value="#802A2E34" />
+      <Setter Property="Foreground" Value="{StaticResource Text}" />
+    </Style>
+    <Style Selector="^:selected">
+      <Setter Property="Background" Value="{StaticResource Raised}" />
+      <Setter Property="Foreground" Value="{StaticResource Text}" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+    <Style Selector="^:focus-visible">
+      <Setter Property="BorderBrush" Value="{StaticResource Accent}" />
+    </Style>
+  </ControlTheme>
+
+  <!-- Media grid tile: the selection ring is drawn by the template. -->
+  <ControlTheme x:Key="MediaTile" TargetType="ListBoxItem">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="Padding" Value="0" />
+    <Setter Property="Margin" Value="0,0,10,10" />
+    <Setter Property="Cursor" Value="Hand" />
+    <Setter Property="Template">
+      <ControlTemplate>
+        <ContentPresenter Name="PART_ContentPresenter" Background="{TemplateBinding Background}"
+                          Content="{TemplateBinding Content}" ContentTemplate="{TemplateBinding ContentTemplate}" />
+      </ControlTemplate>
+    </Setter>
+  </ControlTheme>
+
+  <!-- Timeline track header row. -->
+  <ControlTheme x:Key="TrackHeaderItem" TargetType="ListBoxItem">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderBrush" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="1.5" />
+    <Setter Property="CornerRadius" Value="{StaticResource ControlRadius}" />
+    <Setter Property="Padding" Value="8,0,4,0" />
+    <Setter Property="Height" Value="50" />
+    <Setter Property="Cursor" Value="Hand" />
+    <Setter Property="Template">
+      <ControlTemplate>
+        <ContentPresenter Name="PART_ContentPresenter"
+                          Background="{TemplateBinding Background}"
+                          BorderBrush="{TemplateBinding BorderBrush}"
+                          BorderThickness="{TemplateBinding BorderThickness}"
+                          CornerRadius="{TemplateBinding CornerRadius}"
+                          Padding="{TemplateBinding Padding}"
+                          Content="{TemplateBinding Content}"
+                          ContentTemplate="{TemplateBinding ContentTemplate}"
+                          VerticalContentAlignment="Center" HorizontalContentAlignment="Stretch" />
+      </ControlTemplate>
+    </Setter>
+    <Style Selector="^:pointerover">
+      <Setter Property="Background" Value="{StaticResource Well}" />
+    </Style>
+    <Style Selector="^:selected">
+      <Setter Property="Background" Value="{StaticResource AccentWash}" />
+    </Style>
+    <Style Selector="^:focus-visible">
+      <Setter Property="BorderBrush" Value="{StaticResource Accent}" />
+    </Style>
+  </ControlTheme>
+
+  <!-- Inspector section header: a full-width toggle with a chevron. -->
+  <ControlTheme x:Key="SectionToggle" TargetType="ToggleButton">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="Foreground" Value="{StaticResource Text}" />
+    <Setter Property="BorderBrush" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="1.5" />
+    <Setter Property="CornerRadius" Value="{StaticResource ControlRadius}" />
+    <Setter Property="Padding" Value="4,0" />
+    <Setter Property="Height" Value="38" />
+    <Setter Property="FontSize" Value="12" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="HorizontalAlignment" Value="Stretch" />
+    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+    <Setter Property="VerticalContentAlignment" Value="Center" />
+    <Setter Property="Cursor" Value="Hand" />
+    <Setter Property="Template">
+      <ControlTemplate>
+        <ContentPresenter Name="PART_ContentPresenter"
+                          Background="{TemplateBinding Background}"
+                          BorderBrush="{TemplateBinding BorderBrush}"
+                          BorderThickness="{TemplateBinding BorderThickness}"
+                          CornerRadius="{TemplateBinding CornerRadius}"
+                          Padding="{TemplateBinding Padding}"
+                          Foreground="{TemplateBinding Foreground}"
+                          Content="{TemplateBinding Content}"
+                          ContentTemplate="{TemplateBinding ContentTemplate}"
+                          HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
+                          VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}" />
+      </ControlTemplate>
+    </Setter>
+    <Style Selector="^:pointerover">
+      <Setter Property="Background" Value="#732A2E34" />
+    </Style>
+    <Style Selector="^:focus-visible">
+      <Setter Property="BorderBrush" Value="{StaticResource Accent}" />
+    </Style>
+  </ControlTheme>
+</ResourceDictionary>

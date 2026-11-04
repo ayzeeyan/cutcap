@@ -1,9 +1,0 @@
-// `badge` is the short track label shown in the header ("V1", "A2").
-export struct TrackRow { name: string, kind: string, badge: string, selected: bool }
-// Library row fields are formatted from real probe metadata in presentation.rs.
-// `source-index` is the asset's position in the snapshot, so filtered lists
-// still select the right source.
-export struct MediaRow { source-index: int, name: string, resolution: string, format: string, duration: string, estimated: bool, has-audio: bool, selected: bool }
-export struct InfoRow { label: string, value: string }
-// Inspector section: a collapsible heading over label/value rows.
-export struct InfoSection { title: string, rows: [InfoRow] }

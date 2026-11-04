@@ -6,3 +6,6 @@
 .vs/
 .idea/
 .vscode/
+bin/
+obj/
+/artifacts/
