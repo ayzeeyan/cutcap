@@ -4,10 +4,11 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     ClipId, DocumentStatus, MediaAvailability, MediaId, MediaSummary, ProjectId, RequestId,
-    SourceFingerprint, Timebase, TimelineTime, TrackId, VerifiedMedia,
+    SourceFingerprint, SourceTime, Timebase, TimelineDuration, TimelineTime, TrackId,
+    VerifiedMedia,
 };
 
-pub const CONTRACT_VERSION: u32 = 3;
+pub const CONTRACT_VERSION: u32 = 4;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TrackKind {
@@ -71,6 +72,13 @@ pub enum Command {
     ImportMedia {
         paths: Vec<PathBuf>,
     },
+    /// Appends a registered, ready video source to the end of a video track,
+    /// using the source's full reported duration. Undoable.
+    InsertClip {
+        media_id: MediaId,
+        track_id: TrackId,
+    },
+    /// Removes a clip; its media asset and source file are untouched. Undoable.
     RemoveClip {
         clip_id: ClipId,
     },
@@ -80,6 +88,7 @@ pub enum Command {
     SetPlayback {
         playing: bool,
     },
+    /// Reverses the newest clip edit. Selection is never an undo step.
     Undo,
     Redo,
     StartExport {
@@ -99,6 +108,29 @@ pub struct TrackSummary {
     pub clip_count: usize,
 }
 
+/// One timeline clip as stored in the project (exact ticks, never pixels).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ClipSummary {
+    pub id: ClipId,
+    pub media_id: MediaId,
+    pub track_id: TrackId,
+    pub start: TimelineTime,
+    pub duration: TimelineDuration,
+    pub source_in: SourceTime,
+}
+
+/// Editing history availability. Labels describe the edit that would be undone/redone.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct HistoryStatus {
+    pub can_undo: bool,
+    pub can_redo: bool,
+    pub undo: Option<String>,
+    pub redo: Option<String>,
+    pub depth: usize,
+}
+
 /// Small view DTO, never the mutable project or a decoded frame buffer.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -115,6 +147,9 @@ pub struct ProjectSnapshot {
     pub source_media: Option<MediaId>,
     pub media_state: Vec<MediaAvailability>,
     pub document: DocumentStatus,
+    /// Clips in project order.
+    pub clips: Vec<ClipSummary>,
+    pub history: HistoryStatus,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

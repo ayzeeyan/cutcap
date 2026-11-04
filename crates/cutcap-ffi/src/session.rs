@@ -50,6 +50,10 @@ pub struct Session {
     dirty: bool,
     revision: u64,
     cached: Option<String>,
+    /// Bumped with every new project snapshot; the timeline document is
+    /// rebuilt lazily from it (commands only, never per playback frame).
+    timeline_generation: u64,
+    timeline_cached: Option<String>,
     closed: bool,
 }
 
@@ -71,6 +75,8 @@ impl Session {
             dirty: true,
             revision: 0,
             cached: None,
+            timeline_generation: 0,
+            timeline_cached: None,
             closed: false,
         };
         session.new_project()?;
@@ -178,6 +184,38 @@ impl Session {
         self.requests.verifying = Some(id);
         self.dirty = true;
         Ok(())
+    }
+
+    /// Appends a ready video source to the end of a video track (undoable).
+    pub fn insert_clip(&mut self, media: MediaId, track: TrackId) -> Result<(), SessionError> {
+        // The new clip becomes the selection, so the inspector follows it.
+        self.requests.inspecting_media = false;
+        self.submit(Command::InsertClip {
+            media_id: media,
+            track_id: track,
+        })
+        .map(|_| ())
+    }
+
+    pub fn remove_clip(&mut self, id: ClipId) -> Result<(), SessionError> {
+        self.submit(Command::RemoveClip { clip_id: id }).map(|_| ())
+    }
+
+    /// Timeline selection only: never dirties the document or enters history.
+    pub fn select_clip(&mut self, id: ClipId) -> Result<(), SessionError> {
+        self.requests.inspecting_media = false;
+        self.submit(Command::Select {
+            selection: SelectionState::Clip(id),
+        })
+        .map(|_| ())
+    }
+
+    pub fn undo(&mut self) -> Result<(), SessionError> {
+        self.submit(Command::Undo).map(|_| ())
+    }
+
+    pub fn redo(&mut self) -> Result<(), SessionError> {
+        self.submit(Command::Redo).map(|_| ())
     }
 
     pub fn select_track(&mut self, id: TrackId) -> Result<(), SessionError> {
@@ -396,7 +434,7 @@ impl Session {
         match event {
             EngineEvent::Updated { snapshot } => {
                 self.engine_ready = snapshot.document.state != "opening";
-                self.requests.snapshot = Some(snapshot);
+                self.set_snapshot(snapshot);
             }
             EngineEvent::FileFailed {
                 request_id,
@@ -506,7 +544,7 @@ impl Session {
                         .map(view::file_name);
                     self.media.import_finished(imported);
                 }
-                self.requests.snapshot = Some(snapshot);
+                self.set_snapshot(snapshot);
                 self.status = StatusView {
                     text: "Ready".into(),
                     error: false,
@@ -533,6 +571,12 @@ impl Session {
         }
     }
 
+    fn set_snapshot(&mut self, snapshot: ProjectSnapshot) {
+        self.requests.snapshot = Some(snapshot);
+        self.timeline_generation += 1;
+        self.timeline_cached = None;
+    }
+
     pub fn view(&self) -> SessionView {
         let snapshot = self.requests.snapshot.as_ref();
         let source = snapshot.and_then(|snapshot| {
@@ -554,7 +598,23 @@ impl Session {
                     .tracks
                     .iter()
                     .find(|track| snapshot.selection == SelectionState::Track(track.id));
-                if let Some(asset) = source {
+                let clip = snapshot
+                    .clips
+                    .iter()
+                    .find(|clip| snapshot.selection == SelectionState::Clip(clip.id));
+                if let Some(clip) = clip.filter(|_| source.is_none()) {
+                    let track_name = snapshot
+                        .tracks
+                        .iter()
+                        .find(|t| t.id == clip.track_id)
+                        .map_or_else(String::new, |t| t.name.clone());
+                    InspectorView {
+                        kind: "clip",
+                        title: view::clip_name(snapshot, clip.media_id),
+                        detail: format!("Video clip on {track_name}"),
+                        sections: view::clip_sections(snapshot, clip),
+                    }
+                } else if let Some(asset) = source {
                     InspectorView {
                         kind: "source",
                         title: view::file_name(asset),
@@ -565,15 +625,14 @@ impl Session {
                     InspectorView {
                         kind: "track",
                         title: track.name.clone(),
-                        detail: if track.clip_count > 0 {
-                            "Saved clip data; timeline editing unavailable"
-                        } else {
-                            match track.kind {
-                                TrackKind::Video => "Empty video track",
-                                TrackKind::Audio => "Empty audio track",
-                            }
-                        }
-                        .into(),
+                        detail: match (track.kind, track.clip_count) {
+                            (TrackKind::Video, 0) => "Empty video track".into(),
+                            (TrackKind::Audio, 0) => "Empty audio track".into(),
+                            (TrackKind::Video, 1) => "Video track · 1 clip".into(),
+                            (TrackKind::Video, n) => format!("Video track · {n} clips"),
+                            (TrackKind::Audio, 1) => "Audio track · 1 clip".into(),
+                            (TrackKind::Audio, n) => format!("Audio track · {n} clips"),
+                        },
                         sections: view::track_sections(snapshot, track),
                     }
                 } else {
@@ -623,6 +682,8 @@ impl Session {
             frame: self.media.frame_view(),
             metrics: self.media.metrics,
             playback: self.media.playback.view.clone(),
+            timeline_generation: self.timeline_generation,
+            history: snapshot.map(|s| s.history.clone()).unwrap_or_default(),
         }
     }
 
@@ -636,6 +697,25 @@ impl Session {
             self.cached = Some(json);
         }
         Ok(self.cached.as_deref().unwrap_or_default())
+    }
+
+    /// The serialized clip list. Rebuilt at most once per project snapshot.
+    pub fn timeline_json(&mut self) -> Result<&str, SessionError> {
+        if self.timeline_cached.is_none() {
+            let timeline = view::TimelineView {
+                generation: self.timeline_generation,
+                clips: self
+                    .requests
+                    .snapshot
+                    .as_ref()
+                    .map(view::clip_views)
+                    .unwrap_or_default(),
+            };
+            let json = serde_json::to_string(&timeline)
+                .map_err(|_| SessionError::Invalid("The timeline could not be serialized."))?;
+            self.timeline_cached = Some(json);
+        }
+        Ok(self.timeline_cached.as_deref().unwrap_or_default())
     }
 
     pub fn frame(&self) -> Option<&PresentedFrame> {

@@ -14,7 +14,7 @@
 #![allow(unsafe_code)]
 
 use crate::session::{Session, SessionError};
-use cutcap_contracts::{MediaId, TrackId, TrackKind};
+use cutcap_contracts::{ClipId, MediaId, TrackId, TrackKind};
 use std::{
     cell::RefCell,
     collections::BTreeMap,
@@ -28,7 +28,9 @@ use std::{
 
 /// Bump on any incompatible change to a signature, struct layout, status code
 /// or view JSON field the frontend depends on.
-pub const ABI_VERSION: u32 = 3;
+/// ABI 4 (Phase 3B): clip insert/remove/select, undo/redo, the separately
+/// fetched timeline document and the view's `timeline_generation`/`history`.
+pub const ABI_VERSION: u32 = 4;
 
 pub const CUTCAP_OK: i32 = 0;
 pub const CUTCAP_INVALID_ARGUMENT: i32 = 1;
@@ -335,6 +337,85 @@ pub extern "C" fn cutcap_session_clear_selection(handle: u64) -> i32 {
     guard(|| with_session(handle, |s| Ok(s.clear_selection()?)))
 }
 
+/// # Safety
+/// `ptr` must be valid for reads of `len` bytes.
+unsafe fn clip_id(ptr: *const u8, len: usize) -> Result<ClipId, Fail> {
+    // SAFETY: forwarded caller contract.
+    let text = unsafe { input_str(ptr, len) }?;
+    ClipId::try_from(parse_uuid(text)?).map_err(|_| Fail::argument("Invalid clip identifier."))
+}
+
+/// Phase 3B (ABI 4): appends a ready video source to the end of a
+/// video track. Accepted means queued; the clip appears in the next view.
+///
+/// # Safety
+/// `media`/`track` must be valid for reads of their lengths.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn cutcap_session_insert_clip(
+    handle: u64,
+    media: *const u8,
+    media_len: usize,
+    track: *const u8,
+    track_len: usize,
+) -> i32 {
+    guard(|| {
+        // SAFETY: forwarded caller contract.
+        let media = unsafe { input_str(media, media_len) }?;
+        let media = MediaId::try_from(parse_uuid(media)?)
+            .map_err(|_| Fail::argument("Invalid media identifier."))?;
+        // SAFETY: forwarded caller contract.
+        let track = unsafe { input_str(track, track_len) }?;
+        let track = TrackId::try_from(parse_uuid(track)?)
+            .map_err(|_| Fail::argument("Invalid track identifier."))?;
+        with_session(handle, |s| Ok(s.insert_clip(media, track)?))
+    })
+}
+
+/// Removes a clip (the media asset and file stay). Undoable.
+///
+/// # Safety
+/// `id` must be valid for reads of `id_len` bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn cutcap_session_remove_clip(
+    handle: u64,
+    id: *const u8,
+    id_len: usize,
+) -> i32 {
+    guard(|| {
+        // SAFETY: forwarded caller contract.
+        let id = unsafe { clip_id(id, id_len) }?;
+        with_session(handle, |s| Ok(s.remove_clip(id)?))
+    })
+}
+
+/// Selects a clip on the timeline. Selection never dirties the document.
+///
+/// # Safety
+/// `id` must be valid for reads of `id_len` bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn cutcap_session_select_clip(
+    handle: u64,
+    id: *const u8,
+    id_len: usize,
+) -> i32 {
+    guard(|| {
+        // SAFETY: forwarded caller contract.
+        let id = unsafe { clip_id(id, id_len) }?;
+        with_session(handle, |s| Ok(s.select_clip(id)?))
+    })
+}
+
+/// Undoes the newest clip edit; "nothing to undo" arrives as a view status.
+#[unsafe(no_mangle)]
+pub extern "C" fn cutcap_session_undo(handle: u64) -> i32 {
+    guard(|| with_session(handle, |s| Ok(s.undo()?)))
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn cutcap_session_redo(handle: u64) -> i32 {
+    guard(|| with_session(handle, |s| Ok(s.redo()?)))
+}
+
 /// Shows a registered media asset in the source viewer.
 ///
 /// # Safety
@@ -565,6 +646,28 @@ pub unsafe extern "C" fn cutcap_session_view(
     guard(|| {
         with_session(handle, |s| {
             let json = s.view_json()?;
+            // SAFETY: forwarded caller contract.
+            unsafe { copy_text(json.as_bytes(), buffer, capacity, out_len) }
+        })
+    })
+}
+
+/// Copies the timeline document (UTF-8 JSON `{generation, clips}`), with the
+/// same buffer protocol as [`cutcap_session_view`]. Fetch it only when the
+/// view's `timeline_generation` differs from the last generation copied.
+///
+/// # Safety
+/// See [`copy_text`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn cutcap_session_timeline(
+    handle: u64,
+    buffer: *mut u8,
+    capacity: usize,
+    out_len: *mut usize,
+) -> i32 {
+    guard(|| {
+        with_session(handle, |s| {
+            let json = s.timeline_json()?;
             // SAFETY: forwarded caller contract.
             unsafe { copy_text(json.as_bytes(), buffer, capacity, out_len) }
         })

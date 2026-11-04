@@ -19,7 +19,28 @@ public sealed record SessionView(
     SourceView Source,
     FrameView? Frame,
     PreviewMetrics Metrics,
-    PlaybackView? Playback = null);
+    PlaybackView? Playback = null,
+    ulong TimelineGeneration = 0,
+    HistoryStatus? History = null);
+
+/// <summary>Rust-owned clip-edit history; labels describe the next undo/redo.</summary>
+public sealed record HistoryStatus(bool CanUndo, bool CanRedo, string? Undo, string? Redo, int Depth);
+
+/// <summary>The clip list, fetched separately when <see cref="SessionView.TimelineGeneration"/> changes.</summary>
+public sealed record TimelineView(ulong Generation, IReadOnlyList<ClipView> Clips);
+
+/// <summary>
+/// One clip. <c>StartMs</c>/<c>DurationMs</c> are floored from exact project
+/// ticks for drawing only; the text fields are the authoritative readouts.
+/// </summary>
+public sealed record ClipView(
+    string Id, string TrackId, int TrackIndex, string MediaId, string Name,
+    long StartMs, long DurationMs, string StartText, string DurationText, string EndText,
+    string Availability, bool Selected)
+{
+    public long EndMs => StartMs + DurationMs;
+    public bool SourceReady => Availability == "ready";
+}
 
 public sealed record ProjectView(string Id, string Name, bool Saved, int ClipCount, DocumentStatus? Document = null);
 
@@ -92,4 +113,5 @@ public sealed record PreviewMetrics(ulong? ProbeUs, ulong? DecodeUs, ulong? Requ
     PropertyNamingPolicy = JsonKnownNamingPolicy.SnakeCaseLower,
     UnmappedMemberHandling = JsonUnmappedMemberHandling.Skip)]
 [JsonSerializable(typeof(SessionView))]
+[JsonSerializable(typeof(TimelineView))]
 internal sealed partial class ViewJsonContext : JsonSerializerContext;

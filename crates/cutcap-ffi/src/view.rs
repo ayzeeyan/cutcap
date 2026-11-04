@@ -22,6 +22,39 @@ pub struct SessionView {
     pub frame: Option<FrameView>,
     pub metrics: PreviewMetrics,
     pub playback: crate::playback::PlaybackView,
+    /// Changes whenever the timeline document (`cutcap_session_timeline`)
+    /// would change. Clips are not in this view: it is re-serialized for every
+    /// playback frame, while the clip list changes only on commands.
+    pub timeline_generation: u64,
+    pub history: HistoryStatus,
+}
+
+/// The clip list, serialized separately from [`SessionView`] and fetched by the
+/// frontend only when `timeline_generation` changes.
+#[derive(Debug, Clone, Serialize)]
+pub struct TimelineView {
+    pub generation: u64,
+    /// Timeline clips in project order; timing derived from exact ticks.
+    pub clips: Vec<ClipView>,
+}
+
+/// One timeline clip for display. `start_ms`/`duration_ms` are floored from the
+/// exact project ticks for drawing; the strings are the authoritative readouts.
+#[derive(Debug, Clone, Serialize)]
+pub struct ClipView {
+    pub id: String,
+    pub track_id: String,
+    pub track_index: usize,
+    pub media_id: String,
+    pub name: String,
+    pub start_ms: i64,
+    pub duration_ms: i64,
+    pub start_text: String,
+    pub duration_text: String,
+    pub end_text: String,
+    /// Ready, missing, changed, checking or unavailable source.
+    pub availability: &'static str,
+    pub selected: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -240,6 +273,127 @@ pub fn media_view_with_state(
     view
 }
 
+/// Whole milliseconds (floor) of a project-clock tick count, for display only.
+pub fn timeline_ms(ticks: i64, timebase: Timebase) -> i64 {
+    Timebase::new(1, 1000)
+        .ok()
+        .and_then(|ms| {
+            SourceTime { ticks, timebase }
+                .rescale(ms, Rounding::Floor)
+                .ok()
+        })
+        .map_or(0, |time| time.ticks)
+}
+
+fn availability_name(state: Availability) -> &'static str {
+    match state {
+        Availability::Checking => "checking",
+        Availability::Ready => "ready",
+        Availability::Missing => "missing",
+        Availability::Changed => "changed",
+        Availability::Unavailable => "unavailable",
+    }
+}
+
+pub fn clip_name(snapshot: &ProjectSnapshot, media: MediaId) -> String {
+    snapshot
+        .media_state
+        .iter()
+        .find(|state| state.id == media)
+        .map_or_else(
+            || "Unknown source".to_owned(),
+            |state| {
+                state
+                    .path
+                    .file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .into_owned()
+            },
+        )
+}
+
+/// Clips with display timing. O(clips + tracks).
+pub fn clip_views(snapshot: &ProjectSnapshot) -> Vec<ClipView> {
+    let tb = snapshot.timebase;
+    snapshot
+        .clips
+        .iter()
+        .map(|clip| {
+            let start = clip.start.0;
+            let duration = i64::try_from(clip.duration.ticks()).unwrap_or(i64::MAX);
+            let start_ms = timeline_ms(start, tb);
+            let duration_ms = timeline_ms(duration, tb);
+            let end_ms = timeline_ms(start.saturating_add(duration), tb);
+            ClipView {
+                id: clip.id.to_string(),
+                track_id: clip.track_id.to_string(),
+                track_index: snapshot
+                    .tracks
+                    .iter()
+                    .position(|track| track.id == clip.track_id)
+                    .unwrap_or(0),
+                media_id: clip.media_id.to_string(),
+                name: clip_name(snapshot, clip.media_id),
+                start_ms,
+                duration_ms,
+                start_text: precise_duration(start_ms),
+                duration_text: precise_duration(duration_ms),
+                end_text: precise_duration(end_ms),
+                availability: snapshot
+                    .media_state
+                    .iter()
+                    .find(|state| state.id == clip.media_id)
+                    .map_or("unavailable", |state| availability_name(state.state)),
+                selected: snapshot.selection == SelectionState::Clip(clip.id),
+            }
+        })
+        .collect()
+}
+
+/// Inspector rows for a selected clip: timeline placement and source mapping.
+pub fn clip_sections(snapshot: &ProjectSnapshot, clip: &ClipSummary) -> Vec<SectionView> {
+    let tb = snapshot.timebase;
+    let start = clip.start.0;
+    let duration = i64::try_from(clip.duration.ticks()).unwrap_or(i64::MAX);
+    let track = snapshot.tracks.iter().find(|t| t.id == clip.track_id);
+    let state = snapshot.media_state.iter().find(|s| s.id == clip.media_id);
+    vec![
+        section(
+            "Timeline",
+            vec![
+                field("Track", track.map_or_else(String::new, |t| t.name.clone())),
+                field("Start", precise_duration(timeline_ms(start, tb))),
+                field("Duration", precise_duration(timeline_ms(duration, tb))),
+                field(
+                    "End",
+                    precise_duration(timeline_ms(start.saturating_add(duration), tb)),
+                ),
+                field("Ticks", format!("{start} + {duration} @ {}", clock(tb))),
+            ],
+        ),
+        section(
+            "Source",
+            vec![
+                field("File", clip_name(snapshot, clip.media_id)),
+                field(
+                    "Source in",
+                    format!(
+                        "PTS {} @ {}/{}",
+                        clip.source_in.ticks,
+                        clip.source_in.timebase.numerator(),
+                        clip.source_in.timebase.denominator()
+                    ),
+                ),
+                field(
+                    "Status",
+                    state.map_or_else(|| "Unknown".to_owned(), |s| s.detail.clone()),
+                ),
+            ],
+        ),
+    ]
+}
+
 /// Track headers; badges number each family in order ("V1", "A1", "V2").
 pub fn track_views(snapshot: &ProjectSnapshot) -> Vec<TrackView> {
     let (mut video, mut audio) = (0, 0);
@@ -263,13 +417,11 @@ pub fn track_views(snapshot: &ProjectSnapshot) -> Vec<TrackView> {
                 kind,
                 badge,
                 selected: snapshot.selection == SelectionState::Track(track.id),
+                // Tracks with clips draw the clips themselves instead of a label.
                 lane_label: if track.clip_count == 0 {
                     format!("Empty {kind} track")
                 } else {
-                    format!(
-                        "{} saved clips · timeline editing unavailable",
-                        track.clip_count
-                    )
+                    String::new()
                 },
             }
         })

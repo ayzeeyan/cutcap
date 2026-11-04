@@ -36,8 +36,12 @@ public sealed class EngineSession : IDisposable
     /// <summary>Upper bound on the view document; the engine caps media at 128 assets.</summary>
     public const int MaxViewBytes = 8 * 1024 * 1024;
 
+    /// <summary>Upper bound on the timeline document (about 340 bytes per clip, 100,000 clips).</summary>
+    public const int MaxTimelineBytes = 64 * 1024 * 1024;
+
     private readonly SessionSafeHandle _handle;
     private byte[] _viewBuffer = new byte[64 * 1024];
+    private byte[] _timelineBuffer = new byte[16 * 1024];
 
     private EngineSession(SessionSafeHandle handle) => _handle = handle;
 
@@ -101,6 +105,40 @@ public sealed class EngineSession : IDisposable
     }
 
     public void CancelImport() => Check(NativeMethods.CancelImport(Handle));
+
+    /// <summary>
+    /// Appends a ready video source to the end of a video track. Acceptance
+    /// only: the engine validates and reports rejections in the view status.
+    /// </summary>
+    public unsafe void InsertClip(string mediaId, string trackId)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(mediaId);
+        ArgumentException.ThrowIfNullOrEmpty(trackId);
+        var media = Encoding.UTF8.GetBytes(mediaId);
+        var track = Encoding.UTF8.GetBytes(trackId);
+        fixed (byte* mediaPointer = media)
+        fixed (byte* trackPointer = track)
+        {
+            Check(NativeMethods.InsertClip(Handle, mediaPointer, (nuint)media.Length, trackPointer, (nuint)track.Length));
+        }
+    }
+
+    public unsafe void RemoveClip(string id)
+    {
+        var bytes = Encoding.UTF8.GetBytes(id);
+        fixed (byte* pointer = bytes) { Check(NativeMethods.RemoveClip(Handle, pointer, (nuint)bytes.Length)); }
+    }
+
+    /// <summary>Transient selection; never dirties the document or enters history.</summary>
+    public unsafe void SelectClip(string id)
+    {
+        var bytes = Encoding.UTF8.GetBytes(id);
+        fixed (byte* pointer = bytes) { Check(NativeMethods.SelectClip(Handle, pointer, (nuint)bytes.Length)); }
+    }
+
+    /// <summary>Rust-owned clip-edit history. "Nothing to undo" arrives as a view status.</summary>
+    public void Undo() => Check(NativeMethods.Undo(Handle));
+    public void Redo() => Check(NativeMethods.Redo(Handle));
 
     /// <summary>Acceptance only. Observe Project.Document for completion and dirty state.</summary>
     public void SaveProject() => Check(NativeMethods.SaveProject(Handle));
@@ -182,6 +220,41 @@ public sealed class EngineSession : IDisposable
             LastReadView = JsonSerializer.Deserialize(_viewBuffer.AsSpan(0, (int)length), ViewJsonContext.Default.SessionView)
                 ?? throw new EngineException(NativeStatus.Failed, "The engine returned an empty view.");
             return LastReadView;
+        }
+    }
+
+    /// <summary>
+    /// Reads the clip list. It is a separate document from the view so playback
+    /// frames never re-send it: call this only when
+    /// <see cref="SessionView.TimelineGeneration"/> differs from the last
+    /// <see cref="TimelineView.Generation"/> read.
+    /// </summary>
+    public unsafe TimelineView ReadTimeline()
+    {
+        while (true)
+        {
+            NativeStatus status;
+            nuint length;
+            fixed (byte* pointer = _timelineBuffer)
+            {
+                status = NativeMethods.Timeline(Handle, pointer, (nuint)_timelineBuffer.Length, out length);
+            }
+            if (status == NativeStatus.BufferTooSmall)
+            {
+                if (length > MaxTimelineBytes)
+                {
+                    throw new EngineException(NativeStatus.Failed, "The timeline exceeded its size limit.");
+                }
+                _timelineBuffer = new byte[(int)length];
+                continue;
+            }
+            Check(status);
+            if (length > (nuint)_timelineBuffer.Length)
+            {
+                throw new EngineException(NativeStatus.Failed, "The engine reported an invalid timeline length.");
+            }
+            return JsonSerializer.Deserialize(_timelineBuffer.AsSpan(0, (int)length), ViewJsonContext.Default.TimelineView)
+                ?? throw new EngineException(NativeStatus.Failed, "The engine returned an empty timeline.");
         }
     }
 

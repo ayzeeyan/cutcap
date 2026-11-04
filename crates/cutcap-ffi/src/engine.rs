@@ -1,7 +1,8 @@
 //! The lightweight command owner. Future media jobs must not run in this loop.
+use crate::history::{Edit, EditKind, History, bump};
 use crate::persistence::{Document, FileJob, FileOutput, SavedSource};
 use cutcap_contracts::*;
-use cutcap_core::{Project, ProjectError, Track};
+use cutcap_core::{Clip, Project, ProjectError, Track};
 use std::collections::BTreeMap;
 
 #[derive(Default)]
@@ -14,6 +15,10 @@ pub struct Engine {
     availability: BTreeMap<MediaId, MediaAvailability>,
     document: DocumentStatus,
     file_job: Option<FileJob>,
+    /// Clip-edit undo/redo; reset by New and Open.
+    history: History,
+    /// Highest document revision ever issued in this session (revisions are unique).
+    next_revision: u64,
 }
 
 impl Engine {
@@ -75,8 +80,11 @@ impl Engine {
             self.source_media = None;
             self.sources.clear();
             self.availability.clear();
+            self.history.clear();
+            let mut revision = 0;
+            bump(&mut self.next_revision, &mut revision);
             self.document = DocumentStatus {
-                revision: 1,
+                revision,
                 state: "idle".into(),
                 dirty: true,
                 ..Default::default()
@@ -137,7 +145,7 @@ impl Engine {
                         },
                     );
                     self.media_details.insert(media.id, media);
-                    self.document.revision += 1;
+                    bump(&mut self.next_revision, &mut self.document.revision);
                 }
                 Command::VerifyMedia {
                     media_id,
@@ -175,7 +183,7 @@ impl Engine {
                                 project
                                     .relink_media(media_id, verified.media.path.clone())
                                     .map_err(domain_error)?;
-                                self.document.revision += 1;
+                                bump(&mut self.next_revision, &mut self.document.revision);
                             }
                             self.availability.insert(
                                 media_id,
@@ -244,7 +252,90 @@ impl Engine {
                         })
                         .map_err(domain_error)?;
                     self.selection = SelectionState::Track(id);
-                    self.document.revision += 1;
+                    bump(&mut self.next_revision, &mut self.document.revision);
+                }
+                Command::InsertClip { media_id, track_id } => {
+                    let summary = self
+                        .media_details
+                        .get(&media_id)
+                        .filter(|_| {
+                            self.availability
+                                .get(&media_id)
+                                .is_some_and(|a| a.state == Availability::Ready)
+                        })
+                        .ok_or_else(|| {
+                            EngineError::new(
+                                ErrorCode::InvalidInput,
+                                "Only a verified, ready source can be added to the timeline.",
+                            )
+                        })?;
+                    let clip = append_clip(project, summary, track_id)?;
+                    let index = project.clips().len();
+                    let label = format!("add {}", crate::view::file_name(summary));
+                    project.insert_clip(clip.clone()).map_err(domain_error)?;
+                    let before = self.document.revision;
+                    let after = bump(&mut self.next_revision, &mut self.document.revision);
+                    self.selection = SelectionState::Clip(clip.id);
+                    self.history.record(Edit {
+                        kind: EditKind::Insert,
+                        index,
+                        clip,
+                        before,
+                        after,
+                        label,
+                    });
+                }
+                Command::RemoveClip { clip_id } => {
+                    let (index, clip) = project.remove_clip(clip_id).map_err(domain_error)?;
+                    let label = self.media_details.get(&clip.media_id).map_or_else(
+                        || "remove clip".to_owned(),
+                        |m| format!("remove {}", crate::view::file_name(m)),
+                    );
+                    let before = self.document.revision;
+                    let after = bump(&mut self.next_revision, &mut self.document.revision);
+                    if self.selection == SelectionState::Clip(clip_id) {
+                        self.selection = SelectionState::None;
+                    }
+                    self.history.record(Edit {
+                        kind: EditKind::Remove,
+                        index,
+                        clip,
+                        before,
+                        after,
+                        label,
+                    });
+                }
+                Command::Undo | Command::Redo => {
+                    let undo = matches!(envelope.command, Command::Undo);
+                    let outcome = if undo {
+                        self.history.undo(
+                            project,
+                            &mut self.document.revision,
+                            &mut self.next_revision,
+                            self.selection,
+                        )
+                    } else {
+                        self.history.redo(
+                            project,
+                            &mut self.document.revision,
+                            &mut self.next_revision,
+                            self.selection,
+                        )
+                    }
+                    .map_err(domain_error)?;
+                    match outcome {
+                        Some(selection) => self.selection = selection,
+                        None => {
+                            return Err(EngineError::new(
+                                ErrorCode::InvalidInput,
+                                if undo {
+                                    "Nothing to undo."
+                                } else {
+                                    "Nothing to redo."
+                                },
+                            ));
+                        }
+                    }
                 }
                 Command::Select { selection } => {
                     project
@@ -295,6 +386,19 @@ impl Engine {
                 .filter_map(|asset| self.media_details.get(&asset.id).cloned())
                 .collect(),
             source_media: self.source_media,
+            clips: project
+                .clips()
+                .iter()
+                .map(|clip| ClipSummary {
+                    id: clip.id,
+                    media_id: clip.media_id,
+                    track_id: clip.track_id,
+                    start: clip.start,
+                    duration: clip.duration,
+                    source_in: clip.source_in,
+                })
+                .collect(),
+            history: self.history.status(),
             media_state: project
                 .media()
                 .iter()
@@ -393,6 +497,7 @@ impl Engine {
             Ok(FileOutput::Opened(doc, path)) => {
                 self.project = Some(doc.project);
                 self.selection = SelectionState::None;
+                self.history.clear();
                 self.source_media = None;
                 self.media_details.clear();
                 self.availability.clear();
@@ -450,6 +555,71 @@ impl Engine {
             Err(error) => EngineEvent::Failed { request_id, error },
         })
     }
+}
+
+/// The append-to-end policy: the whole source, starting where the track's last
+/// clip ends. Duration is the source's reported duration rescaled (floor) from
+/// its own clock to the project clock; the clip starts at the source's first PTS.
+fn append_clip(
+    project: &Project,
+    source: &MediaSummary,
+    track_id: TrackId,
+) -> Result<Clip, EngineError> {
+    let track = project
+        .tracks()
+        .iter()
+        .find(|track| track.id == track_id)
+        .ok_or_else(|| EngineError::new(ErrorCode::NotFound, "That track no longer exists."))?;
+    if track.kind != TrackKind::Video {
+        return Err(EngineError::new(
+            ErrorCode::InvalidInput,
+            "Video sources can only be added to a video track.",
+        ));
+    }
+    let info = &source.metadata;
+    let ticks = info
+        .duration_ticks
+        .filter(|ticks| *ticks > 0)
+        .ok_or_else(|| {
+            EngineError::new(
+                ErrorCode::InvalidInput,
+                "This source has no known duration, so it cannot be placed yet.",
+            )
+        })?;
+    let overflow = || {
+        EngineError::new(
+            ErrorCode::InvalidInput,
+            "Clip timing overflows the timeline clock.",
+        )
+    };
+    let duration = SourceTime {
+        ticks,
+        timebase: info.timebase,
+    }
+    .rescale(project.timebase(), Rounding::Floor)
+    .map_err(|_| overflow())?;
+    let duration = u64::try_from(duration.ticks)
+        .ok()
+        .and_then(|ticks| TimelineDuration::new(ticks).ok())
+        .ok_or_else(|| {
+            EngineError::new(
+                ErrorCode::InvalidInput,
+                "This source is shorter than one timeline tick.",
+            )
+        })?;
+    let start = project.track_end(track_id).map_err(domain_error)?;
+    start.checked_add(duration).map_err(|_| overflow())?;
+    Ok(Clip {
+        id: ClipId::new(),
+        media_id: source.id,
+        track_id,
+        start,
+        duration,
+        source_in: SourceTime {
+            ticks: info.start_pts,
+            timebase: info.timebase,
+        },
+    })
 }
 
 fn domain_error(error: ProjectError) -> EngineError {
