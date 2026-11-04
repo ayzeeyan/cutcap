@@ -108,7 +108,7 @@
                     <!-- No thumbnail is invented: poster frames need an engine API, so the
                          tile shows the media family and the real duration. -->
                     <StackPanel Width="112" Spacing="5" AutomationProperties.Name="{Binding AccessibleName}"
-                                ToolTip.Tip="{Binding Details}">
+                                ToolTip.Tip="{Binding Tooltip}">
                       <Border Classes="thumb" Height="63" CornerRadius="6" BorderThickness="2"
                               Background="{StaticResource TileGradient}" ClipToBounds="True">
                         <Panel>
@@ -124,6 +124,8 @@
                         </Panel>
                       </Border>
                       <TextBlock Classes="fine muted tile-name" Text="{Binding Name}" TextTrimming="CharacterEllipsis" />
+                      <TextBlock Classes="fine muted" Classes.error="{Binding Unavailable}" Text="{Binding AvailabilityText}"
+                                 IsVisible="{Binding ShowAvailability}" TextTrimming="CharacterEllipsis" />
                     </StackPanel>
                   </DataTemplate>
                 </ListBox.ItemTemplate>

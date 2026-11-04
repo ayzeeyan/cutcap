@@ -30,10 +30,15 @@ pub enum SessionError {
 struct Requests {
     snapshot: Option<ProjectSnapshot>,
     pending: HashSet<RequestId>,
+    file_pending: HashSet<RequestId>,
     desired_media: Option<MediaId>,
     waiting_project: Option<RequestId>,
     registering: Option<RequestId>,
     inspecting_media: bool,
+    verifying: Option<MediaId>,
+    verification_request: Option<RequestId>,
+    verified: Option<Command>,
+    checks: std::collections::VecDeque<(MediaId, PathBuf)>,
 }
 
 pub struct Session {
@@ -45,6 +50,10 @@ pub struct Session {
     dirty: bool,
     revision: u64,
     cached: Option<String>,
+    /// Bumped with every new project snapshot; the timeline document is
+    /// rebuilt lazily from it (commands only, never per playback frame).
+    timeline_generation: u64,
+    timeline_cached: Option<String>,
     closed: bool,
 }
 
@@ -66,6 +75,8 @@ impl Session {
             dirty: true,
             revision: 0,
             cached: None,
+            timeline_generation: 0,
+            timeline_cached: None,
             closed: false,
         };
         session.new_project()?;
@@ -104,12 +115,17 @@ impl Session {
     }
 
     pub fn new_project(&mut self) -> Result<(), SessionError> {
+        self.require_no_file_operation()?;
         let request_id = self.submit(Command::NewProject {
             name: DEFAULT_PROJECT_NAME.into(),
         })?;
         self.requests.waiting_project = Some(request_id);
         self.requests.desired_media = None;
         self.requests.inspecting_media = false;
+        self.requests.checks.clear();
+        self.requests.verified = None;
+        self.requests.verifying = None;
+        self.requests.verification_request = None;
         self.media.reset();
         self.engine_ready = false;
         Ok(())
@@ -117,6 +133,89 @@ impl Session {
 
     pub fn add_track(&mut self, kind: TrackKind) -> Result<(), SessionError> {
         self.submit(Command::AddTrack { kind }).map(|_| ())
+    }
+
+    pub fn save_project(&mut self, path: Option<PathBuf>) -> Result<(), SessionError> {
+        self.require_no_file_operation()?;
+        let id = self.submit(Command::SaveProject { path })?;
+        self.requests.file_pending.insert(id);
+        Ok(())
+    }
+    pub fn open_project(&mut self, path: PathBuf) -> Result<(), SessionError> {
+        self.require_no_file_operation()?;
+        // The old project/source remains intact until a validated replacement
+        // returns from the owner. Frontend confirmation precedes this command.
+        let id = self.submit(Command::OpenProject { path })?;
+        self.requests.file_pending.insert(id);
+        Ok(())
+    }
+    fn require_no_file_operation(&self) -> Result<(), SessionError> {
+        if self.requests.file_pending.is_empty() {
+            Ok(())
+        } else {
+            Err(EngineError::new(
+                ErrorCode::Busy,
+                "Wait for the current project file operation to finish.",
+            )
+            .into())
+        }
+    }
+    pub fn relink_media(&mut self, id: MediaId, path: PathBuf) -> Result<(), SessionError> {
+        if self.requests.verifying.is_some() {
+            return Err(SessionError::Invalid(
+                "Wait for the current source inspection to finish.",
+            ));
+        }
+        let project = self
+            .current_project()
+            .ok_or(SessionError::Invalid("No project is ready."))?;
+        if !self
+            .requests
+            .snapshot
+            .as_ref()
+            .is_some_and(|s| s.media_state.iter().any(|m| m.id == id))
+        {
+            return Err(SessionError::Invalid(
+                "Select a registered media asset to relink.",
+            ));
+        }
+        self.media
+            .start_probe(project, id, path, true, true, &mut self.status)?;
+        self.requests.verifying = Some(id);
+        self.dirty = true;
+        Ok(())
+    }
+
+    /// Appends a ready video source to the end of a video track (undoable).
+    pub fn insert_clip(&mut self, media: MediaId, track: TrackId) -> Result<(), SessionError> {
+        // The new clip becomes the selection, so the inspector follows it.
+        self.requests.inspecting_media = false;
+        self.submit(Command::InsertClip {
+            media_id: media,
+            track_id: track,
+        })
+        .map(|_| ())
+    }
+
+    pub fn remove_clip(&mut self, id: ClipId) -> Result<(), SessionError> {
+        self.submit(Command::RemoveClip { clip_id: id }).map(|_| ())
+    }
+
+    /// Timeline selection only: never dirties the document or enters history.
+    pub fn select_clip(&mut self, id: ClipId) -> Result<(), SessionError> {
+        self.requests.inspecting_media = false;
+        self.submit(Command::Select {
+            selection: SelectionState::Clip(id),
+        })
+        .map(|_| ())
+    }
+
+    pub fn undo(&mut self) -> Result<(), SessionError> {
+        self.submit(Command::Undo).map(|_| ())
+    }
+
+    pub fn redo(&mut self) -> Result<(), SessionError> {
+        self.submit(Command::Redo).map(|_| ())
     }
 
     pub fn select_track(&mut self, id: TrackId) -> Result<(), SessionError> {
@@ -150,13 +249,20 @@ impl Session {
                 "The project is not ready yet. Try again in a moment.",
             ));
         };
-        if self.media.import_busy() {
+        if self.media.import_busy() || self.requests.verifying.is_some() {
             return Err(SessionError::Invalid(
                 "Another import is in progress. Cancel it or wait for it to finish.",
             ));
         }
         self.dirty = true;
-        self.media.start_probe(project, path, &mut self.status);
+        self.media.start_probe(
+            project,
+            MediaId::new(),
+            path,
+            false,
+            false,
+            &mut self.status,
+        )?;
         Ok(())
     }
 
@@ -175,6 +281,9 @@ impl Session {
         self.dirty = true;
         match view::parse_source_time(text) {
             Ok(ms) => {
+                if !self.source_ready() {
+                    return Err(SessionError::Invalid("Select a source before seeking."));
+                }
                 self.media.seek(i64::from(ms), &mut self.status);
                 Ok(())
             }
@@ -191,6 +300,34 @@ impl Session {
     pub fn cancel_preview(&mut self) {
         self.dirty = true;
         self.media.cancel_preview(&mut self.status);
+    }
+    pub fn play(&mut self) -> Result<(), SessionError> {
+        if self.current_project().is_none() || self.media.selected_media().is_none() {
+            return Err(SessionError::Invalid("Select a source before playback."));
+        }
+        self.media.play()?;
+        self.dirty = true;
+        Ok(())
+    }
+    pub fn pause(&mut self) {
+        self.media.pause();
+        self.dirty = true;
+    }
+    pub fn stop(&mut self) -> Result<(), SessionError> {
+        self.media.stop(&mut self.status)?;
+        self.dirty = true;
+        Ok(())
+    }
+    pub fn copy_allowed(&self, generation: u64) -> bool {
+        self.media.copy_allowed(generation)
+    }
+    pub fn source_ready(&self) -> bool {
+        self.current_project().is_some() && self.media.selected_media().is_some()
+    }
+    pub fn frame_copied(&mut self, generation: u64) -> Result<(), SessionError> {
+        self.media.frame_copied(generation)?;
+        self.dirty = true;
+        Ok(())
     }
 
     /// The project new work may target: none while a replacement is pending.
@@ -211,6 +348,7 @@ impl Session {
         if let Err(error) = self.bridge.drain(|event| events.push(event)) {
             tracing::error!("{error}");
             self.requests.pending.clear();
+            self.requests.file_pending.clear();
             self.engine_ready = false;
             self.status = StatusView {
                 text: error.to_string(),
@@ -228,31 +366,100 @@ impl Session {
         if let Some(registration) = registration
             && current == Some(registration.project_id)
         {
-            let id = registration.media.id;
-            match self.submit(Command::RegisterMedia {
-                media: Box::new(registration.media),
-            }) {
-                Ok(request) => {
-                    self.requests.registering = Some(request);
-                    self.requests.desired_media = Some(id);
-                    self.requests.inspecting_media = true;
+            let id = registration.media_id;
+            let checking = registration.checking;
+            let command = if checking {
+                Command::VerifyMedia {
+                    media_id: id,
+                    result: registration.result,
+                    relink: registration.relink,
                 }
-                Err(_) => self.media.import_error(
-                    "The project queue is busy. Try importing again.",
-                    &mut self.status,
-                ),
+            } else {
+                match registration.result {
+                    Ok(verified) => Command::RegisterMedia {
+                        media: Box::new(verified.media),
+                        fingerprint: Some(verified.fingerprint),
+                    },
+                    Err(error) => {
+                        self.media
+                            .import_error(&error.to_string(), &mut self.status);
+                        return self.dirty;
+                    }
+                }
+            };
+            if checking {
+                self.requests.verified = Some(command);
+            } else {
+                match self.submit(command) {
+                    Ok(request) => {
+                        self.requests.registering = Some(request);
+                        self.requests.desired_media = Some(id);
+                        self.requests.inspecting_media = true;
+                    }
+                    Err(_) => self.media.import_error(
+                        "The project queue is busy. Try importing again.",
+                        &mut self.status,
+                    ),
+                }
             }
+        }
+        if let Some(command) = self.requests.verified.clone()
+            && let Ok(request) = self.submit(command)
+        {
+            self.requests.verified = None;
+            self.requests.verification_request = Some(request);
+        }
+        if !self.media.import_busy()
+            && self.requests.verifying.is_none()
+            && let Some((id, path)) = self.requests.checks.pop_front()
+            && let Some(project) = current
+        {
+            if let Err(error) =
+                self.media
+                    .start_probe(project, id, path, true, false, &mut self.status)
+            {
+                self.requests.verified = Some(Command::VerifyMedia {
+                    media_id: id,
+                    result: Err(EngineError::new(ErrorCode::Internal, error.to_string())),
+                    relink: false,
+                });
+            }
+            self.requests.verifying = Some(id);
+            self.dirty = true;
         }
         self.dirty
     }
 
     fn apply(&mut self, event: EngineEvent) {
         match event {
+            EngineEvent::Updated { snapshot } => {
+                self.engine_ready = snapshot.document.state != "opening";
+                self.set_snapshot(snapshot);
+            }
+            EngineEvent::FileFailed {
+                request_id,
+                error,
+                snapshot,
+            } => {
+                let verifying = self.requests.verification_request == Some(request_id);
+                if let Some(snapshot) = snapshot {
+                    self.apply(EngineEvent::Completed {
+                        request_id,
+                        snapshot,
+                    });
+                }
+                if verifying {
+                    self.media
+                        .import_error(&error.to_string(), &mut self.status);
+                }
+                self.apply(EngineEvent::Failed { request_id, error });
+            }
             EngineEvent::Completed {
                 request_id,
                 snapshot,
             } => {
                 self.requests.pending.remove(&request_id);
+                self.requests.file_pending.remove(&request_id);
                 if self
                     .requests
                     .waiting_project
@@ -264,15 +471,67 @@ impl Session {
                 if self.requests.waiting_project == Some(request_id) {
                     self.requests.waiting_project = None;
                 }
-                self.engine_ready = true;
+                self.engine_ready = snapshot.document.state != "opening";
+                if self.requests.verification_request == Some(request_id) {
+                    if let Some(state) = snapshot
+                        .media_state
+                        .iter()
+                        .find(|m| Some(m.id) == self.requests.verifying)
+                    {
+                        self.media.import = view::ImportView {
+                            busy: false,
+                            error: state.state != Availability::Ready,
+                            message: state.detail.clone(),
+                        };
+                    }
+                    self.requests.verification_request = None;
+                    self.requests.verifying = None;
+                }
+                let replaced = self.project_id() != Some(snapshot.id);
+                let opened = snapshot.document.state == "opened"
+                    && self.requests.snapshot.as_ref().is_none_or(|s| {
+                        s.document.state != "opened"
+                            || s.document.operation_id != snapshot.document.operation_id
+                    });
+                if opened || replaced {
+                    self.requests.checks.clear();
+                    self.requests.verifying = None;
+                    self.requests.verification_request = None;
+                    self.requests.verified = None;
+                    if opened {
+                        self.media.reset();
+                        self.requests.desired_media = None;
+                        self.requests.inspecting_media = false;
+                        self.requests.checks.extend(
+                            snapshot
+                                .media_state
+                                .iter()
+                                .filter(|m| m.state == Availability::Checking)
+                                .map(|m| (m.id, m.path.clone())),
+                        );
+                    }
+                }
                 if snapshot.source_media == self.requests.desired_media
                     && let Some(selected) = snapshot
                         .media
                         .iter()
                         .find(|m| Some(m.id) == snapshot.source_media)
                 {
-                    self.media
-                        .select(snapshot.id, selected.clone(), &mut self.status);
+                    if snapshot
+                        .media_state
+                        .iter()
+                        .any(|m| m.id == selected.id && m.state == Availability::Ready)
+                    {
+                        self.media
+                            .select(snapshot.id, selected.clone(), &mut self.status);
+                    } else if let Some(state) =
+                        snapshot.media_state.iter().find(|m| m.id == selected.id)
+                    {
+                        self.media.pending_selection();
+                        self.media.source.title = view::file_name(selected);
+                        self.media.source.status = "Source unavailable".into();
+                        self.media.source.detail = state.detail.clone();
+                    }
                 }
                 tracing::info!(project = %snapshot.id, tracks = snapshot.tracks.len(),
                     selection = ?snapshot.selection, "command completed");
@@ -285,7 +544,7 @@ impl Session {
                         .map(view::file_name);
                     self.media.import_finished(imported);
                 }
-                self.requests.snapshot = Some(snapshot);
+                self.set_snapshot(snapshot);
                 self.status = StatusView {
                     text: "Ready".into(),
                     error: false,
@@ -293,6 +552,7 @@ impl Session {
             }
             EngineEvent::Failed { request_id, error } => {
                 self.requests.pending.remove(&request_id);
+                self.requests.file_pending.remove(&request_id);
                 tracing::warn!(code = ?error.code, "command failed: {error}");
                 self.status = StatusView {
                     text: error.to_string(),
@@ -309,6 +569,12 @@ impl Session {
                 }
             }
         }
+    }
+
+    fn set_snapshot(&mut self, snapshot: ProjectSnapshot) {
+        self.requests.snapshot = Some(snapshot);
+        self.timeline_generation += 1;
+        self.timeline_cached = None;
     }
 
     pub fn view(&self) -> SessionView {
@@ -332,7 +598,23 @@ impl Session {
                     .tracks
                     .iter()
                     .find(|track| snapshot.selection == SelectionState::Track(track.id));
-                if let Some(asset) = source {
+                let clip = snapshot
+                    .clips
+                    .iter()
+                    .find(|clip| snapshot.selection == SelectionState::Clip(clip.id));
+                if let Some(clip) = clip.filter(|_| source.is_none()) {
+                    let track_name = snapshot
+                        .tracks
+                        .iter()
+                        .find(|t| t.id == clip.track_id)
+                        .map_or_else(String::new, |t| t.name.clone());
+                    InspectorView {
+                        kind: "clip",
+                        title: view::clip_name(snapshot, clip.media_id),
+                        detail: format!("Video clip on {track_name}"),
+                        sections: view::clip_sections(snapshot, clip),
+                    }
+                } else if let Some(asset) = source {
                     InspectorView {
                         kind: "source",
                         title: view::file_name(asset),
@@ -343,11 +625,14 @@ impl Session {
                     InspectorView {
                         kind: "track",
                         title: track.name.clone(),
-                        detail: match track.kind {
-                            TrackKind::Video => "Empty video track",
-                            TrackKind::Audio => "Empty audio track",
-                        }
-                        .into(),
+                        detail: match (track.kind, track.clip_count) {
+                            (TrackKind::Video, 0) => "Empty video track".into(),
+                            (TrackKind::Audio, 0) => "Empty audio track".into(),
+                            (TrackKind::Video, 1) => "Video track · 1 clip".into(),
+                            (TrackKind::Video, n) => format!("Video track · {n} clips"),
+                            (TrackKind::Audio, 1) => "Audio track · 1 clip".into(),
+                            (TrackKind::Audio, n) => format!("Audio track · {n} clips"),
+                        },
                         sections: view::track_sections(snapshot, track),
                     }
                 } else {
@@ -366,8 +651,9 @@ impl Session {
             project: snapshot.map(|snapshot| ProjectView {
                 id: snapshot.id.to_string(),
                 name: snapshot.name.clone(),
-                saved: false,
+                saved: !snapshot.document.dirty && snapshot.document.path.is_some(),
                 clip_count: snapshot.clip_count,
+                document: snapshot.document.clone(),
             }),
             status: self.status.clone(),
             pending: u32::try_from(self.requests.pending.len()).unwrap_or(u32::MAX),
@@ -375,19 +661,29 @@ impl Session {
             media: snapshot
                 .map(|snapshot| {
                     snapshot
-                        .media
+                        .media_state
                         .iter()
-                        .map(|asset| {
-                            view::media_view(asset, snapshot.source_media == Some(asset.id))
+                        .map(|state| {
+                            view::media_view_with_state(
+                                snapshot.media.iter().find(|m| m.id == state.id),
+                                state,
+                                snapshot.source_media == Some(state.id),
+                            )
                         })
                         .collect()
                 })
                 .unwrap_or_default(),
-            import: self.media.import.clone(),
+            import: crate::view::ImportView {
+                busy: self.media.import.busy || self.requests.verifying.is_some(),
+                ..self.media.import.clone()
+            },
             inspector,
             source: self.media.source.clone(),
             frame: self.media.frame_view(),
             metrics: self.media.metrics,
+            playback: self.media.playback.view.clone(),
+            timeline_generation: self.timeline_generation,
+            history: snapshot.map(|s| s.history.clone()).unwrap_or_default(),
         }
     }
 
@@ -401,6 +697,25 @@ impl Session {
             self.cached = Some(json);
         }
         Ok(self.cached.as_deref().unwrap_or_default())
+    }
+
+    /// The serialized clip list. Rebuilt at most once per project snapshot.
+    pub fn timeline_json(&mut self) -> Result<&str, SessionError> {
+        if self.timeline_cached.is_none() {
+            let timeline = view::TimelineView {
+                generation: self.timeline_generation,
+                clips: self
+                    .requests
+                    .snapshot
+                    .as_ref()
+                    .map(view::clip_views)
+                    .unwrap_or_default(),
+            };
+            let json = serde_json::to_string(&timeline)
+                .map_err(|_| SessionError::Invalid("The timeline could not be serialized."))?;
+            self.timeline_cached = Some(json);
+        }
+        Ok(self.timeline_cached.as_deref().unwrap_or_default())
     }
 
     pub fn frame(&self) -> Option<&PresentedFrame> {

@@ -76,10 +76,27 @@ Engine tracing goes to stderr (`RUST_LOG`, default `cutcap_engine=info,cutcap_me
 
 ## Interactive smoke check
 
+Phase 2 engine/interop playback is ABI 2. Claude still owns visual Play/Pause/Stop bindings; the opt-in probe below opens the existing editor and drives its public engine session for measurements. It does not replace views or simulate media time.
+
+```powershell
+./scripts/generate-playback-fixtures.ps1
+dotnet build tools/CutCap.PlaybackProbe -c Release
+# Actual Avalonia FrameView renders, seek latency, dispatcher gaps and host+child resources:
+tools/CutCap.PlaybackProbe/bin/Release/net10.0/win-x64/CutCap.PlaybackProbe.exe --ui .artifacts/playback/sources .artifacts/playback/ui.json
+# Offscreen ABI delivery (not rendered FPS):
+tools/CutCap.PlaybackProbe/bin/Release/net10.0/win-x64/CutCap.PlaybackProbe.exe .artifacts/playback/sources .artifacts/playback/delivery.json
+# Unpaced native decoder + framed pipe throughput (not presented FPS):
+cargo run -p cutcap-media --release --example measure_decode -- .artifacts/playback/sources/1080p.mp4
+```
+
+Run measurement modes sequentially without builds or another benchmark. PAM frame packets are paired with nonce/index/PTS/timebase/size records; missing records are errors. Windows children are resource-limited by a kill-on-close job (1 GiB commit each). Physical scanout is not measured by the render hook. See PHASE_2_PLAYBACK_REPORT.md for actual results and limits.
+
 See tests/ui_smoke.md. Record the actual DPI scale and window sizes tested; CI cannot validate a visible desktop.
 
 ## Optional tools already installed (audited)
 
-Git 2.56.0.windows.4, CMake 4.5.0-rc2 (unused), FFmpeg/ffprobe 9.0.1, Rust/Cargo 1.99.1, .NET SDK 10.0.401, Windows 11 10.0.26300, Intel Core Ultra 7 255H, 16 GB RAM, Intel Graphics driver 32.0.101.9150.
+Phase 3A workflow: Ctrl+S (first save opens Save As), Ctrl+Shift+S, Ctrl+O, and Project menu → Relink selected source. Files end in `.cutcap`; see PROJECT_FORMAT.md for reference portability, revalidation and integrity limits. Open/Save are background operations; wait for the actual engine Saved badge. The playback diagnostic also accepts `--ui-min` to run the existing editor at its 960×600 minimum; its report records actual client size/scale and startup state transitions. Synthetic diagnostic sessions discard their own data on exit; ordinary editor close keeps Save/Discard/Cancel protection.
+
+Git 2.56.0.windows.4, CMake 4.5.0-rc2 (unused), FFmpeg/ffprobe 9.0.1, Rust/Cargo 1.99.1, Windows 11 x64, Intel Core Ultra 7 255H, 16 GB RAM, Intel Graphics driver 32.0.101.9150. Phase 3A observed .NET SDK **10.0.403**: global.json requests 10.0.401 with `rollForward: latestFeature`; it does not enforce that exact installed patch. No system tool was installed for this milestone.
 
 The GitHub workflow uses hosted Windows: formatting, all-features Clippy/tests, locked Rust builds, .NET build/test/Release build and a win-x64 publish that is not uploaded. A configured workflow is not evidence of a remote run.

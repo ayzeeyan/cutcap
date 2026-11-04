@@ -11,32 +11,44 @@ use std::{
     collections::HashMap,
     path::PathBuf,
     sync::Arc,
+    sync::mpsc,
     thread::{self, JoinHandle},
-    time::Instant,
+    time::{Duration, Instant},
 };
 
 struct ProbeJob {
     project_id: ProjectId,
     media_id: MediaId,
     token: Cancellation,
-    worker: JoinHandle<Result<ProbeResult, MediaError>>,
+    worker: JoinHandle<Result<(ProbeResult, SourceFingerprint), MediaError>>,
+    checking: bool,
+    relink: bool,
+    abandoned: bool,
+    finished: mpsc::Receiver<()>,
 }
 
 /// A validated probe result waiting for the project owner to commit it.
 pub struct Registration {
     pub project_id: ProjectId,
-    pub media: MediaSummary,
+    pub media_id: MediaId,
+    pub result: Result<Box<VerifiedMedia>, EngineError>,
+    pub checking: bool,
+    pub relink: bool,
 }
 
 /// The latest presented frame. Owned by Rust; the frontend copies it out.
 pub struct PresentedFrame {
     pub generation: u64,
     pub image: RgbaFrame,
+    pub ticket: PreviewTicket,
+    pub actual: SourceTime,
 }
 
 pub struct MediaHost {
     backend: Arc<dyn MediaBackend>,
     decoder: LatestDecoder,
+    pub(crate) playback: crate::playback::Playback,
+    copy_ticket: Option<PreviewTicket>,
     probe: Option<ProbeJob>,
     selected: Option<(ProjectId, MediaSummary)>,
     /// Presentation gate: only this ticket may replace the displayed frame.
@@ -56,9 +68,12 @@ fn millis() -> Timebase {
 impl MediaHost {
     pub fn start(backend: Arc<dyn MediaBackend>) -> Result<Self, std::io::Error> {
         let decoder = LatestDecoder::start(backend.clone())?;
+        let playback = crate::playback::Playback::start(backend.clone())?;
         Ok(Self {
             backend,
             decoder,
+            playback,
+            copy_ticket: None,
             probe: None,
             selected: None,
             ticket: None,
@@ -80,6 +95,8 @@ impl MediaHost {
             generation: frame.generation,
             width: frame.image.width(),
             height: frame.image.height(),
+            actual: frame.actual,
+            epoch: frame.ticket.request_id.to_string(),
         })
     }
 
@@ -91,49 +108,82 @@ impl MediaHost {
         self.probe.is_some()
     }
 
-    pub fn start_probe(&mut self, project_id: ProjectId, path: PathBuf, status: &mut StatusView) {
+    pub fn start_probe(
+        &mut self,
+        project_id: ProjectId,
+        media_id: MediaId,
+        path: PathBuf,
+        checking: bool,
+        relink: bool,
+        status: &mut StatusView,
+    ) -> Result<(), MediaError> {
         if self.probe.is_some() {
-            return;
+            return Err(MediaError::Invalid(
+                "Another source inspection is still running.".into(),
+            ));
         }
         let token = Cancellation::default();
         let cancel = token.clone();
         let backend = self.backend.clone();
+        let (finished, completion) = mpsc::sync_channel(1);
         match thread::Builder::new()
             .name("cutcap-media-probe".into())
-            .spawn(move || backend.probe(&path, &cancel))
-        {
+            .spawn(move || {
+                let result = crate::persistence::probe_verified(backend.as_ref(), &path, &cancel);
+                let _notified = finished.send(());
+                result
+            }) {
             Ok(worker) => {
                 self.probe = Some(ProbeJob {
                     project_id,
-                    media_id: MediaId::new(),
+                    media_id,
                     token,
                     worker,
+                    checking,
+                    relink,
+                    abandoned: false,
+                    finished: completion,
                 });
                 self.import = ImportView {
                     busy: true,
                     error: false,
-                    message: "Reading video metadata…".into(),
+                    message: if checking {
+                        "Checking source content and metadata…"
+                    } else {
+                        "Reading video metadata and source fingerprint…"
+                    }
+                    .into(),
                 };
             }
-            Err(error) => self.import_error(&error.to_string(), status),
+            Err(error) => {
+                self.import_error(&error.to_string(), status);
+                return Err(MediaError::Worker);
+            }
         }
+        Ok(())
     }
 
     pub fn cancel_import(&mut self) {
         if let Some(job) = &self.probe {
             job.token.cancel();
+            self.import.message = "Cancelling source inspection…".into();
+        } else {
+            self.import.message = "Inspection has completed; awaiting project update.".into();
         }
         self.import.error = false;
-        self.import.message = "Import cancelled".into();
     }
 
     fn clear_preview(&mut self) {
+        self.copy_ticket = None;
         self.ticket = None;
         self.frame = None;
         self.source = SourceView::default();
     }
 
     pub fn pending_selection(&mut self) {
+        if let Err(error) = self.playback.reset() {
+            tracing::error!("{error}");
+        }
         if let Err(error) = self.decoder.cancel() {
             tracing::error!("{error}");
         }
@@ -144,6 +194,9 @@ impl MediaHost {
 
     /// Project replacement: cancel everything scoped to the previous project.
     pub fn reset(&mut self) {
+        if let Some(job) = &mut self.probe {
+            job.abandoned = true;
+        }
         self.cancel_import();
         self.pending_selection();
         self.clear_preview();
@@ -158,7 +211,7 @@ impl MediaHost {
         if self
             .selected
             .as_ref()
-            .is_some_and(|(project, previous)| *project == project_id && previous.id == media.id)
+            .is_some_and(|(project, previous)| *project == project_id && previous == &media)
         {
             return;
         }
@@ -184,52 +237,146 @@ impl MediaHost {
         self.seek(0, status);
     }
 
-    pub fn seek(&mut self, milliseconds: i64, status: &mut StatusView) {
-        let Some((project_id, media)) = &self.selected else {
-            return;
-        };
+    fn request_for(&self, milliseconds: i64) -> Result<DecodeRequest, MediaError> {
+        let (project, media) = self
+            .selected
+            .as_ref()
+            .ok_or_else(|| MediaError::Invalid("Select a source first.".into()))?;
         if !(0..=MAX_MEDIA_SECONDS * 1000).contains(&milliseconds) {
-            self.fail("Source time must be between 0 and 24 hours.", status);
-            return;
+            return Err(MediaError::Invalid(
+                "Source time must be between 0 and 24 hours.".into(),
+            ));
         }
         let offset = SourceTime {
             ticks: milliseconds,
             timebase: millis(),
         }
-        .rescale(media.metadata.timebase, Rounding::Ceil);
-        let Some(ticks) = offset
-            .ok()
-            .and_then(|offset| media.metadata.start_pts.checked_add(offset.ticks))
-        else {
-            self.fail("Source time overflow.", status);
-            return;
-        };
-        let ticket = PreviewTicket {
-            project_id: *project_id,
-            media_id: media.id,
-            request_id: RequestId::new(),
-        };
-        let request = DecodeRequest {
-            ticket,
+        .rescale(media.metadata.timebase, Rounding::Ceil)
+        .map_err(|_| MediaError::Invalid("Source time overflow.".into()))?;
+        let ticks = media
+            .metadata
+            .start_pts
+            .checked_add(offset.ticks)
+            .ok_or_else(|| MediaError::Invalid("Source time overflow.".into()))?;
+        Ok(DecodeRequest {
+            ticket: PreviewTicket {
+                project_id: *project,
+                media_id: media.id,
+                request_id: RequestId::new(),
+            },
             media: media.clone(),
             position: SourceTime {
                 ticks,
                 timebase: media.metadata.timebase,
             },
-        };
-        match self.decoder.request(request) {
-            Ok(()) => {
+        })
+    }
+
+    pub fn seek(&mut self, milliseconds: i64, status: &mut StatusView) {
+        if self.selected.is_none() {
+            return;
+        }
+        let result = self.request_for(milliseconds).and_then(|request| {
+            let ticket = request.ticket;
+            if self.playback.active() {
+                self.decoder.cancel()?;
+                self.ticket = None;
+                self.playback.request(
+                    request,
+                    milliseconds,
+                    self.playback.view.desired_playing,
+                    true,
+                )?;
+            } else {
+                self.decoder.request(request)?;
                 self.ticket = Some((ticket, Instant::now()));
+            }
+            self.copy_ticket = Some(ticket);
+            Ok(())
+        });
+        match result {
+            Ok(()) => {
+                self.source.position_ms = milliseconds;
                 self.source.busy = true;
                 self.source.status = "Decoding source frame…".into();
                 self.source.detail = "A newer seek replaces this request.".into();
-                self.source.position_ms = milliseconds;
             }
             Err(error) => self.fail(&error.to_string(), status),
         }
     }
 
+    pub fn play(&mut self) -> Result<(), MediaError> {
+        if self.playback.active() && !matches!(self.playback.view.state, "ended" | "failed") {
+            self.playback.resume(Instant::now());
+        } else {
+            let ms = if self.playback.view.state == "ended" {
+                0
+            } else {
+                self.source.position_ms
+            };
+            let request = self.request_for(ms)?;
+            self.decoder.cancel()?;
+            self.ticket = None;
+            self.copy_ticket = Some(request.ticket);
+            self.playback.request(request, ms, true, false)?;
+            self.source.position_ms = ms;
+        }
+        self.sync_transport();
+        Ok(())
+    }
+
+    pub fn pause(&mut self) {
+        self.playback.pause(Instant::now());
+        self.sync_transport();
+    }
+
+    pub fn stop(&mut self, status: &mut StatusView) -> Result<(), MediaError> {
+        self.playback.reset()?;
+        if self.selected.is_some() {
+            self.seek(0, status);
+        }
+        Ok(())
+    }
+
+    fn sync_transport(&mut self) {
+        let state = self.playback.view.state;
+        self.source.busy = matches!(state, "starting" | "seeking" | "buffering");
+        self.source.status = match state {
+            "starting" => "Starting source playback…",
+            "seeking" => "Seeking source…",
+            "buffering" => "Buffering source…",
+            "playing" => "Playing source",
+            "paused" => "Source paused",
+            "ended" => "End of source",
+            "failed" => "Source playback failed",
+            _ => "Source stopped",
+        }
+        .into();
+        if state != "failed" {
+            self.source.detail = String::new();
+        }
+    }
+
+    pub fn copy_allowed(&self, generation: u64) -> bool {
+        self.frame.as_ref().is_some_and(|frame| {
+            frame.generation == generation && Some(frame.ticket) == self.copy_ticket
+        })
+    }
+
+    pub fn frame_copied(&mut self, generation: u64) -> Result<(), MediaError> {
+        if let Some(frame) = &self.frame
+            && self.playback.ticket() == Some(frame.ticket)
+        {
+            self.playback.copied(generation, frame.actual)?;
+        }
+        Ok(())
+    }
+
     pub fn cancel_preview(&mut self, status: &mut StatusView) {
+        if let Err(error) = self.playback.reset() {
+            tracing::error!("{error}");
+        }
+        self.copy_ticket = self.frame.as_ref().map(|frame| frame.ticket);
         if let Err(error) = self.decoder.cancel() {
             tracing::error!("{error}");
         }
@@ -295,32 +442,65 @@ impl MediaHost {
         {
             changed = true;
             self.import.busy = false;
-            match job.worker.join().unwrap_or(Err(MediaError::Worker)) {
-                Ok(result)
-                    if !job.token.is_cancelled() && current_project == Some(job.project_id) =>
-                {
-                    tracing::info!(probe_us = result.probe_us, "media probed");
-                    if self.probe_times.len() >= 128 {
-                        self.probe_times.clear();
+            let result = job.worker.join().unwrap_or(Err(MediaError::Worker));
+            if !job.abandoned && current_project == Some(job.project_id) && job.checking {
+                let result = if job.token.is_cancelled() {
+                    Err(MediaError::Cancelled)
+                } else {
+                    result
+                };
+                registration = Some(Registration {
+                    project_id: job.project_id,
+                    media_id: job.media_id,
+                    checking: true,
+                    relink: job.relink,
+                    result: result
+                        .map(|(result, fingerprint)| {
+                            Box::new(VerifiedMedia {
+                                media: MediaSummary {
+                                    id: job.media_id,
+                                    path: result.path,
+                                    metadata: result.metadata,
+                                },
+                                fingerprint,
+                            })
+                        })
+                        .map_err(inspection_error),
+                });
+            } else if !job.abandoned && current_project == Some(job.project_id) {
+                match result {
+                    Ok((result, fingerprint))
+                        if !job.token.is_cancelled() && current_project == Some(job.project_id) =>
+                    {
+                        tracing::info!(probe_us = result.probe_us, "media probed");
+                        if self.probe_times.len() >= 128 {
+                            self.probe_times.clear();
+                        }
+                        self.probe_times.insert(job.media_id, result.probe_us);
+                        registration = Some(Registration {
+                            project_id: job.project_id,
+                            media_id: job.media_id,
+                            result: Ok(Box::new(VerifiedMedia {
+                                media: MediaSummary {
+                                    id: job.media_id,
+                                    path: result.path,
+                                    metadata: result.metadata,
+                                },
+                                fingerprint,
+                            })),
+                            checking: false,
+                            relink: false,
+                        });
+                        self.import.busy = true;
+                        self.import.message = "Metadata ready; registering asset…".into();
                     }
-                    self.probe_times.insert(job.media_id, result.probe_us);
-                    registration = Some(Registration {
-                        project_id: job.project_id,
-                        media: MediaSummary {
-                            id: job.media_id,
-                            path: result.path,
-                            metadata: result.metadata,
-                        },
-                    });
-                    self.import.busy = true;
-                    self.import.message = "Metadata ready; registering asset…".into();
-                }
-                Ok(_) | Err(MediaError::Cancelled) => {
-                    self.import.message = "Import cancelled".into();
-                }
-                Err(error) => {
-                    tracing::warn!("probe failed: {error}");
-                    self.import_error(&user_message(&error), status);
+                    Ok(_) | Err(MediaError::Cancelled) => {
+                        self.import.message = "Import cancelled".into();
+                    }
+                    Err(error) => {
+                        tracing::warn!("probe failed: {error}");
+                        self.import_error(&user_message(&error), status);
+                    }
                 }
             }
         }
@@ -340,6 +520,29 @@ impl MediaHost {
                 self.fail(&error.to_string(), status);
             }
             Ok(_) => {}
+        }
+        match self.playback.tick(Instant::now()) {
+            Ok((frame, state_changed)) => {
+                changed |= state_changed;
+                if let Some(frame) = frame {
+                    let actual = frame.actual;
+                    self.ticket = Some((frame.ticket, self.playback.requested_at()));
+                    self.present(frame, status);
+                    if let Err(error) = self.playback.offered(self.generation, actual) {
+                        self.playback.fail(&error, Instant::now());
+                        self.fail(&error.to_string(), status);
+                    }
+                    changed = true;
+                }
+                if self.playback.active() {
+                    self.sync_transport();
+                }
+            }
+            Err(error) => {
+                self.playback.fail(&error, Instant::now());
+                self.fail(&user_message(&error), status);
+                changed = true;
+            }
         }
         (registration, changed)
     }
@@ -392,6 +595,8 @@ impl MediaHost {
         self.frame = Some(PresentedFrame {
             generation: self.generation,
             image: decoded.image,
+            ticket: decoded.ticket,
+            actual: decoded.actual,
         });
         self.ticket = None;
         self.source.has_frame = true;
@@ -400,32 +605,59 @@ impl MediaHost {
         self.source.detail = String::new();
         self.source.caption = caption;
         self.metrics.decode_us = Some(decoded.decode_us);
-        self.metrics.request_to_ready_us = Some(ready_us);
+        if !self.playback.active() || self.playback.view.offered == 0 {
+            self.metrics.request_to_ready_us = Some(ready_us);
+        }
         self.metrics.frames_presented += 1;
     }
 
     pub fn shutdown(&mut self) -> Result<(), MediaError> {
         let probe_result = if let Some(job) = self.probe.take() {
             job.token.cancel();
-            job.worker
-                .join()
-                .unwrap_or(Err(MediaError::Worker))
-                .map(|_| ())
+            if matches!(
+                job.finished.recv_timeout(Duration::from_millis(250)),
+                Err(mpsc::RecvTimeoutError::Timeout)
+            ) {
+                // OS path/read calls cannot be interrupted. No session/UI is
+                // captured; the owned task will release its read handle on return.
+                tracing::warn!(
+                    "source inspection still inside OS/backend call; cancellation requested, detaching owned task"
+                );
+                Ok(())
+            } else {
+                job.worker
+                    .join()
+                    .unwrap_or(Err(MediaError::Worker))
+                    .map(|_| ())
+            }
         } else {
             Ok(())
         };
         let decoder_result = self.decoder.shutdown();
+        let playback_result = self.playback.shutdown();
         if let Err(error) = probe_result
             && !matches!(error, MediaError::Cancelled)
         {
             return Err(error);
         }
-        decoder_result
+        decoder_result?;
+        playback_result
     }
 }
 
 fn micros(started: Instant) -> u64 {
     started.elapsed().as_micros().min(u128::from(u64::MAX)) as u64
+}
+
+fn inspection_error(error: MediaError) -> EngineError {
+    let code = match &error {
+        MediaError::Io {
+            stage: "Locate source media" | "Inspect source media",
+            source,
+        } if source.kind() == std::io::ErrorKind::NotFound => ErrorCode::NotFound,
+        _ => ErrorCode::Internal,
+    };
+    EngineError::new(code, user_message(&error))
 }
 
 pub fn user_message(error: &MediaError) -> String {
@@ -442,5 +674,22 @@ pub fn user_message(error: &MediaError) -> String {
                 .into()
         }
         _ => error.to_string(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn unavailable_probe_tool_is_not_reported_as_a_missing_source() {
+        let missing = |stage| {
+            inspection_error(MediaError::Io {
+                stage,
+                source: std::io::Error::from(std::io::ErrorKind::NotFound),
+            })
+        };
+        assert_eq!(missing("Locate source media").code, ErrorCode::NotFound);
+        assert_eq!(missing("Inspect source media").code, ErrorCode::NotFound);
+        assert_eq!(missing("Start media tool").code, ErrorCode::Internal);
     }
 }

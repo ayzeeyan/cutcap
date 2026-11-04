@@ -6,7 +6,7 @@
         xmlns:chrome="using:Avalonia.Controls.Chrome"
         x:Class="CutCap.Desktop.Views.MainWindow"
         x:DataType="vm:MainWindowViewModel"
-        Title="{Binding ProjectName, StringFormat='{}{0} — CutCap'}"
+        Title="{Binding ProjectCaption, StringFormat='{}{0} — CutCap'}"
         Icon="avares://CutCap/Assets/cutcap.ico"
         Width="1440" Height="900" MinWidth="960" MinHeight="600"
         WindowStartupLocation="CenterScreen"
@@ -15,6 +15,9 @@
   <Window.KeyBindings>
     <KeyBinding Gesture="Ctrl+I" Command="{Binding ImportCommand}" />
     <KeyBinding Gesture="Ctrl+N" Command="{Binding NewProjectCommand}" />
+    <KeyBinding Gesture="Ctrl+O" Command="{Binding OpenProjectCommand}" />
+    <KeyBinding Gesture="Ctrl+S" Command="{Binding SaveProjectCommand}" />
+    <KeyBinding Gesture="Ctrl+Shift+S" Command="{Binding SaveProjectAsCommand}" />
     <KeyBinding Gesture="Ctrl+Shift+A" Command="{Binding ClearSelectionCommand}" />
     <KeyBinding Gesture="Ctrl+D0" Command="{Binding ResetLayoutCommand}" />
     <KeyBinding Gesture="Ctrl+OemPlus" Command="{Binding Timeline.ZoomInCommand}" />
@@ -61,19 +64,32 @@
           <TextBlock Text="{Binding ProjectName}" FontWeight="SemiBold" FontSize="13" VerticalAlignment="Center"
                      TextTrimming="CharacterEllipsis" MaxWidth="320" />
           <Border Background="{StaticResource Raised}" CornerRadius="3" Padding="6,1"
-                  ToolTip.Tip="Projects live in memory. Saving arrives with the persistence milestone.">
-            <TextBlock Text="Not saved" Classes="fine faint" />
+                  ToolTip.Tip="{Binding ProjectPath}">
+            <TextBlock Text="{Binding ProjectStateText}" Classes="fine faint" />
           </Border>
         </StackPanel>
 
         <StackPanel Grid.Column="4" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center"
                     Margin="0,0,196,0">
-          <Button Classes="tool" Command="{Binding NewProjectCommand}" AutomationProperties.Name="New project"
-                  ToolTip.Tip="Start a new empty project in memory (Ctrl+N)">
+          <Button Classes="tool" AutomationProperties.Name="Project menu" ToolTip.Tip="New, open and save project">
             <StackPanel Orientation="Horizontal" Spacing="6">
               <c:IconView Glyph="New" />
-              <TextBlock Text="New project" Classes="wide-label" VerticalAlignment="Center" />
+              <TextBlock Text="Project" Classes="wide-label" VerticalAlignment="Center" />
             </StackPanel>
+            <Button.Flyout>
+              <MenuFlyout>
+                <MenuItem Header="New project" Command="{Binding NewProjectCommand}" InputGesture="Ctrl+N" />
+                <MenuItem Header="Open project…" Command="{Binding OpenProjectCommand}" InputGesture="Ctrl+O" />
+                <Separator />
+                <MenuItem Header="Save" Command="{Binding SaveProjectCommand}" InputGesture="Ctrl+S" />
+                <MenuItem Header="Save As…" Command="{Binding SaveProjectAsCommand}" InputGesture="Ctrl+Shift+S" />
+                <Separator />
+                <MenuItem Header="Undo" Command="{Binding Timeline.UndoCommand}" InputGesture="Ctrl+Z" />
+                <MenuItem Header="Redo" Command="{Binding Timeline.RedoCommand}" InputGesture="Ctrl+Y" />
+                <Separator />
+                <MenuItem Header="Relink selected source…" Command="{Binding RelinkMediaCommand}" />
+              </MenuFlyout>
+            </Button.Flyout>
           </Button>
           <Button Classes="filled" AutomationProperties.Name="Keyboard shortcuts" ToolTip.Tip="Show keyboard shortcuts">
             <StackPanel Orientation="Horizontal" Spacing="6">

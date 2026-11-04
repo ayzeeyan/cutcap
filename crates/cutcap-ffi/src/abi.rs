@@ -14,7 +14,7 @@
 #![allow(unsafe_code)]
 
 use crate::session::{Session, SessionError};
-use cutcap_contracts::{MediaId, TrackId, TrackKind};
+use cutcap_contracts::{ClipId, MediaId, TrackId, TrackKind};
 use std::{
     cell::RefCell,
     collections::BTreeMap,
@@ -28,7 +28,9 @@ use std::{
 
 /// Bump on any incompatible change to a signature, struct layout, status code
 /// or view JSON field the frontend depends on.
-pub const ABI_VERSION: u32 = 1;
+/// ABI 4 (Phase 3B): clip insert/remove/select, undo/redo, the separately
+/// fetched timeline document and the view's `timeline_generation`/`history`.
+pub const ABI_VERSION: u32 = 4;
 
 pub const CUTCAP_OK: i32 = 0;
 pub const CUTCAP_INVALID_ARGUMENT: i32 = 1;
@@ -335,6 +337,85 @@ pub extern "C" fn cutcap_session_clear_selection(handle: u64) -> i32 {
     guard(|| with_session(handle, |s| Ok(s.clear_selection()?)))
 }
 
+/// # Safety
+/// `ptr` must be valid for reads of `len` bytes.
+unsafe fn clip_id(ptr: *const u8, len: usize) -> Result<ClipId, Fail> {
+    // SAFETY: forwarded caller contract.
+    let text = unsafe { input_str(ptr, len) }?;
+    ClipId::try_from(parse_uuid(text)?).map_err(|_| Fail::argument("Invalid clip identifier."))
+}
+
+/// Phase 3B (ABI 4): appends a ready video source to the end of a
+/// video track. Accepted means queued; the clip appears in the next view.
+///
+/// # Safety
+/// `media`/`track` must be valid for reads of their lengths.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn cutcap_session_insert_clip(
+    handle: u64,
+    media: *const u8,
+    media_len: usize,
+    track: *const u8,
+    track_len: usize,
+) -> i32 {
+    guard(|| {
+        // SAFETY: forwarded caller contract.
+        let media = unsafe { input_str(media, media_len) }?;
+        let media = MediaId::try_from(parse_uuid(media)?)
+            .map_err(|_| Fail::argument("Invalid media identifier."))?;
+        // SAFETY: forwarded caller contract.
+        let track = unsafe { input_str(track, track_len) }?;
+        let track = TrackId::try_from(parse_uuid(track)?)
+            .map_err(|_| Fail::argument("Invalid track identifier."))?;
+        with_session(handle, |s| Ok(s.insert_clip(media, track)?))
+    })
+}
+
+/// Removes a clip (the media asset and file stay). Undoable.
+///
+/// # Safety
+/// `id` must be valid for reads of `id_len` bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn cutcap_session_remove_clip(
+    handle: u64,
+    id: *const u8,
+    id_len: usize,
+) -> i32 {
+    guard(|| {
+        // SAFETY: forwarded caller contract.
+        let id = unsafe { clip_id(id, id_len) }?;
+        with_session(handle, |s| Ok(s.remove_clip(id)?))
+    })
+}
+
+/// Selects a clip on the timeline. Selection never dirties the document.
+///
+/// # Safety
+/// `id` must be valid for reads of `id_len` bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn cutcap_session_select_clip(
+    handle: u64,
+    id: *const u8,
+    id_len: usize,
+) -> i32 {
+    guard(|| {
+        // SAFETY: forwarded caller contract.
+        let id = unsafe { clip_id(id, id_len) }?;
+        with_session(handle, |s| Ok(s.select_clip(id)?))
+    })
+}
+
+/// Undoes the newest clip edit; "nothing to undo" arrives as a view status.
+#[unsafe(no_mangle)]
+pub extern "C" fn cutcap_session_undo(handle: u64) -> i32 {
+    guard(|| with_session(handle, |s| Ok(s.undo()?)))
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn cutcap_session_redo(handle: u64) -> i32 {
+    guard(|| with_session(handle, |s| Ok(s.redo()?)))
+}
+
 /// Shows a registered media asset in the source viewer.
 ///
 /// # Safety
@@ -382,6 +463,78 @@ fn wide_path(units: &[u16]) -> Result<PathBuf, Fail> {
     Ok(PathBuf::from(std::ffi::OsString::from_wide(units)))
 }
 
+/// Enqueue Save to the current document path.
+#[unsafe(no_mangle)]
+pub extern "C" fn cutcap_session_save_project(handle: u64) -> i32 {
+    guard(|| with_session(handle, |s| Ok(s.save_project(None)?)))
+}
+
+/// Enqueue Save As. Completion/dirty state is reported in project.document.
+/// # Safety
+/// `path` is valid for `path_len` aligned UTF-16 units.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn cutcap_session_save_project_as(
+    handle: u64,
+    path: *const u16,
+    path_len: usize,
+) -> i32 {
+    guard(|| {
+        // SAFETY: forwarded caller contract; helper validates bounds/alignment.
+        let path = unsafe { input_path(path, path_len) }?;
+        with_session(handle, |s| Ok(s.save_project(Some(path))?))
+    })
+}
+
+/// Open/validate off-thread, then atomically adopt. A failure preserves state.
+/// # Safety
+/// `path` is valid for `path_len` aligned UTF-16 units.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn cutcap_session_open_project(
+    handle: u64,
+    path: *const u16,
+    path_len: usize,
+) -> i32 {
+    guard(|| {
+        // SAFETY: forwarded caller contract.
+        let path = unsafe { input_path(path, path_len) }?;
+        with_session(handle, |s| Ok(s.open_project(path)?))
+    })
+}
+
+/// Re-probe and compare original identity before changing a media reference.
+/// # Safety
+/// `id` is valid for `id_len` bytes, `path` for `path_len` aligned UTF-16 units.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn cutcap_session_relink_media(
+    handle: u64,
+    id: *const u8,
+    id_len: usize,
+    path: *const u16,
+    path_len: usize,
+) -> i32 {
+    guard(|| {
+        // SAFETY: forwarded caller buffer contracts, bounded before access.
+        let text = unsafe { input_str(id, id_len) }?;
+        let id = MediaId::try_from(parse_uuid(text)?)
+            .map_err(|_| Fail::argument("Invalid media identifier."))?;
+        // SAFETY: forwarded caller contract.
+        let path = unsafe { input_path(path, path_len) }?;
+        with_session(handle, |s| Ok(s.relink_media(id, path)?))
+    })
+}
+
+unsafe fn input_path(path: *const u16, path_len: usize) -> Result<PathBuf, Fail> {
+    if path.is_null() || !path.is_aligned() || path_len == 0 || path_len > 32_767 {
+        return Err(Fail::argument("Invalid project/source path."));
+    }
+    // SAFETY: checked non-null, alignment and bounded length, caller supplies readable memory.
+    let units = unsafe { std::slice::from_raw_parts(path, path_len) };
+    if units.contains(&0) {
+        return Err(Fail::argument("A path cannot contain a null character."));
+    }
+    wide_path(units)
+}
+
 #[cfg(not(windows))]
 fn wide_path(units: &[u16]) -> Result<PathBuf, Fail> {
     String::from_utf16(units)
@@ -399,11 +552,38 @@ pub extern "C" fn cutcap_session_cancel_import(handle: u64) -> i32 {
     })
 }
 
+/// Accepts source Play/Resume; decoding and scheduling remain asynchronous.
+#[unsafe(no_mangle)]
+pub extern "C" fn cutcap_session_play(handle: u64) -> i32 {
+    guard(|| with_session(handle, |s| Ok(s.play()?)))
+}
+#[unsafe(no_mangle)]
+pub extern "C" fn cutcap_session_pause(handle: u64) -> i32 {
+    guard(|| {
+        with_session(handle, |s| {
+            s.pause();
+            Ok(())
+        })
+    })
+}
+#[unsafe(no_mangle)]
+pub extern "C" fn cutcap_session_stop(handle: u64) -> i32 {
+    guard(|| with_session(handle, |s| Ok(s.stop()?)))
+}
+
 /// Requests the first frame at or after `milliseconds` into the selected source.
 #[unsafe(no_mangle)]
 pub extern "C" fn cutcap_session_seek(handle: u64, milliseconds: i64) -> i32 {
     guard(|| {
+        if !(0..=cutcap_contracts::MAX_MEDIA_SECONDS * 1000).contains(&milliseconds) {
+            return Err(Fail::argument(
+                "Source position must be between zero and 24 hours.",
+            ));
+        }
         with_session(handle, |s| {
+            if !s.source_ready() {
+                return Err(Fail::argument("Select a source before seeking."));
+            }
             s.seek(milliseconds);
             Ok(())
         })
@@ -472,6 +652,28 @@ pub unsafe extern "C" fn cutcap_session_view(
     })
 }
 
+/// Copies the timeline document (UTF-8 JSON `{generation, clips}`), with the
+/// same buffer protocol as [`cutcap_session_view`]. Fetch it only when the
+/// view's `timeline_generation` differs from the last generation copied.
+///
+/// # Safety
+/// See [`copy_text`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn cutcap_session_timeline(
+    handle: u64,
+    buffer: *mut u8,
+    capacity: usize,
+    out_len: *mut usize,
+) -> i32 {
+    guard(|| {
+        with_session(handle, |s| {
+            let json = s.timeline_json()?;
+            // SAFETY: forwarded caller contract.
+            unsafe { copy_text(json.as_bytes(), buffer, capacity, out_len) }
+        })
+    })
+}
+
 /// Describes the latest presented frame, or returns `CUTCAP_NO_FRAME`.
 ///
 /// # Safety
@@ -519,7 +721,7 @@ pub unsafe extern "C" fn cutcap_session_copy_frame(
             let frame = s
                 .frame()
                 .ok_or_else(|| Fail::new(CUTCAP_NO_FRAME, "No frame is available."))?;
-            if frame.generation != generation {
+            if frame.generation != generation || !s.copy_allowed(generation) {
                 return Err(Fail::new(
                     CUTCAP_STALE_FRAME,
                     "A newer frame replaced this one.",
@@ -532,7 +734,11 @@ pub unsafe extern "C" fn cutcap_session_copy_frame(
                 .checked_mul(rows - 1)
                 .and_then(|n| n.checked_add(row))
                 .ok_or_else(|| Fail::argument("Destination size overflow."))?;
-            if dst.is_null() || dst_stride < row || dst_len < required {
+            if dst.is_null()
+                || dst_len > isize::MAX as usize
+                || dst_stride < row
+                || dst_len < required
+            {
                 return Err(Fail::argument(
                     "Destination buffer is too small for this frame.",
                 ));
@@ -544,6 +750,7 @@ pub unsafe extern "C" fn cutcap_session_copy_frame(
                 let start = index * dst_stride;
                 target[start..start + row].copy_from_slice(source);
             }
+            s.frame_copied(generation)?;
             Ok(())
         })
     })

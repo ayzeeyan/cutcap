@@ -1,0 +1,64 @@
+20:21:36.474 launch | lanes='Track lanes, 0 clips' undo=False redo=False delete=False add=False title='Untitled project * — CutCap'
+1778x1039 -> .artifacts\timeline\ui\01-imported.jpg
+20:21:52.924 add tip with source selected: 'Add colors 视频.mkv to the end of Video 1'
+20:22:03.613 selected source 'interview take.mp4': add tip='Add interview take.mp4 to the end of Video 1' inspector='Source video, read only'
+20:22:04.386 add tip: 'Add interview take.mp4 to the end of Video 1'
+20:22:05.881 first add: 429 ms
+20:22:08.736 added interview (20 s) to V1 | lanes='Track lanes, 1 clip. Selected clip interview take.mp4, 00:00.000 to 00:20.000' undo=True redo=False delete=True add=True title='Untitled project * — CutCap'
+1778x1039 -> .artifacts\timeline\ui\02-first-clip.jpg
+20:22:18.681 selected source 'colors 视频.mkv': add tip='Add colors 视频.mkv to the end of Video 1' inspector='Source video, read only'
+20:22:20.464 second add: 550 ms
+20:22:23.162 appended colors after interview | lanes='Track lanes, 2 clips. Selected clip colors 视频.mkv, 00:20.000 to 00:23.000' undo=True redo=False delete=True add=True title='Untitled project * — CutCap'
+1778x1039 -> .artifacts\timeline\ui\03-appended.jpg
+20:22:37.101 selected source 'interview take.mp4': add tip='Add interview take.mp4 to the end of Video 2' inspector='Source video, read only'
+20:22:37.860 add tip with V2 selected: 'Add interview take.mp4 to the end of Video 2'
+20:22:39.726 third add: 435 ms
+20:22:41.835 added interview to the selected V2 | lanes='Track lanes, 3 clips. Selected clip interview take.mp4, 00:00.000 to 00:20.000' undo=True redo=False delete=True add=True title='Untitled project * — CutCap'
+1778x1039 -> .artifacts\timeline\ui\04-second-track.jpg
+20:22:44.426 clicked V1 at 5 s: 740 ms
+20:22:44.873 inspector: 'Video clip on Video 1'
+20:22:48.001 selected first clip | lanes='Track lanes, 3 clips. Selected clip interview take.mp4, 00:00.000 to 00:20.000' undo=True redo=False delete=True add=True title='Untitled project * — CutCap'
+1778x1039 -> .artifacts\timeline\ui\05-selected.jpg
+20:22:49.915 clicked V1 at 21 s: 261 ms
+20:22:53.980 Delete: 457 ms
+20:22:56.299 deleted the selected clip | lanes='Track lanes, 2 clips' undo=True redo=False delete=False add=True title='Untitled project * — CutCap'
+1778x1039 -> .artifacts\timeline\ui\06-deleted.jpg
+20:22:57.623 Ctrl+Z: 449 ms
+20:23:00.599 undo restores the clip and its selection | lanes='Track lanes, 3 clips. Selected clip interview take.mp4, 00:00.000 to 00:20.000' undo=True redo=True delete=True add=True title='Untitled project * — CutCap'
+1778x1039 -> .artifacts\timeline\ui\07-undo.jpg
+20:23:02.039 Ctrl+Y: 580 ms
+20:23:05.569 Ctrl+Shift+Z with nothing to redo | lanes='Track lanes, 2 clips' undo=True redo=False delete=False add=True title='Untitled project * — CutCap'
+20:23:06.379 Ctrl+Z again: 395 ms
+20:23:08.182 toolbar Undo: 372 ms
+20:23:09.986 toolbar Redo: 687 ms
+20:23:12.751 after toolbar undo/redo | lanes='Track lanes, 3 clips. Selected clip interview take.mp4, 00:00.000 to 00:20.000' undo=True redo=True delete=True add=True title='Untitled project * — CutCap'
+20:23:17.335 keys in the search field: search='z' lanes='Track lanes, 3 clips. Selected clip interview take.mp4, 00:00.000 to 00:20.000'
+20:23:21.537 zoom: 'Reset zoom'
+1778x1039 -> .artifacts\timeline\ui\08-zoom-150.jpg
+20:23:23.365 click at 21 s @150%: 286 ms
+1778x1039 -> .artifacts\timeline\ui\09-zoom-75.jpg
+1440x945 -> .artifacts\timeline\ui\10-small-window.jpg
+20:23:42.322 selected source 'interview take.mp4': add tip='Add interview take.mp4 to the end of Video 1' inspector=''
+20:23:46.331 playing: button=Pause lanes='Track lanes, 3 clips. Selected clip colors 视频.mkv, 00:20.000 to 00:23.000'
+1778x1039 -> .artifacts\timeline\ui\11-playing-with-clips.jpg
+20:23:48.236 select clip during playback: 395 ms
+20:23:51.638 undo during playback: button=Pause lanes='Track lanes, 2 clips. Selected clip colors 视频.mkv, 00:20.000 to 00:23.000'
+20:24:05.163 saved | lanes='Track lanes, 3 clips. Selected clip interview take.mp4, 00:00.000 to 00:20.000' undo=True redo=True delete=True add=True title='Untitled project — CutCap'
+1778x1039 -> .artifacts\timeline\ui\12-saved.jpg
+20:24:10.070 new project | lanes='Track lanes, 0 clips' undo=False redo=False delete=False add=False title='Untitled project * — CutCap'
+20:24:16.466 unsaved prompt shown for the untitled project; continuing without saving
+20:24:18.317 reopen: 670 ms
+20:24:23.110 reopened | lanes='Track lanes, 3 clips' undo=False redo=False delete=False add=False title='Untitled project — CutCap'
+1778x1039 -> .artifacts\timeline\ui\13-reopened.jpg
+20:24:25.282 select reopened V2 clip: 546 ms
+20:24:25.599 inspector: 'Video clip on Video 2'
+1778x1039 -> .artifacts\timeline\ui\14-reopened-selected.jpg
+20:24:26.639 close after reopen (clean) | exited=True in 571 ms code=0 leftover=0
+20:24:36.676 unsaved prompt shown for the untitled project; continuing without saving
+20:24:38.345 reopen with a missing source: 884 ms
+20:24:42.393 select missing clip: 195 ms
+20:24:45.586 missing source | lanes='Track lanes, 3 clips. Selected clip interview take.mp4, 00:00.000 to 00:20.000, source unavailable' undo=False redo=False delete=True add=False title='Untitled project — CutCap'
+20:24:56.666 selected source 'interview take.mp4': add tip='interview take.mp4 is unavailable; relink it first' inspector='Source video, read only'
+20:24:58.137 add tip for missing source: 'interview take.mp4 is unavailable; relink it first' enabled=False
+1778x1039 -> .artifacts\timeline\ui\15-missing.jpg
+20:24:59.115 close with missing media (clean) | exited=True in 529 ms code=0 leftover=0

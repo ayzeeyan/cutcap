@@ -18,7 +18,11 @@ These are manual native UI checks, not automated tests. Record date, build (Debu
 | Import colors-vfr.mkv, seek 201 | Actual PTS 700 @ 1/1000. |
 | With audio / Silent / All media; search "vfr" | Only matching tiles; selecting a filtered tile previews that exact source. |
 | Categories other than Media; inspector tabs other than Details | Honest "coming later" / "needs a clip" states; nothing pretends to work. |
-| Hover disabled controls (Play, Undo, Export, track eye/lock) | Tooltip explains why; no action. |
+| Play / Pause / Space; Pause before the first frame; Stop | Button follows engine state and intent; readout advances while playing and holds while paused; Space works from lists but types in text fields; Stop returns to 00:00.000 only once the zero frame arrives. |
+| Seek while playing / paused / stopped; rapid scrubbing | Playing stays playing, paused stays paused; only the last scrub target is presented; the go-to field shows the request. |
+| Play to the end, then Play | "End of source" with the last frame held; Play restarts from zero. |
+| Switch source or New Project during playback; close during playback or a pending seek | Old epoch never drawn; Play disabled with no source; exit 0 and no CutCap/FFmpeg/FFprobe left. |
+| Hover disabled controls (Undo, Export, track eye/lock) | Tooltip explains why; no action. |
 | Import corrupt.mp4 / a missing file | Clear error, no new tile, existing project and frame preserved. |
 | Ctrl+N with media and extra tracks | New project ID, two empty tracks, empty library, cleared preview. |
 | Shortcuts, About | Flyouts open and dismiss with Escape or a click outside. |

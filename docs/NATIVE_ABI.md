@@ -1,6 +1,43 @@
-# CutCap native engine ABI, version 1
+# CutCap native engine ABI, version 4
 
-`crates/cutcap-ffi` builds `cutcap_engine.dll` (Windows x64, `extern "C"`, the platform's only x64 calling convention). The Avalonia frontend loads it through `src-dotnet/CutCap.Interop`. Source of truth: `crates/cutcap-ffi/src/abi.rs`; the C# mirror is `NativeMethods.cs`. This ABI is versioned separately from the in-process contract (`CONTRACT_VERSION` 2, unchanged) and from project schema 1.
+## Phase 3B additions (current authority)
+
+Rust `ABI_VERSION` and C# `NativeMethods.AbiVersion` are 4; CONTRACT_VERSION is 4 (ADR 020). The bump is required by AGENTS.md for new consumed view fields, and it is the guard that stops a stale ABI-3 DLL from passing the version check and failing on the first clip command. Every ABI 3 export, status number, frame layout and handle rule is unchanged.
+
+| New export | Semantics |
+|---|---|
+| `cutcap_session_insert_clip(u64, u8* media, usize, u8* track, usize)` | Enqueue InsertClip (append-to-end policy, ENGINE_UI_CONTRACT.md). Malformed/nil UUIDs or null pointers → `INVALID_ARGUMENT`; engine rejections arrive as view status. |
+| `cutcap_session_remove_clip(u64, u8* id, usize)` | Enqueue RemoveClip. |
+| `cutcap_session_select_clip(u64, u8* id, usize)` | Transient clip selection; the inspector follows it. |
+| `cutcap_session_undo(u64)` / `cutcap_session_redo(u64)` | Enqueue Undo/Redo; "Nothing to undo/redo." arrives as an error status. |
+| `cutcap_session_timeline(u64, u8* buf, usize cap, usize* len)` | Copies the timeline document `{generation, clips}` with the same buffer protocol as `cutcap_session_view`. |
+
+View additions: `timeline_generation` (u64; fetch the timeline document only when it differs from the last generation read) and `history` (`can_undo`, `can_redo`, `undo`, `redo` labels, `depth`). Clips are intentionally absent from the view: the view is re-serialized for each playback frame, the clip list only per edit. Clip timing crosses as floored display milliseconds plus Rust-formatted strings; exact ticks stay in Rust and appear in the inspector. The wrapper exposes InsertClip/RemoveClip/SelectClip/Undo/Redo/ReadTimeline (64 MiB ceiling, about 340 bytes per clip at the 100,000-clip core limit). Tests: `crates/cutcap-ffi/src/timeline_tests.rs` (ABI arguments, round trip, rejections) and `tests/CutCap.Interop.Tests/TimelineEditingTests.cs` (real DLL and FFmpeg).
+
+## Phase 3A additions (ABI 3, retained)
+
+Rust `ABI_VERSION` and C# `NativeMethods.AbiVersion` are 3; internal CONTRACT_VERSION is 3. Core schema remains 1; `.cutcap` envelope format is 1. All ABI 2 transport/frame layouts, status numbers and ownership rules below remain unchanged. The in-tree frontend refuses older/newer DLLs. Phase 2B's production transport is integrated, not a pending handoff.
+
+| New export | Semantics |
+|---|---|
+| `cutcap_session_save_project(u64)` | Enqueue Save to the last successfully opened/saved path. With no path, terminal error requests Save As. |
+| `cutcap_session_save_project_as(u64, u16* path, usize units)` | Enqueue Save As to an absolute `.cutcap` path. |
+| `cutcap_session_open_project(u64, u16* path, usize units)` | Enqueue validated Open. Old project/media survives any failure. |
+| `cutcap_session_relink_media(u64, u8* id, usize id_len, u16* path, usize units)` | Inspect original-content candidate on the single probe worker; owner alone changes the reference. |
+
+Path input validates pointer/alignment/1..32767 units and rejects embedded NUL before use. IDs retain existing UUID rules. All command returns mean acceptance only; no function above performs file I/O, probing or waiting on the dispatcher. The wrapper exposes SaveProject/SaveProjectAs/OpenProject/RelinkMedia. Project file operations are serialized; queue-full and owner Busy errors remain observable.
+
+Consumed view changes: `project.document` contains `path`, domain `revision`, `saved_revision`, derived `dirty`, `operation_id` (RequestId), `state` (idle/saving/opening/saved/opened/failed) and optional `error`. `project.saved` is true only when a file path exists and the current revision is clean. This domain revision is **not** SessionView.revision (presentation cache invalidation). Saving/Open emit nonterminal Updated snapshots and keep their RequestIds in `pending` through terminal completion/failure. The single frontend document workflow waits for the owner requests to drain, checks a new operation identity and terminal Saved status, and rechecks dirty state before replacement/close; accepted is never shown as saved.
+
+Media rows add `availability` (checking/ready/missing/changed/unavailable), `detail` and resolved `path`. Saved metadata remains context, not readiness. Track rows add Rust-formatted `lane_label` so preserved clip data is not described as an empty track. No pixel array enters the view. Relink completion/failure appears in media availability/import feedback and increments the document revision only on a successful path change.
+
+Only the owner mutates documents/revisions. One file worker owns its immutable snapshot. A bounded session slot retains verification results until the reliable command queue accepts them. Opening the same ProjectId still invalidates the prior source epoch/probe. See PROJECT_FORMAT.md for path/hash checks, bounded parsing, same-directory flush/replace, detached owned file tasks on uninterruptible OS calls and guarantees/limits. UI New/Open/close prompts for unsaved changes; file dialog Cancel leaves state intact.
+
+Playback startup now waits for an actual successor PTS or EOF before anchoring the playing clock (ADR 019). Paused first frames remain immediate; true post-preroll starvation still freezes the clock in Buffering. No frame scheduling deadline or display-refresh assumption changed.
+
+## ABI 2 foundation retained by ABI 3 and 4
+
+`crates/cutcap-ffi` builds `cutcap_engine.dll` (Windows x64, `extern "C"`). The Avalonia frontend loads it through `src-dotnet/CutCap.Interop`. Sources of truth are abi.rs and NativeMethods.cs. ABI 3 is versioned independently of in-process contract 3, document format 1 and core schema 1.
 
 ## Shape
 
@@ -30,12 +67,19 @@ All return `int32` status unless noted. Strings are explicit pointer + length, n
 | `cutcap_session_seek(u64, i64 ms)` | Relative source milliseconds; checked ceil rescale to the stream clock. |
 | `cutcap_session_seek_text(u64, u8*, usize)` | `1500`, `1.5s`, `00:01.500`; the tested Rust grammar rejects ambiguous `1.5`. |
 | `cutcap_session_cancel_preview(u64)` | Keeps the last valid frame. |
+| `cutcap_session_play(u64)` | Accept Play/Resume for the selected source; INVALID_ARGUMENT if none is ready. Idempotent while playing. |
+| `cutcap_session_pause(u64)` | Freeze the source clock; keep bounded preroll and last image. |
+| `cutcap_session_stop(u64)` | Cancel persistent source decode and request the isolated zero-position frame. |
 | `cutcap_session_pump(u64, u32* changed)` | `changed` = 1 when the view must be re-read. |
 | `cutcap_session_view(u64, u8* buf, usize cap, usize* len)` | Writes `len` first; `cap < len` → `BUFFER_TOO_SMALL` without copying. The same revision is returned on retry. |
 | `cutcap_session_frame_info(u64, CutCapFrameInfo*)` | `NO_FRAME` when nothing is presented. |
 | `cutcap_session_copy_frame(u64, u64 generation, u8* dst, usize len, usize stride)` | Row-by-row copy into caller memory with any `stride >= width*4`. A replaced generation → `STALE_FRAME`. |
 
 `CutCapFrameInfo` is `#[repr(C)]`, 24 bytes, 8-aligned: `u64 generation; u32 width; u32 height; u32 stride; u32 pixel_format`. `pixel_format` 1 = packed RGBA8, opaque alpha, top row first (Avalonia `PixelFormats.Rgba8888`, no conversion). Frames are at most 1280×720.
+
+ABI 2 keeps this layout and existing function signatures/status numbers. New exports add source transport. Numeric Seek validates source readiness and the 0..24 h range; SeekText preserves grammar-error feedback before source-readiness validation. Successful copy is now a once-per-generation **delivery acknowledgment**, not a physical presentation claim. Reset/seek invalidates copying an old epoch immediately, even while its already copied bitmap remains visible. Caller lengths above isize::MAX are rejected before constructing a slice.
+
+See [PHASE_2_PLAYBACK_CONTRACT.md](PHASE_2_PLAYBACK_CONTRACT.md) for state/seek/clock/EOF semantics. The managed wrapper exposes Play/Pause/Resume/Stop and caches LastReadView for diagnostics. Phase 2B integrated the production visual controls; Phase 3A adds document operations while preserving them.
 
 Status codes: 0 OK, 1 INVALID_ARGUMENT, 2 INVALID_HANDLE, 3 ABI_MISMATCH, 4 BUFFER_TOO_SMALL, 5 NO_FRAME, 6 STALE_FRAME, 7 BUSY (bounded queue full), 8 FAILED, 9 PANIC.
 
@@ -50,7 +94,7 @@ Status codes: 0 OK, 1 INVALID_ARGUMENT, 2 INVALID_HANDLE, 3 ABI_MISMATCH, 4 BUFF
 
 ## View document
 
-`SessionView` (`crates/cutcap-ffi/src/view.rs`, mirrored by `SessionView.cs`) carries `revision`, `engine_ready`, `project`, `status`, `pending`, `tracks`, `media`, `import`, `inspector` (kind/title/detail/sections), `source` (the source monitor; never the timeline playhead), `frame` (generation/size) and `metrics`. Durations, rates, rotations and timecodes are formatted in Rust, next to the exact rational arithmetic; the frontend renders them and keeps no project state. Unknown fields are ignored by the frontend, so adding a field is compatible; removing or retyping one requires `ABI_VERSION` + 1.
+`SessionView` (`crates/cutcap-ffi/src/view.rs`, mirrored by `SessionView.cs`) carries the existing project/source/presentation view plus `playback`. Source.position_ms remains the requested seek position. Playback carries state/intent, epoch, requested/clock/offered/copied positions, exact offered/copied SourceTime, formatted strings, first-frame readiness latency, process ID, queue occupancy and decoded/offered/copied/dropped/stall counters. Frame gains actual SourceTime and epoch, correlated to its generation; no pixels enter JSON. Legacy metrics.frames_presented counts offers, not renders. Durations/rates/timecodes are formatted in Rust. Unknown fields are ignored, but any newly consumed field or signature/layout/status change requires a synchronized ABI revision.
 
 ## Versioning
 

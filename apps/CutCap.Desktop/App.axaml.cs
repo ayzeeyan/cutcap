@@ -19,8 +19,10 @@ public sealed class App : Application
         {
             _engine = new EngineHost();
             var viewModel = new MainWindowViewModel(_engine);
-            desktop.MainWindow = new MainWindow { DataContext = viewModel };
+            var window = new MainWindow { DataContext = viewModel };
+            desktop.MainWindow = window;
             _engine.Start();
+            _engine.AttachRenderLoop(window);
             // After the window closes: stop pumping, then cancel media work and
             // join the native workers. FFmpeg children are reaped by the engine.
             desktop.Exit += (_, _) => _engine.Dispose();

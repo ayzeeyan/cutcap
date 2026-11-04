@@ -2,6 +2,7 @@ use std::{
     cell::{Cell, RefCell},
     sync::mpsc::{self, Receiver, SyncSender, TryRecvError, TrySendError},
     thread::{self, JoinHandle},
+    time::Duration,
 };
 
 use cutcap_contracts::{CommandEnvelope, EngineError, EngineEvent, ErrorCode};
@@ -27,8 +28,28 @@ impl EngineBridge {
             .name("cutcap-command-owner".into())
             .spawn(move || {
                 let mut engine = Engine::default();
-                while let Ok(command) = requests.recv() {
-                    if results.send(engine.handle(command)).is_err() {
+                loop {
+                    // File work owns its snapshot on another thread. The command
+                    // owner remains available for edits while a save is running.
+                    let command = if engine.file_busy() {
+                        requests.recv_timeout(Duration::from_millis(10))
+                    } else {
+                        requests
+                            .recv()
+                            .map_err(|_| mpsc::RecvTimeoutError::Disconnected)
+                    };
+                    match command {
+                        Ok(command) => {
+                            if results.send(engine.handle(command)).is_err() {
+                                break;
+                            }
+                        }
+                        Err(mpsc::RecvTimeoutError::Disconnected) => break,
+                        Err(mpsc::RecvTimeoutError::Timeout) => {}
+                    }
+                    if let Some(event) = engine.poll_file()
+                        && results.send(event).is_err()
+                    {
                         break;
                     }
                 }

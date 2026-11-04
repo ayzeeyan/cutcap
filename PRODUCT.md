@@ -6,7 +6,7 @@
 Native Windows 11 x64 desktop. This is deliberately outside the skill's web/mobile taxonomy.
 
 ## Stack
-User-specified Rust stable, MSVC, Slint, wgpu/DX12 and FFmpeg. Phase 1 invokes external development FFmpeg/FFprobe and presents CPU frames; it does not link codec libraries or integrate GPU textures.
+Avalonia 12/.NET 10 presentation over Rust stable/MSVC, with a versioned native ABI. Rust owns media/project/editing semantics and future wgpu/DX12 composition. External development FFmpeg/FFprobe supply CPU source frames/playback; no codec binary is linked/bundled and no GPU texture interop is implemented. Slint was retired during the owner-directed migration.
 
 ## Users and purpose
 An approachable, offline-first, non-linear video editor intended to grow from simple editing to sophisticated creative work. No accounts or cloud dependencies.
@@ -15,7 +15,7 @@ An approachable, offline-first, non-linear video editor intended to grow from si
 Primary hardware: Core Ultra 7 255H, integrated Intel Arc, 16 GB RAM. Long editing sessions, a persistent viewer, media library, inspector and multitrack timeline. Keyboard operation and high-DPI Windows use are required.
 
 ## Capabilities and constraints
-Phase 1 extends the native shell/model with real local-video import, validated metadata and cancellable source-frame preview/seeking. Playback, timeline editing, persistence and export are unavailable. Never fabricate media, progress or successful operations. Preserve original media. Application licensing remains an owner decision.
+Real local-video import, metadata, cancellable source preview/seeking, bounded video-only source playback `.cutcap` Save/Open/Save As/relink, and first timeline edits (append, select, remove clips; undo/redo) are implemented through ABI 4. Drag/trim/split, timeline playback, audio playback and export remain unavailable. Dirty/saved state and source readiness come from Rust; never fabricate media, progress or successful operations. Preserve original media. Application licensing remains an owner decision.
 
 ## Brand commitments
 CutCap is the product name. Original identity; do not copy CapCut branding. The user delegates visual and technical decisions and requests implementation without waiting for another developer.

@@ -1,5 +1,7 @@
 //! Versioned, GUI/codec/GPU-independent messages and value types.
 #![forbid(unsafe_code)]
+mod document;
+pub use document::*;
 
 mod ids;
 mod media;

@@ -31,14 +31,14 @@
             <StackPanel Grid.Column="1" Spacing="3" VerticalAlignment="Center">
               <StackPanel Orientation="Horizontal" Spacing="6">
                 <TextBlock Text="{Binding Title}" FontWeight="SemiBold" FontSize="14" TextTrimming="CharacterEllipsis" />
-                <Border IsVisible="{Binding IsSource}" Background="{StaticResource VideoFill}" CornerRadius="3" Padding="5,1"
+                <Border IsVisible="{Binding ShowVideoBadge}" Background="{StaticResource VideoFill}" CornerRadius="3" Padding="5,1"
                         VerticalAlignment="Center">
                   <TextBlock Text="Video" FontSize="10" FontWeight="SemiBold" Foreground="White" />
                 </Border>
               </StackPanel>
               <TextBlock Text="{Binding Detail}" Classes="label muted" TextWrapping="Wrap" />
             </StackPanel>
-            <Button Grid.Column="2" Classes="tool" Command="{Binding ClearSelectionCommand}" IsVisible="{Binding IsTrack}"
+            <Button Grid.Column="2" Classes="tool" Command="{Binding ClearSelectionCommand}" IsVisible="{Binding HasSelection}"
                     VerticalAlignment="Top" AutomationProperties.Name="Clear selection"
                     ToolTip.Tip="Return to the project overview (Ctrl+Shift+A)">
               <c:IconView Glyph="Close" Width="13" Height="13" />

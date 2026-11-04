@@ -7,6 +7,7 @@ namespace CutCap.Interop.Tests;
 /// Rust–C# boundary tests against the real cutcap_engine.dll. Media tests use
 /// the generated fixtures and the external FFmpeg/FFprobe (skipped when absent).
 /// </summary>
+[Collection("engine")]
 public sealed class InteropTests
 {
     private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(20);
@@ -33,7 +34,7 @@ public sealed class InteropTests
         return path.Split(Path.PathSeparator).Any(folder => folder.Length > 0 && File.Exists(Path.Combine(folder, name)));
     }
 
-    private static void RequireFfmpeg()
+    internal static void RequireFfmpeg()
     {
         Assert.SkipUnless(HasTool("ffprobe.exe", "CUTCAP_FFPROBE") && HasTool("ffmpeg.exe", "CUTCAP_FFMPEG"),
             "Requires the external development FFmpeg/FFprobe on PATH (never bundled).");

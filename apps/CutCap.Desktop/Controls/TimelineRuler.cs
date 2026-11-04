@@ -1,5 +1,6 @@
 using System.Globalization;
 using Avalonia;
+using Avalonia.Automation.Peers;
 using Avalonia.Controls;
 using Avalonia.Media;
 
@@ -38,6 +39,9 @@ public sealed class TimelineRuler : Control
         get => GetValue(OffsetProperty);
         set => SetValue(OffsetProperty, value);
     }
+
+    /// <summary>Named in the automation tree (a plain Control has no peer).</summary>
+    protected override AutomationPeer OnCreateAutomationPeer() => new TimelineLanes.SurfacePeer(this);
 
     public override void Render(DrawingContext context)
     {

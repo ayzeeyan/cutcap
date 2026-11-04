@@ -1,4 +1,6 @@
 /target/
+/tools/*/bin/
+/tools/*/obj/
 /.artifacts/
 /.impeccable/
 *.pdb

@@ -16,6 +16,10 @@ namespace CutCap.Desktop.Controls;
 /// </summary>
 public sealed class FrameView : Control
 {
+    private static readonly bool TracePlayback = Environment.GetEnvironmentVariable("CUTCAP_TRACE_PLAYBACK") == "1";
+
+    /// <summary>Opt-in diagnostic: DrawImage submitted this generation, not physical scanout.</summary>
+    public event Action<ulong, long>? FrameRendered;
     private WriteableBitmap? _bitmap;
     private ulong _generation;
 
@@ -87,6 +91,7 @@ public sealed class FrameView : Control
         var height = source.Height * scale;
         var destination = new Rect((Bounds.Width - width) / 2, (Bounds.Height - height) / 2, width, height);
         context.DrawImage(_bitmap, source, destination);
+        if (TracePlayback) FrameRendered?.Invoke(_generation, Stopwatch.GetTimestamp());
     }
 
     protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)

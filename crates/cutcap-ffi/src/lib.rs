@@ -6,7 +6,10 @@
 pub mod abi;
 mod bridge;
 mod engine;
+mod history;
 pub mod media;
+mod persistence;
+mod playback;
 pub mod session;
 pub mod view;
 

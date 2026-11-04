@@ -25,6 +25,7 @@ public partial class TimelinePanel : UserControl
             }
         };
         Lanes.LanePressed += (_, index) => (DataContext as TimelineViewModel)?.SelectIndex(index);
+        Lanes.ClipPressed += (_, clip) => (DataContext as TimelineViewModel)?.SelectClip(clip);
     }
 
     private void FollowLanes()
@@ -35,6 +36,7 @@ public partial class TimelinePanel : UserControl
         }
         _syncing = true;
         Ruler.Offset = LanesScroll.Offset.X;
+        Lanes.ScrollOffset = LanesScroll.Offset;
         HeaderScroll.Offset = new Vector(0, LanesScroll.Offset.Y);
         _syncing = false;
     }

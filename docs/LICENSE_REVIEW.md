@@ -38,6 +38,8 @@ Generated test videos in tests/fixtures contain synthetic colors/test patterns/t
 
 ## Direct Rust dependency inventory
 
+Phase 3A adds pinned **tempfile 3.27.0** (MIT OR Apache-2.0; Rust >=1.63) and **sha2 0.11.1** (MIT OR Apache-2.0; Rust >=1.88, default features disabled). crates.io metadata, official docs and tempfile's Windows implementation were reviewed. tempfile supplies exclusive temporary-file ownership/same-directory replacement without new handwritten unsafe; sha2 supplies full source fingerprints. These are Rust code dependencies, not FFmpeg redistributions. Include their/transitive notices in the eventual shipping review; Cargo.lock records the exact additions. No application license or FFmpeg distribution decision changed.
+
 | Dependency | Selected version | Declared license | Use |
 |---|---|---|---|
 | serde | 1.0.229 | MIT OR Apache-2.0 | Validated model/value serialization |
@@ -48,6 +50,7 @@ Generated test videos in tests/fixtures contain synthetic colors/test patterns/t
 | tracing-subscriber | 0.3.23 | MIT | Local log formatting/filter |
 | wgpu | 30.0.1 | MIT OR Apache-2.0 | Optional DX12 diagnostic only |
 | pollster | 1.0.1 | Apache-2.0 OR MIT | Optional diagnostic's blocking executor, never UI callbacks |
+| win-custody | 0.1.2 (exact) | MIT OR Apache-2.0 | Safe Windows Job resource/lifetime limits around owned media children; no host/job raw handle exposed |
 
 Versions were queried from crates.io and locked with Cargo; exact transitive inventory is Cargo.lock / `cargo metadata --locked`. This table is not a complete transitive notice bundle. Before distributing, generate an SPDX/SBOM and notices for the actual target/features, inspect all selected dependencies/assets, retain license texts, and clear unresolved cases. Lockfile-only optional packages are not evidence of linkage.
 

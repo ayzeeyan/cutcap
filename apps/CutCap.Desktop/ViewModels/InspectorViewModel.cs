@@ -45,13 +45,19 @@ public sealed partial class InspectorViewModel : ObservableObject
 
     public bool IsSource => Kind == "source";
     public bool IsTrack => Kind == "track";
+    public bool IsClip => Kind == "clip";
+    public bool HasSelection => IsTrack || IsClip;
+    public bool ShowVideoBadge => IsSource || IsClip;
     public bool ShowDetails => SelectedTab == 0;
     public bool ShowClipPlaceholder => SelectedTab != 0;
-    public string PlaceholderTitle => $"{Tabs[Math.Clamp(SelectedTab, 0, Tabs.Count - 1)]} settings need a clip";
+    public string PlaceholderTitle => IsClip
+        ? $"{Tabs[Math.Clamp(SelectedTab, 0, Tabs.Count - 1)]} settings are not available yet"
+        : $"{Tabs[Math.Clamp(SelectedTab, 0, Tabs.Count - 1)]} settings need a clip";
     public string PlaceholderDetail => SelectedTab switch
     {
-        1 => "Transform, crop and opacity appear here once clips can be placed on the timeline.",
-        2 => "Speed and duration controls arrive with timeline editing.",
+        1 => IsClip ? "Transform, crop and opacity arrive with the GPU compositor."
+            : "Select a clip on the timeline. Transform, crop and opacity arrive with the GPU compositor.",
+        2 => "Speed and trim controls arrive with a later editing phase.",
         3 => "Colour adjustment arrives with the GPU compositor.",
         _ => "Volume and fades arrive with audio playback.",
     };
@@ -60,6 +66,11 @@ public sealed partial class InspectorViewModel : ObservableObject
     {
         OnPropertyChanged(nameof(IsSource));
         OnPropertyChanged(nameof(IsTrack));
+        OnPropertyChanged(nameof(IsClip));
+        OnPropertyChanged(nameof(HasSelection));
+        OnPropertyChanged(nameof(ShowVideoBadge));
+        OnPropertyChanged(nameof(PlaceholderTitle));
+        OnPropertyChanged(nameof(PlaceholderDetail));
     }
 
     partial void OnSelectedTabChanged(int value)

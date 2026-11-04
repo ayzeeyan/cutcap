@@ -2,15 +2,20 @@
 #![forbid(unsafe_code)]
 mod backend;
 mod cancel;
+mod clock;
 mod frame;
 mod latest;
+mod persistent;
 mod probe;
 mod process;
+mod stream;
 
 pub use backend::*;
 pub use cancel::Cancellation;
+pub use clock::*;
 pub use frame::*;
 pub use latest::*;
+pub use persistent::*;
 pub use probe::parse_probe;
 
 #[derive(Debug, thiserror::Error)]

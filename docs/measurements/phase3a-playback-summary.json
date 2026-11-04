@@ -1,0 +1,354 @@
+{
+  "normal": {
+    "720p": {
+      "samples": 3,
+      "rendered": [
+        148,
+        150
+      ],
+      "renderFps": [
+        28.958,
+        29.457
+      ],
+      "stalls": 0,
+      "nativeDropped": [
+        0,
+        2
+      ],
+      "readyMs": [
+        106.3,
+        119.77
+      ],
+      "gapP50Ms": 33.27,
+      "gapP95Ms": 50.3,
+      "gapMaxMs": 62.69,
+      "seekMedianMs": 178.65,
+      "seekRangeMs": [
+        121.41,
+        222.04
+      ],
+      "machineCpuPercent": [
+        4.949,
+        6.478
+      ],
+      "peakCombinedWorkingSetMiB": [
+        392.52,
+        397.88
+      ],
+      "size": [
+        1248,
+        720
+      ],
+      "scale": 1.5,
+      "transitions": [
+        [
+          "Starting",
+          "Playing",
+          "Ended"
+        ],
+        [
+          "Starting",
+          "Playing",
+          "Ended"
+        ],
+        [
+          "Starting",
+          "Playing",
+          "Ended"
+        ]
+      ]
+    },
+    "1080p": {
+      "samples": 3,
+      "rendered": [
+        149,
+        150
+      ],
+      "renderFps": [
+        29.067,
+        29.297
+      ],
+      "stalls": 0,
+      "nativeDropped": [
+        0,
+        1
+      ],
+      "readyMs": [
+        113.24,
+        138.03
+      ],
+      "gapP50Ms": 33.13,
+      "gapP95Ms": 49.48,
+      "gapMaxMs": 63.1,
+      "seekMedianMs": 248.88,
+      "seekRangeMs": [
+        183.86,
+        401.79
+      ],
+      "machineCpuPercent": [
+        4.667,
+        5.55
+      ],
+      "peakCombinedWorkingSetMiB": [
+        412.12,
+        413.83
+      ],
+      "size": [
+        1248,
+        720
+      ],
+      "scale": 1.5,
+      "transitions": [
+        [
+          "Starting",
+          "Playing",
+          "Ended"
+        ],
+        [
+          "Starting",
+          "Playing",
+          "Ended"
+        ],
+        [
+          "Starting",
+          "Playing",
+          "Ended"
+        ]
+      ]
+    },
+    "4k": {
+      "samples": 3,
+      "rendered": [
+        150,
+        150
+      ],
+      "renderFps": [
+        28.97,
+        29.091
+      ],
+      "stalls": 0,
+      "nativeDropped": [
+        0,
+        0
+      ],
+      "readyMs": [
+        165.07,
+        186.96
+      ],
+      "gapP50Ms": 33.23,
+      "gapP95Ms": 46.16,
+      "gapMaxMs": 58.67,
+      "seekMedianMs": 714.43,
+      "seekRangeMs": [
+        401.82,
+        1151.78
+      ],
+      "machineCpuPercent": [
+        7.148,
+        7.86
+      ],
+      "peakCombinedWorkingSetMiB": [
+        519.12,
+        525.29
+      ],
+      "size": [
+        1248,
+        720
+      ],
+      "scale": 1.5,
+      "transitions": [
+        [
+          "Starting",
+          "Playing",
+          "Ended"
+        ],
+        [
+          "Starting",
+          "Playing",
+          "Ended"
+        ],
+        [
+          "Starting",
+          "Playing",
+          "Ended"
+        ]
+      ]
+    }
+  },
+  "minimum": {
+    "720p": {
+      "samples": 3,
+      "rendered": [
+        150,
+        150
+      ],
+      "renderFps": [
+        29.403,
+        29.546
+      ],
+      "stalls": 0,
+      "nativeDropped": [
+        0,
+        0
+      ],
+      "readyMs": [
+        88.71,
+        112.47
+      ],
+      "gapP50Ms": 33.12,
+      "gapP95Ms": 48.61,
+      "gapMaxMs": 64.29,
+      "seekMedianMs": 186.11,
+      "seekRangeMs": [
+        118.75,
+        240.35
+      ],
+      "machineCpuPercent": [
+        4.939,
+        6.876
+      ],
+      "peakCombinedWorkingSetMiB": [
+        392.5,
+        403.99
+      ],
+      "size": [
+        960,
+        630
+      ],
+      "scale": 1.5,
+      "transitions": [
+        [
+          "Starting",
+          "Playing",
+          "Ended"
+        ],
+        [
+          "Starting",
+          "Playing",
+          "Ended"
+        ],
+        [
+          "Starting",
+          "Playing",
+          "Ended"
+        ]
+      ]
+    },
+    "1080p": {
+      "samples": 3,
+      "rendered": [
+        149,
+        150
+      ],
+      "renderFps": [
+        29.1,
+        29.299
+      ],
+      "stalls": 0,
+      "nativeDropped": [
+        0,
+        1
+      ],
+      "readyMs": [
+        115.91,
+        169.14
+      ],
+      "gapP50Ms": 33.1,
+      "gapP95Ms": 50.11,
+      "gapMaxMs": 65.47,
+      "seekMedianMs": 261.21,
+      "seekRangeMs": [
+        159.68,
+        370.33
+      ],
+      "machineCpuPercent": [
+        4.666,
+        5.112
+      ],
+      "peakCombinedWorkingSetMiB": [
+        417.02,
+        419.68
+      ],
+      "size": [
+        960,
+        630
+      ],
+      "scale": 1.5,
+      "transitions": [
+        [
+          "Starting",
+          "Playing",
+          "Ended"
+        ],
+        [
+          "Starting",
+          "Playing",
+          "Ended"
+        ],
+        [
+          "Starting",
+          "Playing",
+          "Ended"
+        ]
+      ]
+    },
+    "4k": {
+      "samples": 3,
+      "rendered": [
+        149,
+        150
+      ],
+      "renderFps": [
+        28.867,
+        29.063
+      ],
+      "stalls": 0,
+      "nativeDropped": [
+        0,
+        1
+      ],
+      "readyMs": [
+        171.37,
+        186.05
+      ],
+      "gapP50Ms": 33.2,
+      "gapP95Ms": 49.27,
+      "gapMaxMs": 63.7,
+      "seekMedianMs": 728.64,
+      "seekRangeMs": [
+        398.71,
+        1089.19
+      ],
+      "machineCpuPercent": [
+        7.057,
+        7.815
+      ],
+      "peakCombinedWorkingSetMiB": [
+        517.45,
+        523.51
+      ],
+      "size": [
+        960,
+        630
+      ],
+      "scale": 1.5,
+      "transitions": [
+        [
+          "Starting",
+          "Playing",
+          "Ended"
+        ],
+        [
+          "Starting",
+          "Playing",
+          "Ended"
+        ],
+        [
+          "Starting",
+          "Playing",
+          "Ended"
+        ]
+      ]
+    }
+  }
+}

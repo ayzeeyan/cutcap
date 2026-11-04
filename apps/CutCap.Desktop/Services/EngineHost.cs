@@ -1,3 +1,4 @@
+using Avalonia.Controls;
 using Avalonia.Threading;
 using CutCap.Interop;
 
@@ -16,6 +17,11 @@ public sealed class EngineHost : IDisposable
     private readonly DispatcherTimer _timer;
     private EngineSession? _session;
     private ulong _frameGeneration;
+    // Render-loop pumping during playback (see AttachRenderLoop). Diagnostic A/B:
+    // CUTCAP_PUMP_MODE=timer keeps the timer-only behaviour of Phase 2.
+    private static readonly bool RenderLoopPump = Environment.GetEnvironmentVariable("CUTCAP_PUMP_MODE") != "timer";
+    private TopLevel? _renderLoop;
+    private bool _frameRequested;
 
     public EngineHost()
     {
@@ -37,6 +43,43 @@ public sealed class EngineHost : IDisposable
     public event EventHandler<FrameView?>? FrameChanged;
 
     public EngineSession? Session => _session;
+
+    /// <summary>
+    /// The latest clip list. Read only when the view's timeline generation
+    /// changes (edits, opens), never per playback frame.
+    /// </summary>
+    public TimelineView? Timeline { get; private set; }
+
+    /// <summary>True while the engine is in a playback epoch that may offer new frames.</summary>
+    public bool PlaybackActive { get; private set; }
+
+    /// <summary>
+    /// Also pump once per compositor frame while playback is active. The 16 ms
+    /// timer alone is quantized by the Windows timer (~15.6 ms ticks), so 33 ms
+    /// frames were offered at alternating ~16/~47 ms intervals. Animation-frame
+    /// callbacks run on the UI thread just before a render, so an offered frame is
+    /// copied and drawn in the same compositor frame. No busy loop: callbacks stop
+    /// when playback is inactive and the timer remains the idle path.
+    /// </summary>
+    public void AttachRenderLoop(TopLevel topLevel)
+    {
+        _renderLoop = topLevel;
+        RequestFrame();
+    }
+
+    private void RequestFrame()
+    {
+        if (!RenderLoopPump || _frameRequested || !PlaybackActive || _renderLoop is null || _session is null || _session.IsDisposed)
+        {
+            return;
+        }
+        _frameRequested = true;
+        _renderLoop.RequestAnimationFrame(_ =>
+        {
+            _frameRequested = false;
+            Tick();
+        });
+    }
 
     public void Start()
     {
@@ -83,10 +126,18 @@ public sealed class EngineHost : IDisposable
         {
             if (!_session.Pump())
             {
+                RequestFrame();
                 return;
             }
             var view = _session.ReadView();
+            if (Timeline is null || Timeline.Generation != view.TimelineGeneration)
+            {
+                Timeline = _session.ReadTimeline();
+            }
             View = view;
+            PlaybackActive = view.Playback?.State is PlaybackState.Starting or PlaybackState.Playing
+                or PlaybackState.Seeking or PlaybackState.Buffering;
+            PreviewTrace.Transport(view.Playback);
             ViewChanged?.Invoke(this, view);
             var generation = view.Frame?.Generation ?? 0;
             if (generation != _frameGeneration)
@@ -94,6 +145,7 @@ public sealed class EngineHost : IDisposable
                 _frameGeneration = generation;
                 FrameChanged?.Invoke(this, view.Frame);
             }
+            RequestFrame();
         }
         catch (EngineException error)
         {
@@ -106,6 +158,8 @@ public sealed class EngineHost : IDisposable
     public void Dispose()
     {
         _timer.Stop();
+        PlaybackActive = false;
+        _renderLoop = null;
         _session?.Dispose();
     }
 }

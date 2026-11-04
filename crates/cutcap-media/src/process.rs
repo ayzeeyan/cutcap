@@ -19,7 +19,39 @@ pub(crate) struct Output {
 
 /// Every return path terminates/reaps the child. FFmpeg is invoked directly,
 /// never via a shell, and does not spawn helper processes with this adapter.
-struct OwnedChild(Child);
+pub(crate) struct OwnedChild(pub Child);
+
+/// Kernel-enforced per-child commit cap and parent-death cleanup. This is not
+/// a filesystem/security sandbox. Only the child is assigned, never the host.
+pub(crate) struct ProcessBudget {
+    #[cfg(windows)]
+    _job: win_custody::Job,
+}
+impl ProcessBudget {
+    pub(crate) fn attach(child: &Child) -> Result<Self, MediaError> {
+        #[cfg(windows)]
+        {
+            let limits = win_custody::JobLimits::new()
+                .kill_on_close(true)
+                .active_processes(1)
+                .process_memory(1024 * 1024 * 1024);
+            let job = win_custody::Job::create(&limits).map_err(|source| MediaError::Io {
+                stage: "Create media resource job",
+                source,
+            })?;
+            job.assign(child).map_err(|source| MediaError::Io {
+                stage: "Limit media process",
+                source,
+            })?;
+            Ok(Self { _job: job })
+        }
+        #[cfg(not(windows))]
+        {
+            let _ = child;
+            Ok(Self {})
+        }
+    }
+}
 impl Drop for OwnedChild {
     fn drop(&mut self) {
         if !matches!(self.0.try_wait(), Ok(Some(_))) {
@@ -98,6 +130,7 @@ fn run_child(
     started: Instant,
 ) -> Result<Output, MediaError> {
     let mut child = OwnedChild(child);
+    let _budget = ProcessBudget::attach(&child.0)?;
     let pid = child.0.id();
     let stdout = child.0.stdout.take().ok_or(MediaError::Worker)?;
     let stderr = child.0.stderr.take().ok_or(MediaError::Worker)?;
@@ -178,6 +211,23 @@ fn run_child(
 mod tests {
     use super::*;
     use std::io::Write;
+
+    #[cfg(windows)]
+    #[test]
+    fn child_job_enforces_commit_limit_and_kills_on_close() {
+        let mut child = helper("hang").spawn().unwrap();
+        let budget = ProcessBudget::attach(&child).unwrap();
+        let limits = budget._job.limits().unwrap();
+        assert_eq!(limits.process_memory_limit(), Some(1024 * 1024 * 1024));
+        assert!(limits.kills_on_close());
+        assert!(child.try_wait().unwrap().is_none());
+        let close = Instant::now();
+        drop(budget);
+        // Kill-on-close may use exit status zero on Windows. Bounded exit of
+        // the 30-second hanging fixture, not its numeric code, proves cleanup.
+        child.wait().unwrap();
+        assert!(close.elapsed() < Duration::from_secs(1));
+    }
 
     #[test]
     #[ignore = "child-process fixture, invoked by the process ownership tests"]
