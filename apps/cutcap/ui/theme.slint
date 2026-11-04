@@ -1,25 +1,78 @@
+// Night Cut: near-black panels floating on a black ground, small type and one
+// cyan accent for whatever is live (selection, focus, the current time and the
+// primary action). The playhead is white; track families carry quiet colours.
 export global Theme {
-    out property <color> canvas: #151719;
-    out property <color> panel: #1c1f22;
-    out property <color> raised: #25292d;
-    out property <color> hover: #30363b;
-    out property <color> line: #363c42;
-    out property <color> text: #edf0f3;
-    out property <color> secondary: #b1b9c2;
-    out property <color> disabled: #858f99;
-    out property <color> accent: #f3a17b;
-    out property <color> accent-ink: #23170f;
-    out property <color> selection: #3b302a;
-    out property <color> error: #ffb0a6;
+    // Surfaces, darkest to lightest.
+    out property <color> ground: #0b0b0d;
+    out property <color> stage: #121214;
+    out property <color> panel: #1b1b1e;
+    out property <color> well: #222226;
+    out property <color> raised: #29292e;
+    out property <color> hover: #313137;
+    out property <color> pressed: #3a3a41;
+    out property <color> line: #28282d;
+    out property <color> line-strong: #3a3a41;
+    // Ink.
+    out property <color> text: #ececef;
+    out property <color> muted: #a3a3ab;
+    out property <color> faint: #86868f;
+    out property <color> pencil: #ffffff;
+    // Accent: selection, focus, the current time and the primary action only.
+    out property <color> accent: #2ed3de;
+    out property <color> accent-fill: #22c4d0;
+    out property <color> accent-ink: #041a1d;
+    out property <color> accent-wash: #12302f;
+    out property <color> accent-lane: #10292b;
+    // Track families are information, not decoration.
+    out property <color> video: #3cbfca;
+    out property <color> video-fill: #17616a;
+    out property <color> audio: #7aa5f7;
+    out property <color> audio-fill: #26487f;
+    out property <color> success: #4fd18b;
+    out property <color> error: #ff8f84;
+    out property <color> overlay: #0b0b0de0;
+
     out property <length> gap: 8px;
-    out property <length> inset: 16px;
-    out property <length> section: 24px;
+    out property <length> inset: 12px;
+    out property <length> section: 20px;
+    out property <length> gutter: 4px;
     out property <length> radius: 4px;
+    out property <length> panel-radius: 8px;
+
+    out property <length> fine-size: 11px;
     out property <length> label-size: 12px;
     out property <length> body-size: 13px;
-    out property <length> heading-size: 14px;
-    out property <length> toolbar-height: 64px;
-    out property <length> heading-height: 44px;
-    out property <length> track-header-width: 172px;
-    out property <length> track-height: 58px;
+    out property <length> heading-size: 13px;
+    out property <length> title-size: 15px;
+    out property <length> timecode-size: 12px;
+    // Consolas is reserved for measured time, where tabular digits matter.
+    out property <string> mono-family: "Consolas";
+
+    out property <length> control-height: 28px;
+    out property <length> appbar-height: 40px;
+    out property <length> heading-height: 38px;
+    out property <length> category-height: 52px;
+    out property <length> track-header-width: 168px;
+    out property <length> track-height: 50px;
+    out property <length> ruler-height: 28px;
+}
+
+// Timecode text shared by the source viewer and timeline ruler. Integer
+// milliseconds only; exact source/timeline clocks stay in Rust.
+export global Timecode {
+    pure public function pad2(value: int) -> string {
+        return (value < 10 ? "0" : "") + value;
+    }
+    pure public function pad3(value: int) -> string {
+        return (value < 10 ? "00" : value < 100 ? "0" : "") + value;
+    }
+    // Matches preview::format_time: MM:SS.mmm with unbounded minutes.
+    pure public function precise(ms: int) -> string {
+        let clamped = max(0, ms);
+        return Timecode.pad2(floor(clamped / 60000)) + ":" + Timecode.pad2(mod(floor(clamped / 1000), 60)) + "." + Timecode.pad3(mod(clamped, 1000));
+    }
+    // Ruler labels: MM:SS.
+    pure public function seconds(total: int) -> string {
+        return Timecode.pad2(floor(total / 60)) + ":" + Timecode.pad2(mod(total, 60));
+    }
 }

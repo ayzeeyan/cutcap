@@ -1,8 +1,11 @@
-import { Theme } from "../theme.slint";
+import { Theme, Timecode } from "../theme.slint";
 import { ActionButton } from "action-button.slint";
-import { PanelHeading } from "panel-heading.slint";
-import { Slider, LineEdit } from "std-widgets.slint";
+import { ViewTab } from "tabs.slint";
+import { SourceScrubber } from "source-scrubber.slint";
+import { TimeField } from "time-field.slint";
 
+// Source monitor. Every position here is a source-media request; nothing in
+// this panel moves the timeline playhead.
 export component ViewerPanel inherits Rectangle {
     in property <string> status;
     in property <string> detail;
@@ -10,71 +13,146 @@ export component ViewerPanel inherits Rectangle {
     in property <bool> has-frame;
     in property <bool> busy;
     in property <bool> ready;
+    in property <bool> can-import;
     in property <float> aspect: 16 / 9;
     in property <string> source-title: "No source selected";
     in property <string> caption;
     in property <int> position-ms;
     in property <int> duration-ms;
-    // Widget input writes must not sever the source-position synchronization.
-    private property <float> slider-value: 0;
-    private property <string> source-text: "0";
-    changed position-ms => {
-        root.slider-value = root.duration-ms > 0 ? root.position-ms * 1.0 / root.duration-ms * 1000.0 : 0;
-        root.source-text = root.position-ms;
-    }
-    changed duration-ms => {
-        root.slider-value = root.duration-ms > 0 ? root.position-ms * 1.0 / root.duration-ms * 1000.0 : 0;
-    }
-    changed source-title => { root.source-text = root.position-ms; }
+    in property <bool> duration-estimated;
+    // The go-to field is two-way bound to private text so typing never severs
+    // engine-driven position updates (Phase 1 stale-binding regression).
+    private property <string> source-text: Timecode.precise(0);
+    private property <int> last-ms: max(0, root.duration-ms - 1);
+    private property <bool> wide: root.width >= 480px;
+    changed position-ms => { root.source-text = Timecode.precise(root.position-ms); }
+    changed source-title => { root.source-text = Timecode.precise(root.position-ms); }
     callback seek-source(int);
     callback seek-text(string);
     callback cancel-preview();
-    background: Theme.canvas;
-    PanelHeading { title: "Source viewer"; detail: root.busy ? "Decoding" : root.has-frame ? "Still frame" : root.ready ? "Source" : "No media"; }
-    Rectangle {
-        x: 0; width: 100%;
-        y: Theme.heading-height; height: max(50px,parent.height - Theme.heading-height - 108px);
-        Rectangle {
-            width: min(parent.width - 32px, (parent.height - 16px) * root.aspect);
-            height: self.width / root.aspect;
-            x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2;
-            background: #0d0f10; border-width: 1px; border-color: Theme.line;
-            if root.has-frame : Image { x: 0; y: 0; width: 100%; height: 100%; source: root.frame; image-fit: contain; }
-            if !root.has-frame : VerticalLayout {
-                x: 0; y: 0; width: 100%; height: 100%;
-                padding: Theme.inset; spacing: Theme.gap; alignment: center;
-                if parent.height > 150px : HorizontalLayout {
-                    height: 32px; alignment: center;
-                    Image { source: @image-url("../assets/viewer.svg"); width: 32px; height: 32px; horizontal-stretch: 0; }
-                }
-                Text { text: root.status; color: Theme.text; font-size: Theme.heading-size; font-weight: 600; horizontal-alignment: center; wrap: word-wrap; }
-                if parent.height > 100px : Text { text: root.detail; color: Theme.secondary; font-size: Theme.label-size; horizontal-alignment: center; wrap: word-wrap; }
-            }
-            if root.has-frame && root.busy : Rectangle {
-                x: 0; y: 0; width: 100%; height: 26px; background: #151719dd;
-                Text { text: "Decoding newer source position…"; color: Theme.text; font-size: Theme.label-size; horizontal-alignment: center; vertical-alignment: center; }
-            }
+    callback import-media();
+    background: Theme.panel;
+    border-radius: Theme.panel-radius;
+    clip: true;
+    min-width: 360px;
+    HorizontalLayout {
+        x: 0; y: 0; width: 100%; height: Theme.heading-height;
+        padding-left: 8px; padding-right: 12px; spacing: Theme.gap;
+        HorizontalLayout {
+            spacing: 2px; horizontal-stretch: 0;
+            ViewTab { text: "Source"; selected: true; hint: "Real frames decoded from the selected media asset"; }
+            ViewTab { text: "Timeline"; enabled: false; hint: "Timeline preview arrives with timeline playback."; }
+        }
+        Rectangle { horizontal-stretch: 1; }
+        Text {
+            text: root.busy ? "Decoding…" : root.ready ? root.source-title : "No source selected";
+            color: root.busy ? Theme.accent : root.ready ? Theme.text : Theme.faint;
+            font-size: Theme.label-size; vertical-alignment: center;
+            overflow: elide; min-width: 0px; max-width: root.width * 0.4; horizontal-stretch: 0;
+        }
+        // Actual displayed frame (first PTS at or after the request), from preview.rs.
+        if root.wide && root.has-frame : Text {
+            text: root.caption;
+            color: Theme.faint; font-size: Theme.fine-size; vertical-alignment: center;
+            overflow: elide; min-width: 0px; max-width: root.width * 0.3; horizontal-stretch: 0;
+            accessible-label: "Displayed frame: " + root.caption;
         }
     }
-    Text { x: Theme.inset; y: parent.height - 106px; width: parent.width - 2 * Theme.inset; height: 20px; text: root.has-frame ? root.caption : root.source-title; color: Theme.secondary; font-size: 11px; overflow: elide; }
-    Slider {
-        accessible-label: "Source-media position";
-        x: Theme.inset; y: parent.height - 84px; width: parent.width - 2 * Theme.inset; height: 24px;
-        minimum: 0; maximum: 1000; step: 1;
-        value <=> root.slider-value;
-        enabled: root.ready && root.duration-ms > 0;
-        changed(value) => { root.seek-source(round(value * max(1,root.duration-ms - 1) / 1000)); }
-        Tooltip { text: @markdown("Source-media position; the timeline playhead does not move."); }
+    stage := Rectangle {
+        x: 0; width: parent.width;
+        y: Theme.heading-height; height: max(40px, parent.height - Theme.heading-height - transport.height);
+        background: Theme.stage;
+        clip: true;
+        picture := Rectangle {
+            width: max(0px, min(parent.width - 16px, (parent.height - 16px) * root.aspect));
+            height: self.width / root.aspect;
+            x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2;
+            background: root.has-frame ? #000000 : transparent;
+            if root.has-frame : Image { x: 0; y: 0; width: 100%; height: 100%; source: root.frame; image-fit: contain; accessible-role: image; accessible-label: "Decoded source frame"; }
+        }
+        if !root.has-frame : VerticalLayout {
+            x: 0; y: 0; width: stage.width; height: stage.height;
+            padding: Theme.section; spacing: Theme.gap; alignment: center;
+            if stage.height > 170px : HorizontalLayout {
+                alignment: center;
+                Image { source: @image-url("../assets/viewer.svg"); width: 36px; height: 36px; horizontal-stretch: 0; }
+            }
+            Text { text: root.status; color: Theme.text; font-size: Theme.title-size; font-weight: 600; horizontal-alignment: center; wrap: word-wrap; }
+            if stage.height > 120px : Text { text: root.detail; color: Theme.muted; font-size: Theme.label-size; horizontal-alignment: center; wrap: word-wrap; }
+            if root.busy || (!root.ready && root.can-import) : HorizontalLayout {
+                alignment: center; padding-top: 6px;
+                if root.busy : ActionButton { text: "Cancel"; name: "Cancel frame decoding"; hint: "Stop the pending frame request"; clicked => { root.cancel-preview(); } }
+                if !root.busy && !root.ready && root.can-import : ActionButton { text: "Import media"; primary: true; icon: @image-url("../assets/icons/import.svg"); hint: "Choose a local video file (Ctrl+I)"; clicked => { root.import-media(); } }
+            }
+        }
+        if root.has-frame && root.busy : Rectangle {
+            x: 0; y: 0; width: 100%; height: 36px; background: Theme.overlay;
+            HorizontalLayout {
+                padding-left: Theme.inset; padding-right: 4px; padding-top: 4px; padding-bottom: 4px; spacing: Theme.gap;
+                Text { text: "Decoding the requested position. The last frame stays until it arrives."; color: Theme.text; font-size: Theme.label-size; vertical-alignment: center; overflow: elide; min-width: 0px; }
+                ActionButton { text: "Cancel"; subtle: true; name: "Cancel frame decoding"; hint: "Stop the pending frame request"; clicked => { root.cancel-preview(); } }
+            }
+        }
+        if root.has-frame && !root.busy && root.detail != "" : Rectangle {
+            x: 0; y: 0; width: 100%; height: 30px; background: Theme.overlay;
+            Text { x: Theme.inset; width: parent.width - 2 * Theme.inset; text: root.status + ". " + root.detail; color: Theme.text; font-size: Theme.label-size; vertical-alignment: center; overflow: elide; }
+        }
     }
-    HorizontalLayout {
+    transport := Rectangle {
         x: 0; width: 100%;
-        y: parent.height - 54px; height: 32px;
-        padding-left: Theme.inset; padding-right: Theme.inset; spacing: Theme.gap;
-        Text { text: "Source ms"; color: Theme.secondary; font-size: Theme.label-size; vertical-alignment: center; horizontal-stretch: 0; }
-        source-input := LineEdit { accessible-label: "Source time in milliseconds"; preferred-width: 90px; min-width: 64px; text <=> root.source-text; enabled: root.ready; accepted => { root.seek-text(self.text); } }
-        ActionButton { text: "Seek"; enabled: root.ready; hint: "Request a source frame at these milliseconds"; clicked => { root.seek-text(source-input.text); } }
-        ActionButton { text: "+1 s"; enabled: root.ready; hint: "Seek one source second forward"; clicked => { root.seek-source(min(root.position-ms + 1000,root.duration-ms > 0 ? root.duration-ms - 1 : 86400000)); } }
-        ActionButton { text: "Cancel"; enabled: root.busy; hint: "Cancel frame decoding"; clicked => { root.cancel-preview(); } }
-        ActionButton { text: "Play"; enabled: false; hint: "Playback is not implemented in Phase 1."; }
+        y: parent.height - self.height; height: 66px;
+        SourceScrubber {
+            x: 4px; width: parent.width - 8px; y: 1px; height: 24px;
+            position-ms: root.position-ms; duration-ms: root.duration-ms;
+            enabled: root.ready && root.duration-ms > 0;
+            seek(ms) => { root.seek-source(ms); }
+        }
+        // Requested position (accent) and duration; the actual frame is in the heading.
+        HorizontalLayout {
+            x: Theme.inset; y: 27px; height: 34px; width: self.preferred-width;
+            spacing: 8px;
+            Text {
+                text: Timecode.precise(root.position-ms);
+                color: root.ready ? Theme.accent : Theme.faint;
+                font-family: Theme.mono-family; font-size: Theme.timecode-size;
+                vertical-alignment: center;
+                accessible-label: "Requested source position " + Timecode.precise(root.position-ms);
+            }
+            if root.wide : Text {
+                text: root.duration-ms > 0 ? (root.duration-estimated ? "≈" : "") + Timecode.precise(root.duration-ms) : "--:--.---";
+                color: Theme.faint;
+                font-family: Theme.mono-family; font-size: Theme.timecode-size;
+                vertical-alignment: center;
+                accessible-label: root.duration-estimated ? "Duration, container estimate" : "Duration";
+            }
+        }
+        HorizontalLayout {
+            y: 27px; height: 34px; width: self.preferred-width;
+            x: (parent.width - self.width) / 2;
+            spacing: 4px;
+            if root.wide : Rectangle { width: Theme.control-height; ActionButton { subtle: true; icon: @image-url("../assets/icons/to-start.svg"); name: "Go to source start"; enabled: root.ready; hint: "Request the first frame"; clicked => { root.seek-source(0); } } }
+            Rectangle { width: Theme.control-height; ActionButton { subtle: true; icon: @image-url("../assets/icons/back.svg"); name: "Back one second"; enabled: root.ready; hint: "Request the frame one second earlier"; clicked => { root.seek-source(max(0, root.position-ms - 1000)); } } }
+            Rectangle { width: 34px; ActionButton {
+                width: 34px; height: 34px; border-radius: 17px; subtle: true; icon-size: 18px;
+                icon: @image-url("../assets/icons/play.svg"); name: "Play"; enabled: false;
+                hint: "Playback needs the Phase 2 source transport. Only still frames can be requested today.";
+            } }
+            Rectangle { width: Theme.control-height; ActionButton { subtle: true; icon: @image-url("../assets/icons/forward.svg"); name: "Forward one second"; enabled: root.ready; hint: "Request the frame one second later"; clicked => { root.seek-source(min(root.position-ms + 1000, root.duration-ms > 0 ? root.last-ms : 86400000)); } } }
+            if root.wide : Rectangle { width: Theme.control-height; ActionButton { subtle: true; icon: @image-url("../assets/icons/to-end.svg"); name: "Go to source end"; enabled: root.ready && root.duration-ms > 0; hint: "Request the last reported position; the final frame may come earlier"; clicked => { root.seek-source(root.last-ms); } } }
+        }
+        HorizontalLayout {
+            y: 30px; height: Theme.control-height; width: self.preferred-width;
+            x: parent.width - self.width - 10px;
+            spacing: 4px;
+            source-input := TimeField {
+                name: "Go to source time";
+                placeholder: "00:00.000";
+                width: root.wide ? 96px : 76px;
+                text <=> root.source-text;
+                enabled: root.ready;
+                accepted(text) => { root.seek-text(text); }
+            }
+            ActionButton { text: "Go"; name: "Request frame at typed time"; enabled: root.ready; hint: "Request the frame at this time. Accepts 1500 (milliseconds), 1.5s or 00:01.500."; clicked => { root.seek-text(source-input.text); } }
+        }
     }
 }

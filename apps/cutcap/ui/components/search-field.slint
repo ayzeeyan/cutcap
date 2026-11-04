@@ -1,0 +1,59 @@
+import { Theme } from "../theme.slint";
+
+// Library name search. The text is UI-owned (Rust only reads it), so there is
+// no engine binding for typing to sever.
+export component SearchField inherits Rectangle {
+    in-out property <string> text;
+    in property <string> placeholder: "Search";
+    in property <string> name: "Search";
+    in property <bool> enabled: true;
+    callback edited();
+    height: Theme.control-height + 2px;
+    border-radius: Theme.radius + 2px;
+    background: !root.enabled ? Theme.well.with-alpha(0.6) : input.has-focus ? Theme.stage : touch.has-hover ? Theme.raised : Theme.well;
+    border-width: input.has-focus ? 1.5px : 1px;
+    border-color: input.has-focus ? Theme.accent : Theme.line;
+    accessible-role: text-input;
+    accessible-label: root.name;
+    accessible-value: root.text;
+    accessible-enabled: root.enabled;
+    accessible-placeholder-text: root.placeholder;
+    accessible-action-set-value(value) => { root.text = value; root.edited(); }
+    forward-focus: input;
+    touch := TouchArea { mouse-cursor: MouseCursor.text; clicked => { input.focus(); } }
+    Image {
+        source: @image-url("../assets/icons/search.svg");
+        colorize: Theme.faint;
+        x: 9px; y: (parent.height - 14px) / 2; width: 14px; height: 14px;
+    }
+    if root.text == "" : Text {
+        x: 30px; width: parent.width - 38px; height: 100%;
+        text: root.placeholder; color: Theme.faint;
+        font-size: Theme.label-size; vertical-alignment: center; overflow: elide;
+    }
+    input := TextInput {
+        x: 30px; width: parent.width - 30px - (root.text != "" ? 28px : 8px); height: 100%;
+        text <=> root.text;
+        enabled: root.enabled;
+        single-line: true;
+        color: Theme.text;
+        selection-background-color: Theme.accent.with-alpha(0.35);
+        selection-foreground-color: Theme.text;
+        font-size: Theme.label-size;
+        vertical-alignment: center;
+        edited => { root.edited(); }
+    }
+    if root.text != "" : Rectangle {
+        x: parent.width - 26px; y: (parent.height - 22px) / 2; width: 22px; height: 22px;
+        border-radius: Theme.radius;
+        background: clear.has-hover ? Theme.hover : transparent;
+        accessible-role: button;
+        accessible-label: "Clear search";
+        accessible-action-default => { root.text = ""; root.edited(); }
+        Image { source: @image-url("../assets/icons/close.svg"); colorize: Theme.muted; width: 12px; height: 12px; }
+        clear := TouchArea {
+            mouse-cursor: pointer;
+            clicked => { root.text = ""; root.edited(); input.focus(); }
+        }
+    }
+}

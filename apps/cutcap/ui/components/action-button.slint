@@ -1,34 +1,58 @@
 import { Theme } from "../theme.slint";
 
+// One button vocabulary for the whole app: filled (default), subtle
+// (toolbar), primary (accent) and icon-only (`text` empty, `name` required).
 export component ActionButton inherits Rectangle {
     in property <string> text;
+    // Spoken name; required when the button shows only an icon.
+    in property <string> name: root.text;
     in property <string> hint;
+    in property <image> icon;
     in property <bool> enabled: true;
     in property <bool> subtle: false;
+    in property <bool> primary: false;
+    in property <length> icon-size: 16px;
     callback clicked();
-    height: 32px;
-    min-width: label.preferred-width + Theme.section;
+    private property <bool> has-icon: root.icon.width > 0;
+    private property <bool> icon-only: root.has-icon && root.text == "";
+    private property <color> ink: !root.enabled ? (root.primary ? Theme.text.with-alpha(0.6) : Theme.faint.with-alpha(0.7)) : root.primary ? Theme.accent-ink : Theme.text;
+    height: Theme.control-height;
+    min-width: root.icon-only ? root.height : content.preferred-width + (root.has-icon ? 20px : 24px);
     preferred-width: self.min-width;
     horizontal-stretch: 0;
     border-radius: Theme.radius;
-    border-width: 1px;
-    border-color: focus.has-focus ? Theme.accent : (root.subtle ? transparent : Theme.line);
-    background: !root.enabled ? Theme.panel : touch.pressed ? Theme.selection : touch.has-hover ? Theme.hover : root.subtle ? transparent : Theme.raised;
+    // Disabled primary stays recognisably the primary action, dimmed.
+    background: !root.enabled ? (root.primary ? Theme.accent-fill.with-alpha(0.32) : root.subtle ? transparent : Theme.raised.with-alpha(0.5))
+        : root.primary ? (touch.pressed ? Theme.accent-fill.darker(0.15) : touch.has-hover ? Theme.accent-fill.brighter(0.1) : Theme.accent-fill)
+        : touch.pressed ? Theme.pressed : touch.has-hover ? Theme.hover : root.subtle ? transparent : Theme.raised;
     accessible-role: button;
     accessible-enabled: root.enabled;
-    accessible-label: root.text;
+    accessible-label: root.name;
     accessible-description: root.hint;
     accessible-action-default => { if root.enabled { root.clicked(); } }
     forward-focus: focus;
-    label := Text {
-        x: 0; y: 0; width: 100%; height: 100%;
-        text: root.text;
-        overflow: elide;
-        color: root.enabled ? Theme.text : Theme.disabled;
-        font-size: Theme.label-size;
-        font-weight: 600;
-        horizontal-alignment: center;
-        vertical-alignment: center;
+    content := HorizontalLayout {
+        x: (parent.width - self.preferred-width) / 2;
+        width: min(self.preferred-width, parent.width);
+        y: 0; height: 100%;
+        spacing: 6px;
+        alignment: center;
+        if root.has-icon : Rectangle {
+            width: root.icon-size; horizontal-stretch: 0;
+            Image { source: root.icon; colorize: root.ink; x: 0; y: (parent.height - root.icon-size) / 2; width: root.icon-size; height: root.icon-size; }
+        }
+        if !root.icon-only : Text {
+            text: root.text;
+            overflow: elide;
+            color: root.ink;
+            font-size: Theme.label-size;
+            font-weight: root.primary ? 600 : 500;
+            vertical-alignment: center;
+        }
+    }
+    if focus.has-focus : Rectangle {
+        x: -2px; y: -2px; width: parent.width + 4px; height: parent.height + 4px;
+        border-radius: root.border-radius + 2px; border-width: 1.5px; border-color: Theme.accent;
     }
     focus := FocusScope {
         x: 0; y: 0; width: 100%; height: 100%;

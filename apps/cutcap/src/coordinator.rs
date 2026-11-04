@@ -1,9 +1,9 @@
 use std::{cell::RefCell, collections::HashSet, rc::Rc, time::Duration};
 
 use cutcap_contracts::*;
-use slint::{ComponentHandle, Model, ModelRc, Timer, TimerMode, VecModel};
+use slint::{ComponentHandle, Timer, TimerMode};
 
-use crate::{AppWindow, MediaRow, TrackRow, bridge::EngineBridge, media_ui::MediaUi};
+use crate::{AppWindow, MediaRow, bridge::EngineBridge, media_ui::MediaUi, presentation};
 
 #[derive(Default)]
 struct ViewState {
@@ -154,11 +154,12 @@ pub fn connect(
     let source = media.clone();
     window.on_seek_text(move |text| {
         if let Some(window) = weak.upgrade() {
-            if let Ok(ms) = text.trim().parse::<i32>() {
-                source.borrow_mut().seek(&window, ms);
-            } else {
-                window.set_status_text("Enter a whole source time in milliseconds.".into());
-                window.set_status_error(true);
+            match presentation::parse_source_time(&text) {
+                Ok(ms) => source.borrow_mut().seek(&window, ms),
+                Err(message) => {
+                    window.set_status_text(message.into());
+                    window.set_status_error(true);
+                }
             }
         }
     });
@@ -186,6 +187,19 @@ pub fn connect(
                 view.borrow_mut().desired_media = Some(id);
                 view.borrow_mut().inspecting_media = true;
                 source.borrow_mut().pending_selection(&window);
+            }
+        }
+    });
+    let weak = window.as_weak();
+    let view = state.clone();
+    window.on_media_filter_changed(move || {
+        if let Some(window) = weak.upgrade() {
+            let (snapshot, inspecting) = {
+                let view = view.borrow();
+                (view.snapshot.clone(), view.inspecting_media)
+            };
+            if let Some(snapshot) = snapshot {
+                apply_snapshot(&window, &snapshot, inspecting);
             }
         }
     });
@@ -262,12 +276,24 @@ pub fn connect(
                         selection = ?snapshot.selection, "command completed"
                     );
                     view.borrow_mut().snapshot = Some(snapshot);
-                    window.set_status_text("Ready · project is in memory".into());
+                    window.set_status_text("Ready".into());
                     window.set_status_error(false);
                     if view.borrow().registering == Some(request_id) {
                         view.borrow_mut().registering = None;
-                        window
-                            .set_media_status("Video imported. Select an entry to preview.".into());
+                        let imported = view
+                            .borrow()
+                            .snapshot
+                            .as_ref()
+                            .and_then(|s| s.media.iter().find(|m| Some(m.id) == s.source_media))
+                            .map(presentation::file_name);
+                        window.set_media_status(
+                            imported
+                                .map_or_else(
+                                    || "Video imported.".to_owned(),
+                                    |name| format!("Imported {name}."),
+                                )
+                                .into(),
+                        );
                         window.set_media_error(false);
                     }
                 }
@@ -341,145 +367,71 @@ fn apply_snapshot(window: &AppWindow, snapshot: &ProjectSnapshot, inspecting_med
     window.set_engine_ready(true);
     window.set_project_name(snapshot.name.clone().into());
     window.set_media_count(snapshot.media_count as i32);
+    let filter = window.get_media_filter();
+    let query = window.get_media_query();
     let assets: Vec<MediaRow> = snapshot
         .media
         .iter()
-        .map(|asset| MediaRow {
-            name: asset
-                .path
-                .file_name()
-                .unwrap_or_default()
-                .to_string_lossy()
-                .into_owned()
-                .into(),
-            detail: format!(
-                "{} × {} · {}\n{} · {}",
-                asset.metadata.width,
-                asset.metadata.height,
-                asset.metadata.codec,
-                asset
-                    .metadata
-                    .duration_ticks
-                    .map(|ticks| format!(
-                        "{}{}",
-                        if asset.metadata.duration_is_estimate {
-                            "~"
-                        } else {
-                            ""
-                        },
-                        crate::preview::format_time(SourceTime {
-                            ticks,
-                            timebase: asset.metadata.timebase
-                        })
-                    ))
-                    .unwrap_or_else(|| "Duration unknown".into()),
-                if asset.metadata.audio_streams.is_empty() {
-                    "No audio"
-                } else {
-                    "Audio present"
-                }
-            )
-            .into(),
-            selected: snapshot.source_media == Some(asset.id),
+        .enumerate()
+        .filter(|(_, asset)| presentation::passes_filter(asset, filter, &query))
+        .map(|(index, asset)| {
+            presentation::media_row(asset, index, snapshot.source_media == Some(asset.id))
         })
         .collect();
-    let existing = window.get_media_entries();
-    if let Some(model) = existing.as_any().downcast_ref::<VecModel<MediaRow>>() {
-        for (index, row) in assets.iter().enumerate() {
-            if index < model.row_count() {
-                if model.row_data(index).as_ref() != Some(row) {
-                    model.set_row_data(index, row.clone());
-                }
-            } else {
-                model.push(row.clone());
-            }
-        }
-        while model.row_count() > assets.len() {
-            model.remove(model.row_count() - 1);
-        }
-    } else {
-        window.set_media_entries(ModelRc::new(VecModel::from(assets)));
-    }
-    let rows: Vec<TrackRow> = snapshot
-        .tracks
-        .iter()
-        .map(|track| TrackRow {
-            name: track.name.clone().into(),
-            kind: match track.kind {
-                TrackKind::Video => "VIDEO",
-                TrackKind::Audio => "AUDIO",
-            }
-            .into(),
-            selected: snapshot.selection == SelectionState::Track(track.id),
-        })
-        .collect();
+    presentation::sync_rows(window.get_media_entries(), assets, |model| {
+        window.set_media_entries(model)
+    });
     // Preserve repeater item identity: replacing the model destroys a focused
     // track button and prevents subsequent keyboard shortcuts from arriving.
-    let existing = window.get_tracks();
-    if let Some(model) = existing.as_any().downcast_ref::<VecModel<TrackRow>>() {
-        for (index, row) in rows.iter().enumerate() {
-            if index < model.row_count() {
-                if model.row_data(index).as_ref() != Some(row) {
-                    model.set_row_data(index, row.clone());
-                }
-            } else {
-                model.push(row.clone());
-            }
-        }
-        while model.row_count() > rows.len() {
-            model.remove(model.row_count() - 1);
-        }
-    } else {
-        window.set_tracks(ModelRc::new(VecModel::from(rows)));
-    }
+    presentation::sync_rows(
+        window.get_tracks(),
+        presentation::track_list(snapshot),
+        |model| window.set_tracks(model),
+    );
     let selected = snapshot
         .tracks
         .iter()
         .find(|track| snapshot.selection == SelectionState::Track(track.id));
-    window.set_selection_title(
-        selected
-            .map_or("Project", |track| track.name.as_str())
-            .into(),
-    );
-    window.set_selection_detail(
-        selected
-            .map_or("Project overview", |track| match track.kind {
-                TrackKind::Video => "Empty video track",
-                TrackKind::Audio => "Empty audio track",
-            })
-            .into(),
-    );
-    window.set_has_selection(selected.is_some());
     let source = snapshot
         .media
         .iter()
         .find(|m| Some(m.id) == snapshot.source_media)
         .filter(|_| inspecting_media);
+    window.set_has_selection(selected.is_some());
     window.set_inspecting_media(source.is_some());
-    if let Some(asset) = source {
-        let info = &asset.metadata;
-        let rate = |r: Option<Ratio>| {
-            r.map(|r| format!("{}/{}", r.numerator, r.denominator))
-                .unwrap_or_else(|| "Unknown".into())
-        };
-        window.set_selection_title(
-            asset
-                .path
-                .file_name()
-                .unwrap_or_default()
-                .to_string_lossy()
-                .into_owned()
-                .into(),
-        );
-        window.set_selection_detail("Source video · read only".into());
-        window.set_media_details(format!("Codec: {}\nCoded size: {} × {}\nPixel format: {}\nDisplay aspect: {}\nSample aspect: {}\nRotation: {}° CCW\nAverage rate: {} fps\nNominal rate: {} fps\nTimebase: {}/{} s\nStart PTS: {}\nContainer: {}\nVideo stream: {} ({})\nAudio streams: {:?}\n{}", info.codec,info.width,info.height,info.pixel_format.as_deref().unwrap_or("Unknown"),rate(info.display_aspect),rate(info.sample_aspect),info.rotation,rate(info.average_rate),rate(info.nominal_rate),info.timebase.numerator(),info.timebase.denominator(),info.start_pts,info.container,info.stream_index,info.stream_id.as_deref().unwrap_or("no container ID"),info.audio_streams,if info.duration_ticks.is_none(){"Duration unknown."}else if info.duration_is_estimate{"Duration uses a container estimate."}else{"Duration reported by video stream."}).into());
-    }
-    window.set_timebase_label(
-        format!(
-            "{}/{} s per tick",
-            snapshot.timebase.numerator(),
-            snapshot.timebase.denominator()
+    let (title, detail, inspector) = if let Some(asset) = source {
+        (
+            presentation::file_name(asset),
+            "Source video, read only".into(),
+            presentation::source_rows(asset),
         )
-        .into(),
+    } else if let Some(track) = selected {
+        (
+            track.name.clone().into(),
+            match track.kind {
+                TrackKind::Video => "Empty video track",
+                TrackKind::Audio => "Empty audio track",
+            }
+            .into(),
+            presentation::track_rows(snapshot, track),
+        )
+    } else {
+        (
+            snapshot.name.clone().into(),
+            "Project overview".into(),
+            presentation::project_rows(snapshot),
+        )
+    };
+    window.set_selection_title(title);
+    window.set_selection_detail(detail);
+    presentation::sync_sections(window.get_inspector_sections(), inspector, |model| {
+        window.set_inspector_sections(model)
+    });
+    window.set_source_duration_estimated(
+        snapshot
+            .media
+            .iter()
+            .find(|m| Some(m.id) == snapshot.source_media)
+            .is_some_and(|asset| asset.metadata.duration_is_estimate),
     );
 }

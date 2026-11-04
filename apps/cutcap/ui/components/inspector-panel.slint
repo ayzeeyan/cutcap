@@ -1,39 +1,164 @@
 import { ScrollView } from "std-widgets.slint";
 import { Theme } from "../theme.slint";
 import { ActionButton } from "action-button.slint";
-import { PanelHeading } from "panel-heading.slint";
+import { ViewTab } from "tabs.slint";
+import { InfoRow, InfoSection } from "../models.slint";
+
+component InfoLine inherits Rectangle {
+    in property <InfoRow> item;
+    in property <length> label-width;
+    min-height: max(label.preferred-height, value.preferred-height) + 9px;
+    label := Text {
+        x: 0; y: 4px; width: root.label-width - Theme.gap;
+        text: root.item.label; color: Theme.faint; font-size: Theme.label-size;
+        wrap: word-wrap;
+    }
+    value := Text {
+        x: root.label-width; y: 4px; width: parent.width - root.label-width;
+        text: root.item.value; color: Theme.text; font-size: Theme.label-size;
+        wrap: word-wrap;
+        accessible-label: root.item.label + ": " + root.item.value;
+    }
+}
+
+// Collapsible group row. Expansion is view state and resets when the
+// section's title changes (a different selection).
+component SectionRow inherits Rectangle {
+    in property <string> title;
+    in property <[InfoRow]> rows;
+    in property <bool> enabled: true;
+    in property <string> note;
+    in-out property <bool> expanded: true;
+    changed title => { root.expanded = true; }
+    VerticalLayout {
+        padding-bottom: root.expanded && root.enabled ? 10px : 0px;
+        header := Rectangle {
+            height: 38px;
+            border-radius: Theme.radius;
+            background: touch.has-hover && root.enabled ? Theme.hover.with-alpha(0.45) : transparent;
+            accessible-role: button;
+            accessible-label: root.title;
+            accessible-description: !root.enabled ? root.note : root.expanded ? "Expanded. Activate to collapse." : "Collapsed. Activate to expand.";
+            accessible-enabled: root.enabled;
+            accessible-action-default => { if root.enabled { root.expanded = !root.expanded; } }
+            forward-focus: scope;
+            HorizontalLayout {
+                padding-left: 4px; padding-right: 4px; spacing: 8px;
+                Text { text: root.title; color: root.enabled ? Theme.text : Theme.faint; font-size: Theme.label-size; font-weight: 600; vertical-alignment: center; overflow: elide; min-width: 0px; horizontal-stretch: 1; }
+                if !root.enabled : Rectangle {
+                    width: tag.preferred-width + 12px; horizontal-stretch: 0;
+                    Rectangle {
+                        y: (parent.height - 18px) / 2; height: 18px;
+                        border-radius: 3px; background: Theme.raised;
+                        tag := Text { text: root.note; color: Theme.faint; font-size: 10px; horizontal-alignment: center; vertical-alignment: center; }
+                    }
+                }
+                Rectangle {
+                    width: 14px; horizontal-stretch: 0;
+                    Image {
+                        source: root.expanded && root.enabled ? @image-url("../assets/icons/chevron-down.svg") : @image-url("../assets/icons/chevron-right.svg");
+                        colorize: root.enabled ? Theme.muted : Theme.faint.with-alpha(0.6);
+                        x: 0; y: (parent.height - 14px) / 2; width: 14px; height: 14px;
+                    }
+                }
+            }
+            if scope.has-focus : Rectangle { border-radius: Theme.radius; border-width: 1.5px; border-color: Theme.accent; }
+            scope := FocusScope {
+                enabled: root.enabled;
+                key-pressed(event) => {
+                    if event.text == " " || event.text == Key.Return { root.expanded = !root.expanded; return accept; }
+                    return reject;
+                }
+            }
+            touch := TouchArea {
+                enabled: root.enabled;
+                mouse-cursor: root.enabled ? pointer : default;
+                clicked => { scope.focus(); root.expanded = !root.expanded; }
+            }
+        }
+        if root.expanded && root.enabled : VerticalLayout {
+            padding-left: 4px; padding-right: 4px; spacing: 0px;
+            for row in root.rows : InfoLine {
+                item: row;
+                label-width: min(104px, self.width * 0.42);
+            }
+        }
+        Rectangle { height: 1px; background: Theme.line; }
+    }
+}
 
 export component InspectorPanel inherits Rectangle {
     in property <string> title;
     in property <string> detail;
-    in property <string> timebase;
     in property <bool> selected;
-    in property <int> track-count;
     in property <bool> media-selected;
-    in property <string> media-details;
+    in property <[InfoSection]> sections;
     callback clear-selection();
     background: Theme.panel;
-    PanelHeading { title: "Inspector"; detail: root.media-selected ? "Source" : root.selected ? "Track" : "Project"; }
+    border-radius: Theme.panel-radius;
+    clip: true;
+    // Clip tabs are placeholders for the editing engine; Details is real.
+    HorizontalLayout {
+        x: 0; y: 0; width: 100%; height: Theme.heading-height;
+        padding-left: 8px; padding-right: 6px; spacing: 2px;
+        ViewTab { text: "Details"; selected: true; hint: "Real metadata for the current selection"; }
+        ViewTab { text: "Video"; enabled: false; hint: "Clip video settings need a timeline clip."; }
+        ViewTab { text: "Audio"; enabled: false; hint: "Clip audio settings need a timeline clip."; }
+        if root.width >= 260px : ViewTab { text: "Speed"; enabled: false; hint: "Clip speed needs a timeline clip."; }
+        Rectangle { horizontal-stretch: 1; }
+        if root.selected && !root.media-selected : Rectangle {
+            width: Theme.control-height; horizontal-stretch: 0;
+            ActionButton { subtle: true; icon: @image-url("../assets/icons/close.svg"); icon-size: 14px; name: "Clear selection"; hint: "Return to the project overview (Ctrl+Shift+A)"; clicked => { root.clear-selection(); } }
+        }
+    }
+    Rectangle { x: 0; y: Theme.heading-height; width: 100%; height: 1px; background: Theme.line; }
     ScrollView {
         x: 0; width: 100%;
-        y: Theme.heading-height; height: parent.height - Theme.heading-height;
+        y: Theme.heading-height + 1px; height: parent.height - self.y;
         VerticalLayout {
             x: 0; y: 0; width: parent.width;
-            padding: Theme.inset; spacing: Theme.inset; alignment: start;
-            Text { text: root.title; color: Theme.text; font-size: 18px; font-weight: 600; wrap: word-wrap; }
-            Text { text: root.detail; color: Theme.secondary; font-size: Theme.body-size; wrap: word-wrap; }
-            if root.media-selected : Text { text: root.media-details; color: Theme.secondary; font-size: Theme.body-size; wrap: word-wrap; }
+            padding-left: 12px; padding-right: 12px; padding-top: 12px; padding-bottom: Theme.inset; spacing: 0px; alignment: start;
+            // Identity of the current selection.
+            HorizontalLayout {
+                spacing: 10px; padding-bottom: 12px;
+                if root.media-selected : Rectangle {
+                    width: 64px; height: 36px; horizontal-stretch: 0;
+                    border-radius: Theme.radius;
+                    background: @linear-gradient(150deg, #1f3337 0%, #18181b 70%);
+                    Image { source: @image-url("../assets/icons/film.svg"); colorize: Theme.faint; width: 16px; height: 16px; }
+                }
+                VerticalLayout {
+                    spacing: 4px; alignment: center;
+                    HorizontalLayout {
+                        spacing: 6px;
+                        Text { text: root.title; color: Theme.text; font-size: Theme.body-size + 1px; font-weight: 600; overflow: elide; min-width: 0px; vertical-alignment: center; }
+                        if root.media-selected : Rectangle {
+                            width: kind.preferred-width + 10px; height: 16px; horizontal-stretch: 0;
+                            border-radius: 3px;
+                            background: Theme.video-fill;
+                            kind := Text { text: "Video"; color: Theme.pencil; font-size: 10px; font-weight: 600; horizontal-alignment: center; vertical-alignment: center; }
+                        }
+                    }
+                    Text { text: root.detail; color: Theme.muted; font-size: Theme.label-size; wrap: word-wrap; }
+                }
+            }
+            Rectangle { height: 1px; background: Theme.line; }
+            for section in root.sections : SectionRow {
+                title: section.title;
+                rows: section.rows;
+            }
+            if !root.media-selected : SectionRow {
+                title: "Clip properties";
+                enabled: false;
+                note: "Needs a clip";
+                expanded: false;
+            }
             if !root.media-selected : VerticalLayout {
-              spacing: Theme.inset;
-            Rectangle { height: 1px; background: Theme.line; }
-            Text { text: root.selected ? "Contents" : "Timeline"; color: Theme.text; font-size: Theme.body-size; font-weight: 600; }
-            Text { text: root.selected ? "0 clips on this track" : root.track-count + " tracks · 0 clips"; color: Theme.secondary; font-size: Theme.body-size; wrap: word-wrap; }
-            Text { text: "Timeline clock"; color: Theme.text; font-size: Theme.body-size; font-weight: 600; }
-            Text { text: root.timebase; color: Theme.secondary; font-size: Theme.label-size; wrap: word-wrap; }
-            Rectangle { height: 1px; background: Theme.line; }
-            Text { text: "No clip selected"; color: Theme.text; font-size: Theme.body-size; font-weight: 600; }
-            Text { text: "Clip properties and effects will appear here once timeline editing is available."; color: Theme.secondary; font-size: Theme.body-size; wrap: word-wrap; }
-            if root.selected : ActionButton { text: "Clear selection"; hint: "Return to the project overview · Ctrl+Shift+A"; clicked => { root.clear-selection(); } }
+                padding-top: 10px;
+                Text {
+                    text: "Transform, opacity and speed appear here once clips can be placed on the timeline.";
+                    color: Theme.faint; font-size: Theme.fine-size; wrap: word-wrap;
+                }
             }
         }
     }

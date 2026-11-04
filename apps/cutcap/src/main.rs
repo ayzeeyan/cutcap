@@ -7,6 +7,7 @@ mod engine;
 #[cfg(feature = "gpu-diagnostics")]
 mod gpu;
 mod media_ui;
+mod presentation;
 mod preview;
 
 use slint::ComponentHandle;
