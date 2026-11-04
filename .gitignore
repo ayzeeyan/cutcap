@@ -6,6 +6,11 @@
 .vs/
 .idea/
 .vscode/
-bin/
-obj/
+# .NET build output only; Rust's crates/*/src/bin holds source.
+/apps/*/bin/
+/apps/*/obj/
+/src-dotnet/*/bin/
+/src-dotnet/*/obj/
+/tests/*/bin/
+/tests/*/obj/
 /artifacts/
