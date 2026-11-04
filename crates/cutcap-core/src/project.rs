@@ -171,6 +171,19 @@ impl Project {
         Ok(())
     }
 
+    /// Change only a source reference, preserving identity, ordering and clips.
+    /// The host validates the replacement file; core never touches the filesystem.
+    pub fn relink_media(&mut self, id: MediaId, path: PathBuf) -> Result<(), ProjectError> {
+        validate_path(&path)?;
+        let asset = self
+            .media
+            .iter_mut()
+            .find(|asset| asset.id == id)
+            .ok_or(ProjectError::MissingReference)?;
+        asset.path = path;
+        Ok(())
+    }
+
     pub fn validate_selection(&self, selection: SelectionState) -> Result<(), ProjectError> {
         match selection {
             SelectionState::None => Ok(()),

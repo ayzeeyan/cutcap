@@ -12,6 +12,11 @@ internal static class Program
     public static int Main(string[] args)
     {
         if (args.FirstOrDefault() == "--ui") return UiProbe.Run(args.Skip(1).ToArray());
+        if (args.FirstOrDefault() == "--ui-min")
+        {
+            Environment.SetEnvironmentVariable("CUTCAP_PROBE_MIN_LAYOUT", "1");
+            return UiProbe.Run(args.Skip(1).ToArray());
+        }
         Offscreen(args);
         return 0;
     }

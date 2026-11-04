@@ -4,7 +4,7 @@ Read this file before editing. It is the repository's primary engineering author
 
 ## Product and scope
 
-CutCap is a native, offline-first Windows 11 x64 non-linear video editor. The stack is deliberately two-language: **C#/.NET 10 + Avalonia 12 own presentation and interaction; Rust (MSVC) owns editing semantics, media processing, timeline/project state, future wgpu/DX12 compositing and heavy computation.** FFmpeg is the media backend. The C# frontend must never grow into a second editing engine. The baseline machine has a Core Ultra 7 255H, integrated Intel graphics and 16 GB RAM. Never assume dedicated-GPU memory, cloud availability or online accounts. Phase 2 adds the bounded source-playback engine through ABI 2; visual transport binding is a frontend handoff, and timeline editing remains future work. Consult docs/ROADMAP.md before expanding scope.
+CutCap is a native, offline-first Windows 11 x64 non-linear video editor. The stack is deliberately two-language: **C#/.NET 10 + Avalonia 12 own presentation and interaction; Rust (MSVC) owns editing semantics, media processing, timeline/project state, future wgpu/DX12 compositing and heavy computation.** FFmpeg is the media backend. The C# frontend must never grow into a second editing engine. The baseline machine has a Core Ultra 7 255H, integrated Intel graphics and 16 GB RAM. Never assume dedicated-GPU memory, cloud availability or online accounts. Phase 2B integrates real source playback. Phase 3A adds project persistence/relinking and startup preroll stabilization through ABI 3; timeline editing remains future work. Consult docs/ROADMAP.md before expanding scope.
 
 ## Architecture and ownership
 
@@ -41,6 +41,11 @@ CutCap is a native, offline-first Windows 11 x64 non-linear video editor. The st
 - Add dependencies only for a real need, after checking version, license, maintenance and trimming/AOT impact; versions are central in Directory.Packages.props.
 
 ## Time and model rules
+
+- Persistence uses `.cutcap` envelope format 1 around core schema 1 (docs/PROJECT_FORMAT.md); source expectations/fingerprints are outside Project. Keep file I/O on the owned file worker. Validate byte/structure budgets before typed graph construction and adopt only complete valid documents.
+- Document revisions belong to the project owner and are distinct from coalesced view revisions. Mark only the captured successfully written revision saved; newer edits stay dirty. Never equate ABI acceptance with save completion. Preserve the previous file/live project on failure and retain missing references.
+- Relative source paths mean project-directory-relative descendants; never reinterpret them against the working directory. Relink requires verified original content/metadata. Do not silently conform changed footage. Preserve unsaved-change confirmation for New/Open/close.
+- File cancellation is checked before commit and between chunks. An OS call already in progress is not interruptible. Preserve the bounded shutdown/detached-owned-task policy in PROJECT_FORMAT.md; never introduce a UI-thread wait for filesystem completion or claim universal crash/power-loss safety.
 
 - Authoritative timeline time is integer ticks in an explicit project timebase, never floats, UI coordinates or preview frame numbers. Use checked arithmetic and positive durations.
 - Source PTS and timeline positions have distinct types. Source PTS may be negative and comes with its own timebase. VFR requires actual presentation timestamps, not nominal frame-rate multiplication.

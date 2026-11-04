@@ -7,6 +7,7 @@ namespace CutCap.Interop.Tests;
 /// Rust–C# boundary tests against the real cutcap_engine.dll. Media tests use
 /// the generated fixtures and the external FFmpeg/FFprobe (skipped when absent).
 /// </summary>
+[Collection("engine")]
 public sealed class InteropTests
 {
     private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(20);

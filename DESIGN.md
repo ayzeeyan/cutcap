@@ -22,13 +22,13 @@ Inter (bundled, OFL 1.1) for UI: body 13, labels 12, fine 11, panel titles 13 se
 
 ## Layout
 
-- **Title bar:** mark and name, engine status (icon + text; errors in red), centred project name with "Not saved", New project, Shortcuts, Reset layout, About, a disabled primary Export, then Avalonia's Windows caption buttons. Drawn title text is hidden; the bar is a drag region. Labels drop below 1180 px.
+- **Title bar:** mark/name, engine status (errors in red), centred authoritative project name with Saved/Unsaved changes/file status, Project menu (New/Open/Save/Save As/Relink), Shortcuts, Reset layout, About, disabled primary Export and Windows caption buttons. The window title adds an asterisk for real dirty state. New/Open/close protect unsaved changes with Save/Don't save/Cancel. Labels drop below 1180 px.
 - **Asset workspace:** icon-over-label categories (Media, Audio, Text, Stickers, Effects, Transitions, Filters, Adjustment). Media shows a collection list (All media / With audio / Silent), search, Import and a tile grid; the other categories show "coming later" states.
 - **Player:** Source / Timeline (disabled) tabs, source name and actual-frame caption, the fitted picture on the stage, scrubber, cyan time (the shown frame's source time while a playback epoch has delivered one, otherwise the requested position; the accessible name says which) / duration, centred transport (start, −1 s, round Play/Pause that follows the engine's state and intent, Stop, +1 s, end), go-to field. Transient playback states (Starting, Seeking, Buffering, End of source) appear as a small chip at the stage's top-left; failures as the top banner.
 - **Inspector:** Details / Video / Speed / Adjustment / Audio tabs. Details shows the selection's identity and collapsible metadata sections; the clip tabs explain they need a clip.
 - **Timeline:** disabled Undo/Redo/Split/Delete, Video track / Audio track, timeline playhead time, zoom out / slider / zoom in / percentage; track headers (V1/A1 badges, disabled eye/mute/lock) beside custom-drawn ruler and lanes with a white playhead.
 
-Upper columns are proportional (32 / 43 / 25 %) with minimums 290 / 340 / 240 px; the timeline takes 42 % of the workspace (minimum 170). Window minimum 960×600. Container queries drop secondary controls in narrow panels (player < 520 px hides start/end, duration and caption).
+Upper columns are proportional (34 / 41 / 25 %) with minimums 290 / 340 / 240 px; the timeline takes 42 % of the workspace (minimum 170). Window minimum properties are 960×600; the Phase 3A native minimum client measured 960×630 with extended chrome at 150% scaling. Initial size fits the current logical work area so project controls remain on screen. Container queries drop secondary controls in narrow panels (player < 520 px hides start/end, duration and caption).
 
 ## Components and states
 

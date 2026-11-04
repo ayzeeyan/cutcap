@@ -102,6 +102,31 @@ public sealed class EngineSession : IDisposable
 
     public void CancelImport() => Check(NativeMethods.CancelImport(Handle));
 
+    /// <summary>Acceptance only. Observe Project.Document for completion and dirty state.</summary>
+    public void SaveProject() => Check(NativeMethods.SaveProject(Handle));
+
+    public unsafe void SaveProjectAs(string path)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(path);
+        fixed (char* pointer = path) { Check(NativeMethods.SaveProjectAs(Handle, pointer, (nuint)path.Length)); }
+    }
+
+    public unsafe void OpenProject(string path)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(path);
+        fixed (char* pointer = path) { Check(NativeMethods.OpenProject(Handle, pointer, (nuint)path.Length)); }
+    }
+
+    public unsafe void RelinkMedia(string id, string path)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(id);
+        ArgumentException.ThrowIfNullOrEmpty(path);
+        var bytes = Encoding.UTF8.GetBytes(id);
+        fixed (byte* idPointer = bytes)
+        fixed (char* pathPointer = path)
+        { Check(NativeMethods.RelinkMedia(Handle, idPointer, (nuint)bytes.Length, pathPointer, (nuint)path.Length)); }
+    }
+
     public void Seek(long milliseconds) => Check(NativeMethods.Seek(Handle, milliseconds));
 
     /// <summary>Parses go-to text with the engine's tested grammar (1500, 1.5s, 00:01.500).</summary>

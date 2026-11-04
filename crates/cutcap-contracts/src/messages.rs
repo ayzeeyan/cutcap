@@ -2,9 +2,12 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-use crate::{ClipId, MediaId, MediaSummary, ProjectId, RequestId, Timebase, TimelineTime, TrackId};
+use crate::{
+    ClipId, DocumentStatus, MediaAvailability, MediaId, MediaSummary, ProjectId, RequestId,
+    SourceFingerprint, Timebase, TimelineTime, TrackId, VerifiedMedia,
+};
 
-pub const CONTRACT_VERSION: u32 = 2;
+pub const CONTRACT_VERSION: u32 = 3;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TrackKind {
@@ -46,6 +49,7 @@ pub enum Command {
     /// Only a validated probe result can be committed by the project owner.
     RegisterMedia {
         media: Box<MediaSummary>,
+        fingerprint: Option<SourceFingerprint>,
     },
     SelectMedia {
         media_id: MediaId,
@@ -53,6 +57,16 @@ pub enum Command {
     // Reserved request shapes. Currently Unsupported, with no side effects.
     OpenProject {
         path: PathBuf,
+    },
+    SaveProject {
+        path: Option<PathBuf>,
+    },
+    /// Internal result from the single cancellable probe. Relink commits only
+    /// after matching the original content and saved metadata.
+    VerifyMedia {
+        media_id: MediaId,
+        result: Result<Box<VerifiedMedia>, EngineError>,
+        relink: bool,
     },
     ImportMedia {
         paths: Vec<PathBuf>,
@@ -82,6 +96,7 @@ pub struct TrackSummary {
     pub id: TrackId,
     pub name: String,
     pub kind: TrackKind,
+    pub clip_count: usize,
 }
 
 /// Small view DTO, never the mutable project or a decoded frame buffer.
@@ -98,11 +113,20 @@ pub struct ProjectSnapshot {
     pub media: Vec<MediaSummary>,
     /// Source viewer selection is independent of timeline selection/playhead.
     pub source_media: Option<MediaId>,
+    pub media_state: Vec<MediaAvailability>,
+    pub document: DocumentStatus,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type", content = "data")]
 pub enum EngineEvent {
+    /// Nonterminal status update; accepted file operations remain pending.
+    Updated { snapshot: ProjectSnapshot },
+    FileFailed {
+        request_id: RequestId,
+        error: EngineError,
+        snapshot: Option<ProjectSnapshot>,
+    },
     Completed {
         request_id: RequestId,
         snapshot: ProjectSnapshot,

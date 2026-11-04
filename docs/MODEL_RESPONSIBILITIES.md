@@ -1,5 +1,7 @@
 # Model responsibilities and collaboration
 
+Current milestone (Phase 3A): the owner states Claude is not active. Sol owns persistence, playback stabilization and necessary frontend integration on `codex/phase-3a-persistence`. ABI/contract 3, PROJECT_FORMAT.md and PHASE_3A_PROJECT_PERSISTENCE_REPORT.md are the next handoff authorities. Future UI work preserves engine-owned revisions, terminal save completion, missing-source readiness, relink identity checks and unsaved confirmation. No parallel shared-file ownership is implied.
+
 ## Phase 0
 
 GPT-6.1 Sol owns all architecture, Rust implementation, Slint UI, documentation, validation and self-review. No work depends on Claude availability. Model names describe requested roles, not a claim of automatic tool availability. Every contributor follows AGENTS.md.

@@ -17,6 +17,11 @@ public sealed partial class MediaItemViewModel(MediaView media) : ObservableObje
     public string Name => Media.Name;
     public string Stamp => (Media.Estimated ? "≈" : "") + Media.Duration;
     public string Details => $"{Media.Resolution} · {Media.Format}";
+    public string Tooltip => $"{Details}\n{Media.Detail}\n{Media.Path}";
+    public bool Unavailable => Media.Availability is "missing" or "changed" or "unavailable";
+    public string AvailabilityText => Media.Availability switch
+    { "checking" => "Checking…", "missing" => "Missing media", "changed" => "Source changed", "unavailable" => "Unavailable", _ => "" };
+    public bool ShowAvailability => Media.Availability != "ready";
     public bool HasAudio => Media.HasAudio;
     public string AccessibleName =>
         $"{Media.Name}, {Media.Resolution}, {Media.Format}, {(Media.Estimated ? "about " : "")}{Media.Duration}, {(Media.HasAudio ? "with audio" : "no audio")}";
@@ -28,6 +33,10 @@ public sealed partial class MediaItemViewModel(MediaView media) : ObservableObje
         OnPropertyChanged(nameof(Details));
         OnPropertyChanged(nameof(HasAudio));
         OnPropertyChanged(nameof(AccessibleName));
+        OnPropertyChanged(nameof(Tooltip));
+        OnPropertyChanged(nameof(Unavailable));
+        OnPropertyChanged(nameof(AvailabilityText));
+        OnPropertyChanged(nameof(ShowAvailability));
     }
 }
 

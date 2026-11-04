@@ -1,5 +1,19 @@
 # Architecture decisions
 
+## ADR 018 — Validated project documents, revisioned file operations and ABI 3 (Phase 3A)
+
+Keep core schema 1; `.cutcap` envelope format 1 stores the complete Project plus per-source metadata expectations/full SHA-256 fingerprints. Runtime selection, playback, images, errors and layout remain transient. Core gains only an atomic source-reference mutation. A single background file operation owns a captured validated snapshot; the command owner keeps processing edits and records the saved snapshot revision only on successful replacement. Open validates byte/structure/graph limits before adoption and preserves current state on failure. Reopening the same ProjectId also resets source work. See PROJECT_FORMAT.md for path, format, integrity and bounded-shutdown guarantees/limits.
+
+Use pinned tempfile 3.27.0 (MIT OR Apache-2.0) for exclusively owned same-directory temporary files and replacement, and sha2 0.11.1 (MIT OR Apache-2.0, Rust >=1.88) for complete source hashes. Inspected tempfile Windows code uses MoveFileExW(REPLACE_EXISTING), no copy fallback. Sync temp contents before rename, never delete/truncate the destination first. This avoids new handwritten unsafe; directory/power-loss durability and concurrent external-writer conflict handling remain unproven. Local NTFS fault/lock/process-kill tests establish the narrower claims.
+
+After Open, reuse the existing single cancellable probe to compare current source content and metadata asynchronously. Missing/changed/unavailable assets remain registered. Relink accepts the original verified content, preserves identities/order/clips, and dirties the document only when its path changes. Reliable verification results wait in one bounded session slot if the owner queue is full; they do not share the frame mailbox. Source expectations are document data outside the codec-independent Project, not a trusted runtime cache.
+
+ABI/contract 3 add Save/Save As/Open/Relink and consumed document/availability/track-label fields; producer, consumer, tests and docs change together. The existing frame layout, transport calls, opaque handles and status numbers remain intact. Sol owns both sides for this milestone (owner states Claude is not active). The frontend adds native file dialogs, terminal-result-based dirty feedback and Save/Discard/Cancel replacement/close protection, preserving the workspace design. Startup window sizing now fits the current display's logical work area: native inspection reproduced the old 1440×900 logical window hiding its title/project controls at 150% scaling.
+
+## ADR 019 — Preroll readiness precedes source clock anchoring (Phase 3A)
+
+The first PAM packet could be offered before a real successor reached lookahead. The next pump treated that empty queue as starvation, creating the reported Playing → Buffering → Playing startup blip. For playing/playing-seek epochs, wait in Starting/Seeking for two actual timestamped frames or confirmed EOF before anchoring/offering the first. A paused preview still needs only one frame; resuming that initial paused frame waits for real lookahead. No nominal-fps deadline, UI indicator delay, vsync assumption or scheduling-deadline change is added. Genuine exhaustion after preroll still enters Buffering, increments stalls and freezes the source clock; deterministic VFR/EOF/pause/starvation tests cover both behaviors.
+
 ## ADR 001 — Three crates (accepted, Phase 0)
 `cutcap-contracts` is the leaf: IDs, time values, command/event DTOs and boundary errors. `cutcap-core` depends on contracts and owns validated project state. `cutcap` depends on both and owns the window, worker lifecycle and adapters. No engine crate full of stubs, async runtime or plugin system.
 

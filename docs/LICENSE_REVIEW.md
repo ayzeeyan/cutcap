@@ -38,6 +38,8 @@ Generated test videos in tests/fixtures contain synthetic colors/test patterns/t
 
 ## Direct Rust dependency inventory
 
+Phase 3A adds pinned **tempfile 3.27.0** (MIT OR Apache-2.0; Rust >=1.63) and **sha2 0.11.1** (MIT OR Apache-2.0; Rust >=1.88, default features disabled). crates.io metadata, official docs and tempfile's Windows implementation were reviewed. tempfile supplies exclusive temporary-file ownership/same-directory replacement without new handwritten unsafe; sha2 supplies full source fingerprints. These are Rust code dependencies, not FFmpeg redistributions. Include their/transitive notices in the eventual shipping review; Cargo.lock records the exact additions. No application license or FFmpeg distribution decision changed.
+
 | Dependency | Selected version | Declared license | Use |
 |---|---|---|---|
 | serde | 1.0.229 | MIT OR Apache-2.0 | Validated model/value serialization |

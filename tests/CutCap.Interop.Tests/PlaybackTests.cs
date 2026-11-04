@@ -4,6 +4,8 @@ using Xunit;
 
 namespace CutCap.Interop.Tests;
 
+// Cleanup assertions sample the process table: all three native test classes
+// share this collection so another test cannot launch a child between samples.
 [CollectionDefinition("engine", DisableParallelization = true)]
 public sealed class EngineCollection;
 

@@ -20,6 +20,21 @@ use std::{
 
 const PROBE: &[u8] = br#"{"streams":[{"index":0,"codec_type":"video","codec_name":"ffv1","width":320,"height":180,"time_base":"1/1000","start_pts":0,"duration_ts":3000}],"format":{"format_name":"matroska"}}"#;
 
+thread_local! {
+    // Controlled media still exercises real source ownership/fingerprinting.
+    // Each test thread cleans up its own disposable files, including Unicode.
+    static FILES: tempfile::TempDir = tempfile::tempdir().unwrap();
+}
+fn fixture(path: &str) -> std::path::PathBuf {
+    FILES.with(|directory| {
+        let subdirectory = directory.path().join(uuid::Uuid::new_v4().to_string());
+        std::fs::create_dir(&subdirectory).unwrap();
+        let path = subdirectory.join(Path::new(path).file_name().unwrap());
+        std::fs::write(&path, b"controlled backend source content").unwrap();
+        path
+    })
+}
+
 /// Probes succeed unless the file name contains "corrupt"; decodes wait
 /// `delay` (cancellation-aware) and encode the requested PTS in the red channel.
 struct Controlled {
@@ -120,12 +135,134 @@ fn ready(session: &mut Session) -> Value {
 
 fn imported(session: &mut Session, path: &str) -> Value {
     ready(session);
-    session.import(path.into()).unwrap();
+    session.import(fixture(path)).unwrap();
     pump_until(session, |v| {
         v["media"].as_array().is_some_and(|m| !m.is_empty())
             && v["frame"].is_object()
             && v["source"]["busy"] == false
     })
+}
+
+fn saved(session: &mut Session, path: &Path) -> Value {
+    session.save_project(Some(path.to_owned())).unwrap();
+    pump_until(session, |v| {
+        v["project"]["document"]["state"] == "saved" && v["pending"] == 0
+    })
+}
+
+#[test]
+fn save_open_preserves_ids_order_and_tracks_but_not_selection() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("session.cutcap");
+    let mut session = session(Duration::ZERO);
+    ready(&mut session);
+    session
+        .add_track(cutcap_contracts::TrackKind::Video)
+        .unwrap();
+    session
+        .add_track(cutcap_contracts::TrackKind::Audio)
+        .unwrap();
+    pump_until(&mut session, |v| v["tracks"].as_array().unwrap().len() == 4);
+    let original = saved(&mut session, &path);
+    assert_eq!(original["project"]["document"]["dirty"], false);
+    session
+        .select_track(serde_json::from_value(original["tracks"][0]["id"].clone()).unwrap())
+        .unwrap();
+    pump_until(&mut session, |v| v["tracks"][0]["selected"] == true);
+    assert_eq!(view(&mut session)["project"]["document"]["dirty"], false);
+    session.new_project().unwrap();
+    ready(&mut session);
+    session.open_project(path).unwrap();
+    let loaded = pump_until(&mut session, |v| {
+        v["project"]["document"]["state"] == "opened" && v["pending"] == 0
+    });
+    assert_eq!(loaded["project"]["id"], original["project"]["id"]);
+    for (before, after) in original["tracks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .zip(loaded["tracks"].as_array().unwrap())
+    {
+        assert_eq!(after["id"], before["id"]);
+        assert_eq!(after["name"], before["name"]);
+        assert_eq!(after["kind"], before["kind"]);
+        assert_eq!(after["selected"], false);
+    }
+    assert_eq!(loaded["project"]["document"]["dirty"], false);
+}
+
+#[test]
+fn missing_and_changed_sources_preserve_project_and_relink_requires_original_content() {
+    let directory = tempfile::tempdir().unwrap();
+    let source = directory.path().join("source 视频.mkv");
+    let moved = directory.path().join("relocated.mkv");
+    std::fs::write(&source, b"original source content").unwrap();
+    let mut session = session(Duration::ZERO);
+    ready(&mut session);
+    session.import(source.clone()).unwrap();
+    let imported = pump_until(&mut session, |v| v["frame"].is_object());
+    let id: cutcap_contracts::MediaId =
+        serde_json::from_value(imported["media"][0]["id"].clone()).unwrap();
+    let path = directory.path().join("project.cutcap");
+    saved(&mut session, &path);
+    std::fs::rename(&source, &moved).unwrap();
+    session.open_project(path.clone()).unwrap();
+    let missing = pump_until(&mut session, |v| v["media"][0]["availability"] == "missing");
+    assert_eq!(missing["project"]["id"], imported["project"]["id"]);
+    assert_eq!(missing["media"][0]["id"], imported["media"][0]["id"]);
+    session.select_media(id).unwrap();
+    let unavailable = pump_until(&mut session, |v| v["media"][0]["selected"] == true);
+    assert_eq!(unavailable["source"]["ready"], false);
+    session.relink_media(id, moved.clone()).unwrap();
+    let relinked = pump_until(&mut session, |v| {
+        v["media"][0]["availability"] == "ready" && v["frame"].is_object()
+    });
+    assert_eq!(relinked["project"]["document"]["dirty"], true);
+    assert_eq!(relinked["media"][0]["id"], imported["media"][0]["id"]);
+    saved(&mut session, &path);
+    session.pause();
+    std::fs::write(&moved, b"modified source content").unwrap();
+    session.open_project(path).unwrap();
+    let changed = pump_until(&mut session, |v| v["media"][0]["availability"] == "changed");
+    assert_eq!(changed["project"]["document"]["dirty"], false);
+    assert_eq!(changed["media"][0]["id"], imported["media"][0]["id"]);
+    session.relink_media(id, moved).unwrap();
+    let failed = pump_until(&mut session, |v| {
+        v["status"]["error"] == true && v["import"]["busy"] == false
+    });
+    assert_eq!(failed["media"][0]["availability"], "changed");
+    assert_eq!(failed["project"]["document"]["dirty"], false);
+}
+
+#[test]
+fn failed_open_preserves_live_project_and_shutdown_during_save_is_bounded() {
+    let directory = tempfile::tempdir().unwrap();
+    let mut session = session(Duration::ZERO);
+    let original = imported(&mut session, "test.mkv");
+    let path = directory.path().join("corrupt.cutcap");
+    std::fs::write(&path, b"broken project").unwrap();
+    session.open_project(path).unwrap();
+    let failed = pump_until(&mut session, |v| {
+        v["project"]["document"]["state"] == "failed"
+    });
+    assert_eq!(failed["project"]["id"], original["project"]["id"]);
+    assert_eq!(failed["tracks"], original["tracks"]);
+    assert_eq!(failed["media"], original["media"]);
+    assert_eq!(
+        failed["frame"]["generation"],
+        original["frame"]["generation"]
+    );
+    session
+        .save_project(Some(directory.path().join("closing.cutcap")))
+        .unwrap();
+    assert!(session.new_project().is_err());
+    assert_eq!(
+        view(&mut session)["frame"]["generation"],
+        original["frame"]["generation"]
+    );
+    let before = Instant::now();
+    session.shutdown().unwrap();
+    assert!(before.elapsed() < Duration::from_secs(2));
 }
 
 #[test]
@@ -223,7 +360,7 @@ fn rapid_seeks_present_only_the_latest_request() {
 fn shutdown_during_probe_and_decode_is_bounded() {
     let mut session = session(Duration::from_secs(30));
     ready(&mut session);
-    session.import("C:/clips/slow.mkv".into()).unwrap();
+    session.import(fixture("slow.mkv")).unwrap();
     pump_until(&mut session, |v| {
         v["media"].as_array().is_some_and(|m| !m.is_empty()) && v["source"]["busy"] == true
     });
@@ -240,10 +377,63 @@ fn shutdown_during_probe_and_decode_is_bounded() {
 }
 
 #[test]
+fn shutdown_does_not_wait_forever_for_an_uninterruptible_source_inspection() {
+    use std::sync::{Mutex, mpsc};
+    struct BlockedProbe {
+        entered: mpsc::SyncSender<()>,
+        release: Mutex<mpsc::Receiver<()>>,
+    }
+    impl MediaBackend for BlockedProbe {
+        fn probe(&self, path: &Path, _: &Cancellation) -> Result<ProbeResult, MediaError> {
+            self.entered.send(()).unwrap();
+            self.release
+                .lock()
+                .unwrap()
+                .recv_timeout(Duration::from_secs(3))
+                .unwrap();
+            Ok(ProbeResult {
+                path: path.to_owned(),
+                metadata: parse_probe(PROBE)?,
+                probe_us: 1,
+            })
+        }
+        fn decode(&self, _: &DecodeRequest, _: &Cancellation) -> Result<DecodedFrame, MediaError> {
+            Err(MediaError::Worker)
+        }
+    }
+    let (entered, waiting) = mpsc::sync_channel(1);
+    let (release, blocked) = mpsc::sync_channel(1);
+    let backend = Arc::new(BlockedProbe {
+        entered,
+        release: Mutex::new(blocked),
+    });
+    let mut session = Session::with_backend(backend).unwrap();
+    ready(&mut session);
+    let path = fixture("blocked.mkv");
+    session.import(path.clone()).unwrap();
+    waiting.recv_timeout(Duration::from_secs(2)).unwrap();
+    let started = Instant::now();
+    session.shutdown().unwrap();
+    assert!(started.elapsed() < Duration::from_secs(1));
+    assert!(!session.pump());
+    release.send(()).unwrap();
+    // On Windows the probe owns a read-only sharing lock. Successful rename
+    // proves the detached cancelled task released it after the backend returned.
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while std::fs::rename(&path, path.with_extension("released")).is_err() {
+        assert!(
+            Instant::now() < deadline,
+            "cancelled probe retained its source handle"
+        );
+        thread::sleep(Duration::from_millis(5));
+    }
+}
+
+#[test]
 fn failed_probe_reports_an_error_and_registers_nothing() {
     let mut session = session(Duration::ZERO);
     ready(&mut session);
-    session.import("C:/clips/corrupt.mp4".into()).unwrap();
+    session.import(fixture("corrupt.mp4")).unwrap();
     let view = pump_until(&mut session, |v| v["import"]["error"] == true);
     assert!(view["media"].as_array().unwrap().is_empty());
     assert_eq!(view["import"]["busy"], false);
@@ -408,7 +598,8 @@ fn abi_errors_propagate_codes_and_messages() {
 fn abi_import_accepts_unicode_wide_paths() {
     let handle = register_for_test(session(Duration::ZERO));
     abi_pump_until(handle, |v| v["engine_ready"] == true);
-    let path: Vec<u16> = r"C:\Users\编辑\Видео\clip 🎬.mkv".encode_utf16().collect();
+    let fixture = fixture(r"C:\Users\编辑\Видео\clip 🎬.mkv");
+    let path: Vec<u16> = fixture.to_str().unwrap().encode_utf16().collect();
     // SAFETY (test): `path` is a valid local UTF-16 buffer.
     let status = unsafe { cutcap_session_import(handle, path.as_ptr(), path.len()) };
     assert_eq!(status, CUTCAP_OK);
@@ -429,7 +620,8 @@ fn abi_frame_copy_validates_buffers_generation_and_stride() {
         unsafe { cutcap_session_frame_info(handle, &mut info) },
         CUTCAP_NO_FRAME
     );
-    let path: Vec<u16> = "C:/clips/a.mkv".encode_utf16().collect();
+    let fixture = fixture("a.mkv");
+    let path: Vec<u16> = fixture.to_str().unwrap().encode_utf16().collect();
     // SAFETY (test): valid local buffer.
     assert_eq!(
         unsafe { cutcap_session_import(handle, path.as_ptr(), path.len()) },

@@ -28,9 +28,10 @@ pub struct SessionView {
 pub struct ProjectView {
     pub id: String,
     pub name: String,
-    /// Persistence is not implemented; the frontend must not claim otherwise.
+    /// True only when this exact document revision has completed saving/opening.
     pub saved: bool,
     pub clip_count: usize,
+    pub document: DocumentStatus,
 }
 
 #[derive(Debug, Clone, Default, Serialize)]
@@ -48,6 +49,7 @@ pub struct TrackView {
     /// Per-family number shown in the header ("V1", "A2").
     pub badge: String,
     pub selected: bool,
+    pub lane_label: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -62,6 +64,9 @@ pub struct MediaView {
     pub has_audio: bool,
     /// The source shown in the viewer; independent of timeline selection.
     pub selected: bool,
+    pub availability: Availability,
+    pub detail: String,
+    pub path: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -185,7 +190,54 @@ pub fn media_view(asset: &MediaSummary, selected: bool) -> MediaView {
         estimated: info.duration_is_estimate,
         has_audio: !info.audio_streams.is_empty(),
         selected,
+        availability: Availability::Ready,
+        detail: "Source verified".into(),
+        path: asset.path.to_string_lossy().into_owned(),
     }
+}
+
+pub fn media_view_with_state(
+    asset: Option<&MediaSummary>,
+    state: &MediaAvailability,
+    selected: bool,
+) -> MediaView {
+    let mut view = asset
+        .map(|asset| media_view(asset, selected))
+        .unwrap_or_else(|| MediaView {
+            id: state.id.to_string(),
+            name: state
+                .path
+                .file_name()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .into_owned(),
+            resolution: "—".into(),
+            format: "Metadata unavailable".into(),
+            duration: "--:--".into(),
+            duration_ms: None,
+            estimated: false,
+            has_audio: false,
+            selected,
+            availability: state.state,
+            detail: state.detail.clone(),
+            path: state.path.to_string_lossy().into_owned(),
+        });
+    view.availability = state.state;
+    view.detail = state.detail.clone();
+    view.path = state.path.to_string_lossy().into_owned();
+    if state.state != Availability::Ready {
+        view.format = format!(
+            "{} · {}",
+            match state.state {
+                Availability::Checking => "Checking",
+                Availability::Missing => "Missing media",
+                Availability::Changed => "Source changed",
+                _ => "Unavailable",
+            },
+            view.format
+        );
+    }
+    view
 }
 
 /// Track headers; badges number each family in order ("V1", "A1", "V2").
@@ -211,6 +263,14 @@ pub fn track_views(snapshot: &ProjectSnapshot) -> Vec<TrackView> {
                 kind,
                 badge,
                 selected: snapshot.selection == SelectionState::Track(track.id),
+                lane_label: if track.clip_count == 0 {
+                    format!("Empty {kind} track")
+                } else {
+                    format!(
+                        "{} saved clips · timeline editing unavailable",
+                        track.clip_count
+                    )
+                },
             }
         })
         .collect()
@@ -246,7 +306,14 @@ pub fn project_sections(snapshot: &ProjectSnapshot) -> Vec<SectionView> {
             "Timeline",
             vec![
                 field("Tracks", format!("{video} video, {audio} audio")),
-                field("Clips", "None yet"),
+                field(
+                    "Clips",
+                    if snapshot.clip_count == 0 {
+                        "None yet".into()
+                    } else {
+                        snapshot.clip_count.to_string()
+                    },
+                ),
                 field("Clock", format!("{} per tick", clock(snapshot.timebase))),
             ],
         ),
@@ -261,7 +328,14 @@ pub fn project_sections(snapshot: &ProjectSnapshot) -> Vec<SectionView> {
                         count => format!("{count} videos"),
                     },
                 ),
-                field("Storage", "In memory, not saved"),
+                field(
+                    "Storage",
+                    if snapshot.document.dirty {
+                        "Unsaved changes"
+                    } else {
+                        "Saved project"
+                    },
+                ),
             ],
         ),
     ]
@@ -287,7 +361,7 @@ pub fn track_sections(snapshot: &ProjectSnapshot, track: &TrackSummary) -> Vec<S
                     },
                 ),
                 field("Order", position),
-                field("Clips", "Empty"),
+                field("Clips", track.clip_count.to_string()),
             ],
         ),
         section(

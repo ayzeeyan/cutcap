@@ -1,0 +1,110 @@
+{
+  "date": "2026-11-04",
+  "baseline": "3af9d04",
+  "branch": "codex/phase-3a-persistence",
+  "rust": "1.99.1",
+  "dotnetSdk": "10.0.403 (global.json 10.0.401/latestFeature)",
+  "ffmpeg": "9.0.1-essentials_build-www.gyan.dev",
+  "checks": [
+    {
+      "command": "cargo fmt --all -- --check",
+      "exitCode": 0,
+      "seconds": 0.4
+    },
+    {
+      "command": "cargo clippy --workspace --all-targets -- -D warnings",
+      "exitCode": 0,
+      "seconds": 0.84
+    },
+    {
+      "command": "cargo test --workspace",
+      "exitCode": 0,
+      "seconds": 5.68
+    },
+    {
+      "command": "cargo build --workspace",
+      "exitCode": 0,
+      "seconds": 0.22
+    },
+    {
+      "command": "cargo build --release",
+      "exitCode": 0,
+      "seconds": 4.46
+    },
+    {
+      "command": "dotnet build CutCap.slnx -c Debug -nologo",
+      "exitCode": 0,
+      "seconds": 1.91
+    },
+    {
+      "command": "dotnet test CutCap.slnx -c Debug -nologo --no-build",
+      "exitCode": 0,
+      "seconds": 14.27
+    },
+    {
+      "command": "dotnet build CutCap.slnx -c Release -nologo",
+      "exitCode": 0,
+      "seconds": 2.97
+    },
+    {
+      "command": "dotnet publish apps/CutCap.Desktop/CutCap.Desktop.csproj -c Release -r win-x64 --self-contained true -o artifacts/publish/win-x64 -nologo",
+      "exitCode": 0,
+      "seconds": 2.15
+    }
+  ],
+  "rustTests": {
+    "passed": 69,
+    "defaultIgnored": 9,
+    "externalFfmpegPassed": 7,
+    "helperTests": "the two ignored subprocess helpers are invoked by parent unit tests"
+  },
+  "dotnetTests": {
+    "desktopPassed": 28,
+    "interopPassed": 29,
+    "failed": 0,
+    "skipped": 0
+  },
+  "additionalChecks": [
+    {
+      "command": "cargo clippy --workspace --all-targets --all-features --locked -- -D warnings",
+      "exitCode": 0
+    },
+    {
+      "command": "cargo test --workspace --all-features --locked",
+      "exitCode": 0
+    },
+    {
+      "command": "cargo test -p cutcap-media --test ffmpeg_integration -- --ignored --test-threads=1",
+      "exitCode": 0,
+      "passed": 7
+    },
+    {
+      "command": "cargo run -p cutcap-ffi --features gpu-diagnostics --bin cutcap-gpu-info",
+      "exitCode": 0,
+      "adapters": [
+        "Intel(R) Graphics / Dx12 / IntegratedGpu",
+        "Microsoft Basic Render Driver / Dx12 / Cpu"
+      ]
+    }
+  ],
+  "diagnosticRuns": {
+    "normal": {
+      "episodes": 9,
+      "reportError": null,
+      "exitCode": "not captured; completed report contains all 9 episodes"
+    },
+    "minimum": {
+      "episodes": 9,
+      "exitCode": 0
+    },
+    "minimumWithUiInspection": {
+      "episodes": 9,
+      "exitCode": 0
+    }
+  },
+  "limitations": [
+    "No remote CI run claimed",
+    "No power-loss/directory-flush guarantee",
+    "No other DPI/monitor or screen-reader validation"
+  ]
+}

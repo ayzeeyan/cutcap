@@ -1,6 +1,6 @@
 # CutCap
 
-A native Windows video editor foundation: an Avalonia (C#/.NET 10) interface over a Rust engine. It imports local videos, shows real metadata and decodes source still frames asynchronously. Phase 2 adds continuous source playback (video only) through ABI 2, with working Play/Pause/Stop, scrubbing and seeking in the player. Timeline playback and editing, audio, project saving and export are not implemented.
+A native Windows video editor foundation: an Avalonia (C#/.NET 10) interface over a Rust engine. It imports local videos, shows real metadata and plays/seeks source video. Phase 3A adds real `.cutcap` project save/open, source revalidation and relinking through ABI 3. Timeline playback/editing, audio playback and export are not implemented.
 
 ```powershell
 dotnet run --project apps/CutCap.Desktop      # builds the Rust engine DLL first
@@ -17,14 +17,17 @@ Requires Windows 11 x64, the pinned Rust/MSVC toolchain, the .NET 10 SDK (global
 - Real empty video/audio tracks, adding tracks, track selection (click or arrow keys) and a fresh in-memory project, through a bounded command worker.
 - Persistent, bounded video-only playback engine: real CFR/VFR/B-frame PTS, monotonic clock, pause/resume, playing/paused seeks, buffering, EOF and cancellation. See the [playback contract](docs/PHASE_2_PLAYBACK_CONTRACT.md) and [Phase 2 report](docs/PHASE_2_PLAYBACK_REPORT.md) for API integration status and actual editor measurements.
 - Timeline ruler/lanes drawn by custom controls, zoom 50–200 % and two-axis scrolling.
+- Background project Save/Save As/Open, exact snapshot revisions and unsaved-change protection. Missing/changed media remains in the library; relink the original through the Project menu. See [project format and integrity limits](docs/PROJECT_FORMAT.md).
 - Optional DX12 adapter diagnostic: `cargo run -p cutcap-ffi --features gpu-diagnostics --bin cutcap-gpu-info`.
 
-Audio/Text/Stickers/Effects/Transitions/Filters/Adjustment, clip inspector tabs, timeline preview, Undo/Redo, Split/Delete, Export and track visibility/mute/lock are visible but say they are not available yet. Closing or creating a new project discards in-memory assets and tracks; originals are never modified.
+Audio/Text/Stickers/Effects/Transitions/Filters/Adjustment, clip inspector tabs, timeline preview, Undo/Redo, Split/Delete, Export and track visibility/mute/lock are visible but say they are not available yet. New/Open/close prompts before discarding unsaved document changes. Originals are never modified.
 
 | Shortcut | Action |
 |---|---|
 | Space | Play / pause the source (not while typing) |
-| Ctrl+N | New in-memory project |
+| Ctrl+N | New project |
+| Ctrl+O | Open .cutcap project |
+| Ctrl+S / Ctrl+Shift+S | Save / Save As |
 | Ctrl+I | Import a local source video |
 | Ctrl+Plus / Ctrl+Minus | Timeline zoom (50–200%) |
 | Ctrl+0 | Reset layout and zoom |

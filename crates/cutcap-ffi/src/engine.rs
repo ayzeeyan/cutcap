@@ -1,4 +1,5 @@
 //! The lightweight command owner. Future media jobs must not run in this loop.
+use crate::persistence::{Document, FileJob, FileOutput, SavedSource};
 use cutcap_contracts::*;
 use cutcap_core::{Project, ProjectError, Track};
 use std::collections::BTreeMap;
@@ -9,22 +10,54 @@ pub struct Engine {
     selection: SelectionState,
     media_details: BTreeMap<MediaId, MediaSummary>,
     source_media: Option<MediaId>,
+    sources: BTreeMap<MediaId, SavedSource>,
+    availability: BTreeMap<MediaId, MediaAvailability>,
+    document: DocumentStatus,
+    file_job: Option<FileJob>,
 }
 
 impl Engine {
+    pub fn file_busy(&self) -> bool {
+        self.file_job.is_some()
+    }
     pub fn handle(&mut self, envelope: CommandEnvelope) -> EngineEvent {
         let request_id = envelope.request_id;
-        match self.execute(envelope) {
+        let verifying = matches!(envelope.command, Command::VerifyMedia { .. });
+        let result = self.begin_file(&envelope);
+        if let Ok(true) = result {
+            return match self.snapshot() {
+                Ok(snapshot) => EngineEvent::Updated { snapshot },
+                Err(error) => EngineEvent::Failed { request_id, error },
+            };
+        }
+        match result.and_then(|_| self.execute(envelope)) {
             Ok(snapshot) => EngineEvent::Completed {
                 request_id,
                 snapshot,
+            },
+            Err(error) if verifying => EngineEvent::FileFailed {
+                request_id,
+                error,
+                snapshot: self.snapshot().ok(),
             },
             Err(error) => EngineEvent::Failed { request_id, error },
         }
     }
 
     fn execute(&mut self, envelope: CommandEnvelope) -> Result<ProjectSnapshot, EngineError> {
+        if self.file_job.as_ref().is_some_and(|job| !job.saving) {
+            return Err(EngineError::new(
+                ErrorCode::Busy,
+                "Wait for project opening to finish.",
+            ));
+        }
         if let Command::NewProject { name } = envelope.command {
+            if self.file_job.is_some() {
+                return Err(EngineError::new(
+                    ErrorCode::Busy,
+                    "Wait for the project save to finish.",
+                ));
+            }
             let mut project =
                 Project::new(name, Timebase::DEFAULT_TIMELINE).map_err(domain_error)?;
             for (name, kind) in [("Video 1", TrackKind::Video), ("Audio 1", TrackKind::Audio)] {
@@ -40,6 +73,14 @@ impl Engine {
             self.selection = SelectionState::None;
             self.media_details.clear();
             self.source_media = None;
+            self.sources.clear();
+            self.availability.clear();
+            self.document = DocumentStatus {
+                revision: 1,
+                state: "idle".into(),
+                dirty: true,
+                ..Default::default()
+            };
         } else {
             let project = self
                 .project
@@ -53,7 +94,7 @@ impl Engine {
             }
             match envelope.command {
                 Command::GetSnapshot => {}
-                Command::RegisterMedia { media } => {
+                Command::RegisterMedia { media, fingerprint } => {
                     let media = *media;
                     media.metadata.validate().map_err(|error| {
                         EngineError::new(ErrorCode::InvalidInput, error.to_string())
@@ -78,10 +119,104 @@ impl Engine {
                         })
                         .map_err(domain_error)?;
                     self.source_media = Some(media.id);
+                    self.sources.insert(
+                        media.id,
+                        SavedSource {
+                            id: media.id,
+                            metadata: Some(media.metadata.clone()),
+                            fingerprint,
+                        },
+                    );
+                    self.availability.insert(
+                        media.id,
+                        MediaAvailability {
+                            id: media.id,
+                            path: media.path.clone(),
+                            state: Availability::Ready,
+                            detail: "Source verified".into(),
+                        },
+                    );
                     self.media_details.insert(media.id, media);
+                    self.document.revision += 1;
+                }
+                Command::VerifyMedia {
+                    media_id,
+                    result,
+                    relink,
+                } => {
+                    let asset = project
+                        .media()
+                        .iter()
+                        .find(|m| m.id == media_id)
+                        .ok_or_else(|| {
+                            EngineError::new(
+                                ErrorCode::NotFound,
+                                "Media no longer belongs to this project.",
+                            )
+                        })?;
+                    let path = asset.path.clone();
+                    let source = self.sources.get(&media_id).ok_or_else(|| {
+                        EngineError::new(ErrorCode::NotFound, "Source record is missing.")
+                    })?;
+                    let verification = result.and_then(|verified| {
+                        if verified.media.id != media_id { return Err(EngineError::new(ErrorCode::InvalidInput, "Source identity mismatch.")); }
+                        if source.fingerprint.is_none() || source.metadata.is_none() {
+                            return Err(EngineError::new(ErrorCode::Unsupported, "This saved source has no verified video identity. Import supported video as a new asset."));
+                        }
+                        if source.fingerprint.as_ref() != Some(&verified.fingerprint)
+                            || source.metadata.as_ref() != Some(&verified.media.metadata) {
+                            return Err(EngineError::new(ErrorCode::InvalidInput, "Source content or metadata changed. Relink the original file, or import the changed file as a new asset."));
+                        }
+                        Ok(verified)
+                    });
+                    match verification {
+                        Ok(verified) => {
+                            if relink && path != verified.media.path {
+                                project
+                                    .relink_media(media_id, verified.media.path.clone())
+                                    .map_err(domain_error)?;
+                                self.document.revision += 1;
+                            }
+                            self.availability.insert(
+                                media_id,
+                                MediaAvailability {
+                                    id: media_id,
+                                    path: verified.media.path.clone(),
+                                    state: Availability::Ready,
+                                    detail: "Source verified".into(),
+                                },
+                            );
+                            self.media_details.insert(media_id, verified.media);
+                        }
+                        Err(error) => {
+                            // A failed relink must not invalidate a previously ready source.
+                            if !relink
+                                || self
+                                    .availability
+                                    .get(&media_id)
+                                    .is_none_or(|s| s.state != Availability::Ready)
+                            {
+                                let state = match error.code {
+                                    ErrorCode::NotFound => Availability::Missing,
+                                    ErrorCode::InvalidInput => Availability::Changed,
+                                    _ => Availability::Unavailable,
+                                };
+                                self.availability.insert(
+                                    media_id,
+                                    MediaAvailability {
+                                        id: media_id,
+                                        path,
+                                        state,
+                                        detail: error.to_string(),
+                                    },
+                                );
+                            }
+                            return Err(error);
+                        }
+                    }
                 }
                 Command::SelectMedia { media_id } => {
-                    if !self.media_details.contains_key(&media_id) {
+                    if !project.media().iter().any(|asset| asset.id == media_id) {
                         return Err(EngineError::new(
                             ErrorCode::NotFound,
                             "This media asset is no longer in this project.",
@@ -109,6 +244,7 @@ impl Engine {
                         })
                         .map_err(domain_error)?;
                     self.selection = SelectionState::Track(id);
+                    self.document.revision += 1;
                 }
                 Command::Select { selection } => {
                     project
@@ -132,6 +268,10 @@ impl Engine {
             .project
             .as_ref()
             .ok_or_else(|| EngineError::new(ErrorCode::NotFound, "No project is open."))?;
+        let mut clip_counts = BTreeMap::<TrackId, usize>::new();
+        for clip in project.clips() {
+            *clip_counts.entry(clip.track_id).or_default() += 1;
+        }
         Ok(ProjectSnapshot {
             id: project.id(),
             name: project.name().into(),
@@ -143,6 +283,7 @@ impl Engine {
                     id: track.id,
                     name: track.name.clone(),
                     kind: track.kind,
+                    clip_count: clip_counts.get(&track.id).copied().unwrap_or(0),
                 })
                 .collect(),
             media_count: project.media().len(),
@@ -154,6 +295,159 @@ impl Engine {
                 .filter_map(|asset| self.media_details.get(&asset.id).cloned())
                 .collect(),
             source_media: self.source_media,
+            media_state: project
+                .media()
+                .iter()
+                .map(|asset| {
+                    self.availability
+                        .get(&asset.id)
+                        .cloned()
+                        .unwrap_or(MediaAvailability {
+                            id: asset.id,
+                            path: asset.path.clone(),
+                            state: Availability::Unavailable,
+                            detail: "Source has not been verified.".into(),
+                        })
+                })
+                .collect(),
+            document: DocumentStatus {
+                dirty: self.document.saved_revision != Some(self.document.revision),
+                ..self.document.clone()
+            },
+        })
+    }
+
+    fn begin_file(&mut self, envelope: &CommandEnvelope) -> Result<bool, EngineError> {
+        if !matches!(
+            envelope.command,
+            Command::SaveProject { .. } | Command::OpenProject { .. }
+        ) {
+            return Ok(false);
+        }
+        if self.file_job.is_some() {
+            return Err(EngineError::new(
+                ErrorCode::Busy,
+                "A project file operation is already in progress.",
+            ));
+        }
+        let project = self
+            .project
+            .as_ref()
+            .ok_or_else(|| EngineError::new(ErrorCode::NotFound, "No project is open."))?;
+        if envelope.project_id != Some(project.id()) {
+            return Err(EngineError::new(
+                ErrorCode::StaleProject,
+                "Project changed before this operation.",
+            ));
+        }
+        let job = match &envelope.command {
+            Command::SaveProject { path } => {
+                let path = path
+                    .as_ref()
+                    .or(self.document.path.as_ref())
+                    .ok_or_else(|| {
+                        EngineError::new(
+                            ErrorCode::InvalidInput,
+                            "Use Save As to choose a project file.",
+                        )
+                    })?;
+                let sources = project
+                    .media()
+                    .iter()
+                    .map(|m| {
+                        self.sources.get(&m.id).cloned().unwrap_or(SavedSource {
+                            id: m.id,
+                            metadata: None,
+                            fingerprint: None,
+                        })
+                    })
+                    .collect();
+                FileJob::save(
+                    envelope.request_id,
+                    self.document.revision,
+                    Document::new(project.clone(), sources)?,
+                    path.clone(),
+                )?
+            }
+            Command::OpenProject { path } => FileJob::open(envelope.request_id, path.clone())?,
+            _ => return Ok(false),
+        };
+        self.document.operation_id = Some(envelope.request_id);
+        self.document.state = if job.saving { "saving" } else { "opening" }.into();
+        self.document.error = None;
+        self.file_job = Some(job);
+        Ok(true)
+    }
+
+    /// Completion is polled by the cheap command owner, never by the UI doing I/O.
+    pub fn poll_file(&mut self) -> Option<EngineEvent> {
+        let result = self.file_job.as_mut()?.poll()?;
+        let job = self.file_job.take()?;
+        let request_id = job.request_id;
+        match result {
+            Ok(FileOutput::Saved(path)) => {
+                self.document.path = Some(path);
+                self.document.saved_revision = Some(job.revision);
+                self.document.state = "saved".into();
+            }
+            Ok(FileOutput::Opened(doc, path)) => {
+                self.project = Some(doc.project);
+                self.selection = SelectionState::None;
+                self.source_media = None;
+                self.media_details.clear();
+                self.availability.clear();
+                self.sources = doc.sources.into_iter().map(|s| (s.id, s)).collect();
+                if let Some(project) = &self.project {
+                    for asset in project.media() {
+                        if let Some(metadata) =
+                            self.sources.get(&asset.id).and_then(|s| s.metadata.clone())
+                        {
+                            self.media_details.insert(
+                                asset.id,
+                                MediaSummary {
+                                    id: asset.id,
+                                    path: asset.path.clone(),
+                                    metadata,
+                                },
+                            );
+                        }
+                        self.availability.insert(
+                            asset.id,
+                            MediaAvailability {
+                                id: asset.id,
+                                path: asset.path.clone(),
+                                state: Availability::Checking,
+                                detail: "Checking source content and metadata…".into(),
+                            },
+                        );
+                    }
+                }
+                self.document = DocumentStatus {
+                    path: Some(path),
+                    revision: 0,
+                    saved_revision: Some(0),
+                    state: "opened".into(),
+                    operation_id: Some(request_id),
+                    ..Default::default()
+                };
+            }
+            Err(error) => {
+                self.document.state = "failed".into();
+                self.document.error = Some(error.to_string());
+                // Include the failed status without acknowledging a successful command.
+                return Some(EngineEvent::FileFailed {
+                    request_id,
+                    error,
+                    snapshot: self.snapshot().ok(),
+                });
+            }
+        }
+        Some(match self.snapshot() {
+            Ok(snapshot) => EngineEvent::Completed {
+                request_id,
+                snapshot,
+            },
+            Err(error) => EngineEvent::Failed { request_id, error },
         })
     }
 }
@@ -303,6 +597,7 @@ mod tests {
         };
         let register = |asset: MediaSummary| Command::RegisterMedia {
             media: Box::new(asset),
+            fingerprint: None,
         };
         assert!(matches!(
             request(&mut engine, Some(ProjectId::new()), register(media.clone())),
@@ -357,5 +652,52 @@ mod tests {
             EngineEvent::Failed { .. }
         ));
         assert_eq!(engine.snapshot().unwrap(), next);
+    }
+
+    #[test]
+    fn edits_before_save_completion_remain_dirty_and_disk_keeps_consistent_revision() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("revision.cutcap");
+        let mut engine = Engine::default();
+        let initial = create(&mut engine);
+        let saving = request(
+            &mut engine,
+            Some(initial.id),
+            Command::SaveProject {
+                path: Some(path.clone()),
+            },
+        );
+        assert!(matches!(saving, EngineEvent::Updated { .. }));
+        assert!(matches!(
+            request(
+                &mut engine,
+                Some(initial.id),
+                Command::AddTrack {
+                    kind: TrackKind::Video
+                }
+            ),
+            EngineEvent::Completed { .. }
+        ));
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+        let completed = loop {
+            if let Some(event) = engine.poll_file() {
+                break event;
+            }
+            assert!(std::time::Instant::now() < deadline);
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        };
+        let EngineEvent::Completed { snapshot, .. } = completed else {
+            panic!("save failed")
+        };
+        assert!(snapshot.document.dirty);
+        assert_eq!(
+            snapshot.document.saved_revision,
+            Some(initial.document.revision)
+        );
+        assert_eq!(snapshot.document.revision, initial.document.revision + 1);
+        assert_eq!(snapshot.tracks.len(), 3);
+        let disk = crate::persistence::open(&path, &cutcap_media::Cancellation::default()).unwrap();
+        assert_eq!(disk.project.tracks().len(), 2);
+        assert_eq!(disk.project.id(), initial.id);
     }
 }

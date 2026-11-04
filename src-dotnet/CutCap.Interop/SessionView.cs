@@ -21,11 +21,17 @@ public sealed record SessionView(
     PreviewMetrics Metrics,
     PlaybackView? Playback = null);
 
-public sealed record ProjectView(string Id, string Name, bool Saved, int ClipCount);
+public sealed record ProjectView(string Id, string Name, bool Saved, int ClipCount, DocumentStatus? Document = null);
+
+public sealed record DocumentStatus(string? Path, ulong Revision, ulong? SavedRevision, bool Dirty,
+    string? OperationId, string State, string? Error)
+{
+    public bool Busy => State is "saving" or "opening";
+}
 
 public sealed record StatusView(string Text, bool Error);
 
-public sealed record TrackView(string Id, string Name, string Kind, string Badge, bool Selected)
+public sealed record TrackView(string Id, string Name, string Kind, string Badge, bool Selected, string LaneLabel = "")
 {
     public bool IsVideo => Kind == "video";
 }
@@ -39,7 +45,8 @@ public sealed record MediaView(
     long? DurationMs,
     bool Estimated,
     bool HasAudio,
-    bool Selected);
+    bool Selected,
+    string Availability = "ready", string Detail = "", string Path = "");
 
 public sealed record ImportView(bool Busy, bool Error, string Message);
 

@@ -38,7 +38,7 @@ internal static unsafe partial class NativeMethods
     private const string Library = "cutcap_engine";
 
     /// <summary>The ABI this frontend was written against.</summary>
-    public const uint AbiVersion = 2;
+    public const uint AbiVersion = 3;
     public const uint PixelRgba8Opaque = 1;
 
     [LibraryImport(Library, EntryPoint = "cutcap_abi_version")]
@@ -55,6 +55,18 @@ internal static unsafe partial class NativeMethods
 
     [LibraryImport(Library, EntryPoint = "cutcap_session_new_project")]
     public static partial NativeStatus NewProject(SessionSafeHandle session);
+
+    [LibraryImport(Library, EntryPoint = "cutcap_session_save_project")]
+    public static partial NativeStatus SaveProject(SessionSafeHandle session);
+
+    [LibraryImport(Library, EntryPoint = "cutcap_session_save_project_as")]
+    public static partial NativeStatus SaveProjectAs(SessionSafeHandle session, char* path, nuint length);
+
+    [LibraryImport(Library, EntryPoint = "cutcap_session_open_project")]
+    public static partial NativeStatus OpenProject(SessionSafeHandle session, char* path, nuint length);
+
+    [LibraryImport(Library, EntryPoint = "cutcap_session_relink_media")]
+    public static partial NativeStatus RelinkMedia(SessionSafeHandle session, byte* id, nuint idLength, char* path, nuint pathLength);
 
     [LibraryImport(Library, EntryPoint = "cutcap_session_add_track")]
     public static partial NativeStatus AddTrack(SessionSafeHandle session, uint kind);

@@ -40,6 +40,11 @@ public sealed partial class MainWindowViewModel : ObservableObject
         SelectedCategory = Categories[0];
         engine.ViewChanged += (_, view) => Apply(view);
         engine.CommandRejected += (_, message) => ShowRejection(message);
+        Library.PropertyChanged += (_, args) =>
+        {
+            if (args.PropertyName is nameof(Library.SelectedItem) or nameof(Library.ImportBusy))
+            { RelinkMediaCommand.NotifyCanExecuteChanged(); }
+        };
     }
 
     public MediaLibraryViewModel Library { get; }
@@ -73,7 +78,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
     public bool ShowMediaCategory => SelectedCategory.IsAvailable;
     public bool ShowUnavailableCategory => !SelectedCategory.IsAvailable;
 
-    private bool CanImport() => EngineReady && !Library.ImportBusy;
+    private bool CanImport() => EngineReady && !DocumentBusy && !Library.ImportBusy;
 
     [RelayCommand(CanExecute = nameof(CanImport))]
     private async Task ImportAsync()
@@ -105,9 +110,6 @@ public sealed partial class MainWindowViewModel : ObservableObject
     }
 
     [RelayCommand(CanExecute = nameof(EngineReady))]
-    private void NewProject() => _engine.Run(session => session.NewProject());
-
-    [RelayCommand(CanExecute = nameof(EngineReady))]
     private void ClearSelection() => _engine.Run(session => session.ClearSelection());
 
     [RelayCommand]
@@ -121,6 +123,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
     {
         EngineReady = view.EngineReady;
         ProjectName = view.Project?.Name ?? "Starting…";
+        if (_lastView?.Project != view.Project) { ApplyDocument(view.Project); }
         // Show the engine status whenever it (or the pending count) changes; a local
         // rejection message stays until the engine reports something new.
         if (_engineStatus != (view.Status, view.Pending))
@@ -128,6 +131,11 @@ public sealed partial class MainWindowViewModel : ObservableObject
             _engineStatus = (view.Status, view.Pending);
             StatusText = view.Status.Text + (view.Pending > 0 ? $" · {view.Pending} pending" : "");
             StatusIsError = view.Status.Error;
+        }
+        if (view.Project?.Document?.Error is { } fileError)
+        {
+            StatusText = fileError;
+            StatusIsError = true;
         }
         var changes = ViewChanges.Between(_lastView, view);
         _lastView = view;

@@ -18,7 +18,7 @@ public sealed partial class TrackViewModel(TrackView track) : ObservableObject
     public string Badge => Track.Badge;
     public bool IsVideo => Track.IsVideo;
     public bool IsAudio => !Track.IsVideo;
-    public string AccessibleName => $"{Track.Name}, empty {(Track.IsVideo ? "video" : "audio")} track";
+    public string AccessibleName => $"{Track.Name}, {Track.LaneLabel}";
 
     partial void OnTrackChanged(TrackView value)
     {
@@ -118,7 +118,7 @@ public sealed partial class TimelineViewModel : ObservableObject
         {
             EngineReady = view.EngineReady;
             Sync.Items(Tracks, view.Tracks, t => t.Id, t => t.Id, t => new TrackViewModel(t), (item, t) => item.Track = t);
-            Lanes = view.Tracks.Select(t => new LaneInfo(t.IsVideo, t.Selected)).ToArray();
+            Lanes = view.Tracks.Select(t => new LaneInfo(t.IsVideo, t.Selected, t.LaneLabel)).ToArray();
             SelectedTrack = Tracks.FirstOrDefault(t => t.Track.Selected);
         }
         finally

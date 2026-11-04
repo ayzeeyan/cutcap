@@ -62,6 +62,7 @@ pub struct Playback {
     request: Option<DecodeRequest>,
     pending: VecDeque<DecodedFrame>,
     first: bool,
+    prerolled: bool,
     eof: bool,
     offered_generation: Option<u64>,
     copied_generation: Option<u64>,
@@ -76,6 +77,7 @@ impl Playback {
             request: None,
             pending: VecDeque::new(),
             first: true,
+            prerolled: false,
             eof: false,
             offered_generation: None,
             copied_generation: None,
@@ -95,6 +97,7 @@ impl Playback {
         self.decoder.request(request.clone())?;
         self.pending.clear();
         self.first = true;
+        self.prerolled = false;
         self.eof = false;
         self.clock.freeze_at(0);
         self.offered_generation = None;
@@ -124,6 +127,9 @@ impl Playback {
         if self.active() {
             self.view.desired_playing = true;
             if self.first {
+                self.view.state = "starting";
+            } else if !self.prerolled && self.pending.is_empty() && !self.eof {
+                // A paused first frame is not evidence that the next PTS is ready.
                 self.view.state = "starting";
             } else {
                 self.clock.resume(now);
@@ -227,6 +233,13 @@ impl Playback {
         self.view.process_id = progress.process_id;
         self.view.buffered = self.pending.len() + progress.buffered;
         if self.first {
+            // A running clock needs a real successor (or confirmed EOF). The
+            // first PAM packet can arrive one pump before its successor; starting
+            // the clock there falsely classified normal preroll as starvation.
+            // This uses actual VFR timestamps, with no guessed frame deadline.
+            if self.view.desired_playing && self.pending.len() < 2 && !self.eof {
+                return Ok((None, false));
+            }
             let Some(frame) = self.pending.pop_front() else {
                 return Ok((None, false));
             };
@@ -237,6 +250,7 @@ impl Playback {
                     .min(u128::from(u64::MAX)) as u64,
             );
             self.first = false;
+            self.prerolled = !self.pending.is_empty() || self.eof;
             if self.view.desired_playing {
                 self.clock.start(ns, now);
                 self.view.state = "playing";
@@ -250,6 +264,14 @@ impl Playback {
         }
         if !self.view.desired_playing {
             return Ok((None, before != self.view.state));
+        }
+        if self.view.state == "starting" {
+            if self.pending.is_empty() && !self.eof {
+                return Ok((None, false));
+            }
+            self.clock.resume(now);
+            self.prerolled = true;
+            self.view.state = "playing";
         }
         if self.view.state == "buffering" && !self.pending.is_empty() {
             self.clock.resume(now);
@@ -328,6 +350,7 @@ mod tests {
         let mut p = Playback::start(Arc::new(Idle)).unwrap();
         p.request = Some(request);
         p.first = false;
+        p.prerolled = true;
         p.view.desired_playing = true;
         p.view.state = "playing";
         p.clock.start(0, now);
@@ -367,6 +390,80 @@ mod tests {
         p.tick(now + Duration::from_millis(252)).unwrap();
         assert_eq!(p.view.state, "ended");
     }
+    #[test]
+    fn startup_waits_for_real_lookahead_without_a_false_stall() {
+        let now = Instant::now();
+        let mut p = scheduler(now);
+        p.first = true;
+        p.view.state = "starting";
+        p.clock.freeze_at(0);
+        p.pending.push_back(frame(&p, 200));
+        assert!(p.tick(now).unwrap().0.is_none());
+        assert!(p.tick(now + Duration::from_secs(2)).unwrap().0.is_none());
+        assert_eq!(p.view.state, "starting");
+        assert_eq!(p.view.buffer_stalls, 0);
+        assert_eq!(p.view.clock_ms, 0);
+        p.pending.push_back(frame(&p, 700)); // VFR gap, not a nominal frame interval
+        assert_eq!(
+            p.tick(now + Duration::from_secs(3))
+                .unwrap()
+                .0
+                .unwrap()
+                .actual
+                .ticks,
+            200
+        );
+        assert_eq!(p.view.state, "playing");
+        assert!(
+            p.tick(now + Duration::from_millis(3015))
+                .unwrap()
+                .0
+                .is_none()
+        );
+        assert_eq!(p.view.state, "playing");
+        assert_eq!(p.view.buffer_stalls, 0);
+        assert_eq!(
+            p.tick(now + Duration::from_millis(3500))
+                .unwrap()
+                .0
+                .unwrap()
+                .actual
+                .ticks,
+            700
+        );
+        p.tick(now + Duration::from_millis(3501)).unwrap();
+        assert_eq!(p.view.state, "buffering"); // real exhaustion is still visible
+        assert_eq!(p.view.buffer_stalls, 1);
+        p.tick(now + Duration::from_secs(8)).unwrap();
+        assert_eq!(p.view.clock_ms, 701);
+    }
+
+    #[test]
+    fn single_frame_eof_and_pause_before_preroll_do_not_need_two_frames() {
+        let now = Instant::now();
+        for playing in [false, true] {
+            let mut p = scheduler(now);
+            p.first = true;
+            p.view.state = "starting";
+            p.view.desired_playing = playing;
+            p.eof = playing;
+            p.pending.push_back(frame(&p, 100));
+            let first = p.tick(now).unwrap().0.unwrap();
+            p.offered(1, first.actual).unwrap();
+            p.copied(1, first.actual).unwrap();
+            if playing {
+                p.tick(now).unwrap();
+                assert_eq!(p.view.state, "ended");
+            } else {
+                assert_eq!(p.view.state, "paused");
+                p.resume(now);
+                p.tick(now + Duration::from_secs(1)).unwrap();
+                assert_eq!(p.view.state, "starting");
+            }
+            assert_eq!(p.view.buffer_stalls, 0);
+        }
+    }
+
     #[test]
     fn starvation_freezes_clock_and_recovery_preserves_future_pts() {
         let now = Instant::now();

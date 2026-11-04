@@ -39,6 +39,9 @@ internal sealed class UiProbe
     private long _seekTarget, _seekStarted;
     private string? _seekOldEpoch;
     private bool _seekDone;
+    private readonly List<object> _transitions = [];
+    private PlaybackState? _lastState;
+    private bool _layoutSet;
 
     private UiProbe(string directory)
     {
@@ -60,7 +63,7 @@ internal sealed class UiProbe
         if (probe._error is null && probe._results.Count != 9) probe._error = "Window closed before all benchmark episodes completed.";
         File.WriteAllText(args[1], JsonSerializer.Serialize(new
         {
-            method = "actual CutCap editor, original 16ms EngineHost pump; distinct FrameView.DrawImage generations, not physical scanout; generated playback controlled through public interop methods, visual Play remains frontend-owned",
+            method = "actual CutCap editor and production render-loop/timer pump; distinct FrameView.DrawImage generations, not physical scanout; synthetic sources controlled through public interop; typed state transitions sampled by diagnostics",
             date = DateTimeOffset.UtcNow,
             error = probe._error,
             runs = probe._results
@@ -95,6 +98,16 @@ internal sealed class UiProbe
         {
             var desktop = (IClassicDesktopStyleApplicationLifetime)Application.Current!.ApplicationLifetime!;
             if (desktop.MainWindow?.DataContext is not MainWindowViewModel model || !model.EngineReady) return;
+            if (!_layoutSet)
+            {
+                _layoutSet = true;
+                if (Environment.GetEnvironmentVariable("CUTCAP_PROBE_MIN_LAYOUT") == "1")
+                {
+                    // Official Avalonia window API, in the real application.
+                    desktop.MainWindow.Width = desktop.MainWindow.MinWidth;
+                    desktop.MainWindow.Height = desktop.MainWindow.MinHeight;
+                }
+            }
             _session = model.Player.Session ?? throw new InvalidOperationException("No session");
             var view = _session.LastReadView;
             if (view is null) return;
@@ -117,6 +130,7 @@ internal sealed class UiProbe
                 if (view.Frame is not null && !view.Source.Busy && _frame.HasFrame)
                 {
                     _renders.Clear(); _gaps.Clear(); _generation = 0; _previousRender = 0; _maxTickGap = 0;
+                    _transitions.Clear(); _lastState = null;
                     _seekSamples = [];
                     _hostCpu = _host.TotalProcessorTime.TotalMilliseconds; _childCpu = 0; _peakWorking = 0; _peakPrivate = 0;
                     _frame.FrameRendered += Rendered; _stage = "playing"; _started = Stopwatch.GetTimestamp(); _phase.Restart(); _session.Play();
@@ -124,7 +138,13 @@ internal sealed class UiProbe
             }
             else if (_stage == "playing")
             {
-                var playback = view.Playback ?? throw new InvalidOperationException("Missing ABI 2 view");
+                var playback = view.Playback ?? throw new InvalidOperationException("Missing playback view");
+                if (_lastState != playback.State)
+                {
+                    _lastState = playback.State;
+                    _transitions.Add(new { state = playback.State.ToString(), wallMs = Stopwatch.GetElapsedTime(_started).TotalMilliseconds,
+                        playback.ClockMs, playback.Offered, playback.BufferStalls });
+                }
                 if (playback.State == PlaybackState.Failed) throw new InvalidOperationException(playback.Error);
                 if (_child is null && playback.ProcessId is > 0)
                 { try { _child = Process.GetProcessById((int)playback.ProcessId.Value); } catch (ArgumentException) { } }
@@ -151,6 +171,8 @@ internal sealed class UiProbe
                         playback.Copied,
                         playback.Dropped,
                         playback.BufferStalls,
+                        playback.RequestToReadyUs,
+                        transitions = _transitions.ToArray(),
                         maxDispatcherGapMs = _maxTickGap,
                         peakHostAndChildWorkingSetBytes = _peakWorking,
                         peakHostAndChildPrivateBytes = _peakPrivate,
@@ -194,6 +216,10 @@ internal sealed class UiProbe
     }
     private void Finish(IClassicDesktopStyleApplicationLifetime desktop)
     {
+        // This isolated diagnostic owns only synthetic, disposable sessions.
+        // Production close confirmation is exercised separately on the desktop.
+        if (desktop.MainWindow?.DataContext is MainWindowViewModel model)
+            model.ConfirmUnsaved = () => Task.FromResult(UnsavedChoice.Discard);
         _timer.Stop(); if (_frame is not null) _frame.FrameRendered -= Rendered; _child?.Dispose(); desktop.Shutdown();
     }
 }

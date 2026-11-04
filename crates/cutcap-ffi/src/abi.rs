@@ -28,7 +28,7 @@ use std::{
 
 /// Bump on any incompatible change to a signature, struct layout, status code
 /// or view JSON field the frontend depends on.
-pub const ABI_VERSION: u32 = 2;
+pub const ABI_VERSION: u32 = 3;
 
 pub const CUTCAP_OK: i32 = 0;
 pub const CUTCAP_INVALID_ARGUMENT: i32 = 1;
@@ -380,6 +380,78 @@ pub unsafe extern "C" fn cutcap_session_import(
 fn wide_path(units: &[u16]) -> Result<PathBuf, Fail> {
     use std::os::windows::ffi::OsStringExt;
     Ok(PathBuf::from(std::ffi::OsString::from_wide(units)))
+}
+
+/// Enqueue Save to the current document path.
+#[unsafe(no_mangle)]
+pub extern "C" fn cutcap_session_save_project(handle: u64) -> i32 {
+    guard(|| with_session(handle, |s| Ok(s.save_project(None)?)))
+}
+
+/// Enqueue Save As. Completion/dirty state is reported in project.document.
+/// # Safety
+/// `path` is valid for `path_len` aligned UTF-16 units.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn cutcap_session_save_project_as(
+    handle: u64,
+    path: *const u16,
+    path_len: usize,
+) -> i32 {
+    guard(|| {
+        // SAFETY: forwarded caller contract; helper validates bounds/alignment.
+        let path = unsafe { input_path(path, path_len) }?;
+        with_session(handle, |s| Ok(s.save_project(Some(path))?))
+    })
+}
+
+/// Open/validate off-thread, then atomically adopt. A failure preserves state.
+/// # Safety
+/// `path` is valid for `path_len` aligned UTF-16 units.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn cutcap_session_open_project(
+    handle: u64,
+    path: *const u16,
+    path_len: usize,
+) -> i32 {
+    guard(|| {
+        // SAFETY: forwarded caller contract.
+        let path = unsafe { input_path(path, path_len) }?;
+        with_session(handle, |s| Ok(s.open_project(path)?))
+    })
+}
+
+/// Re-probe and compare original identity before changing a media reference.
+/// # Safety
+/// `id` is valid for `id_len` bytes, `path` for `path_len` aligned UTF-16 units.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn cutcap_session_relink_media(
+    handle: u64,
+    id: *const u8,
+    id_len: usize,
+    path: *const u16,
+    path_len: usize,
+) -> i32 {
+    guard(|| {
+        // SAFETY: forwarded caller buffer contracts, bounded before access.
+        let text = unsafe { input_str(id, id_len) }?;
+        let id = MediaId::try_from(parse_uuid(text)?)
+            .map_err(|_| Fail::argument("Invalid media identifier."))?;
+        // SAFETY: forwarded caller contract.
+        let path = unsafe { input_path(path, path_len) }?;
+        with_session(handle, |s| Ok(s.relink_media(id, path)?))
+    })
+}
+
+unsafe fn input_path(path: *const u16, path_len: usize) -> Result<PathBuf, Fail> {
+    if path.is_null() || !path.is_aligned() || path_len == 0 || path_len > 32_767 {
+        return Err(Fail::argument("Invalid project/source path."));
+    }
+    // SAFETY: checked non-null, alignment and bounded length, caller supplies readable memory.
+    let units = unsafe { std::slice::from_raw_parts(path, path_len) };
+    if units.contains(&0) {
+        return Err(Fail::argument("A path cannot contain a null character."));
+    }
+    wide_path(units)
 }
 
 #[cfg(not(windows))]

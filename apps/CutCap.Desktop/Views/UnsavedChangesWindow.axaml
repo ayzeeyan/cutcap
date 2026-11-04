@@ -1,0 +1,15 @@
+<Window xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="CutCap.Desktop.Views.UnsavedChangesWindow"
+        Title="Unsaved project — CutCap" Width="440" Height="205" CanResize="False"
+        WindowStartupLocation="CenterOwner" Background="{StaticResource Surface}">
+  <Grid Margin="24" RowDefinitions="Auto,*,Auto" RowSpacing="12">
+    <TextBlock Text="Save changes to this project?" FontSize="16" FontWeight="SemiBold" />
+    <TextBlock Grid.Row="1" Text="Your unsaved changes will be lost if you continue without saving."
+               TextWrapping="Wrap" Foreground="{StaticResource Muted}" />
+    <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+      <Button Content="Cancel" Click="Cancel" IsCancel="True" AutomationProperties.Name="Cancel replacement" />
+      <Button Content="Don't save" Click="Discard" AutomationProperties.Name="Continue without saving" />
+      <Button Content="Save" Click="Save" Classes="primary" IsDefault="True" AutomationProperties.Name="Save before continuing" />
+    </StackPanel>
+  </Grid>
+</Window>

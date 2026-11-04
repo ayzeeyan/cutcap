@@ -1,6 +1,29 @@
-# CutCap native engine ABI, version 2
+# CutCap native engine ABI, version 3
 
-`crates/cutcap-ffi` builds `cutcap_engine.dll` (Windows x64, `extern "C"`, the platform's only x64 calling convention). The Avalonia frontend loads it through `src-dotnet/CutCap.Interop`. Source of truth: `crates/cutcap-ffi/src/abi.rs`; the C# mirror is `NativeMethods.cs`. This ABI is versioned separately from the in-process contract (`CONTRACT_VERSION` 2, unchanged) and from project schema 1.
+## Phase 3A additions (current authority)
+
+Rust `ABI_VERSION` and C# `NativeMethods.AbiVersion` are 3; internal CONTRACT_VERSION is 3. Core schema remains 1; `.cutcap` envelope format is 1. All ABI 2 transport/frame layouts, status numbers and ownership rules below remain unchanged. The in-tree frontend refuses older/newer DLLs. Phase 2B's production transport is integrated, not a pending handoff.
+
+| New export | Semantics |
+|---|---|
+| `cutcap_session_save_project(u64)` | Enqueue Save to the last successfully opened/saved path. With no path, terminal error requests Save As. |
+| `cutcap_session_save_project_as(u64, u16* path, usize units)` | Enqueue Save As to an absolute `.cutcap` path. |
+| `cutcap_session_open_project(u64, u16* path, usize units)` | Enqueue validated Open. Old project/media survives any failure. |
+| `cutcap_session_relink_media(u64, u8* id, usize id_len, u16* path, usize units)` | Inspect original-content candidate on the single probe worker; owner alone changes the reference. |
+
+Path input validates pointer/alignment/1..32767 units and rejects embedded NUL before use. IDs retain existing UUID rules. All command returns mean acceptance only; no function above performs file I/O, probing or waiting on the dispatcher. The wrapper exposes SaveProject/SaveProjectAs/OpenProject/RelinkMedia. Project file operations are serialized; queue-full and owner Busy errors remain observable.
+
+Consumed view changes: `project.document` contains `path`, domain `revision`, `saved_revision`, derived `dirty`, `operation_id` (RequestId), `state` (idle/saving/opening/saved/opened/failed) and optional `error`. `project.saved` is true only when a file path exists and the current revision is clean. This domain revision is **not** SessionView.revision (presentation cache invalidation). Saving/Open emit nonterminal Updated snapshots and keep their RequestIds in `pending` through terminal completion/failure. The single frontend document workflow waits for the owner requests to drain, checks a new operation identity and terminal Saved status, and rechecks dirty state before replacement/close; accepted is never shown as saved.
+
+Media rows add `availability` (checking/ready/missing/changed/unavailable), `detail` and resolved `path`. Saved metadata remains context, not readiness. Track rows add Rust-formatted `lane_label` so preserved clip data is not described as an empty track. No pixel array enters the view. Relink completion/failure appears in media availability/import feedback and increments the document revision only on a successful path change.
+
+Only the owner mutates documents/revisions. One file worker owns its immutable snapshot. A bounded session slot retains verification results until the reliable command queue accepts them. Opening the same ProjectId still invalidates the prior source epoch/probe. See PROJECT_FORMAT.md for path/hash checks, bounded parsing, same-directory flush/replace, detached owned file tasks on uninterruptible OS calls and guarantees/limits. UI New/Open/close prompts for unsaved changes; file dialog Cancel leaves state intact.
+
+Playback startup now waits for an actual successor PTS or EOF before anchoring the playing clock (ADR 019). Paused first frames remain immediate; true post-preroll starvation still freezes the clock in Buffering. No frame scheduling deadline or display-refresh assumption changed.
+
+## ABI 2 foundation retained by ABI 3
+
+`crates/cutcap-ffi` builds `cutcap_engine.dll` (Windows x64, `extern "C"`). The Avalonia frontend loads it through `src-dotnet/CutCap.Interop`. Sources of truth are abi.rs and NativeMethods.cs. ABI 3 is versioned independently of in-process contract 3, document format 1 and core schema 1.
 
 ## Shape
 
@@ -42,7 +65,7 @@ All return `int32` status unless noted. Strings are explicit pointer + length, n
 
 ABI 2 keeps this layout and existing function signatures/status numbers. New exports add source transport. Numeric Seek validates source readiness and the 0..24 h range; SeekText preserves grammar-error feedback before source-readiness validation. Successful copy is now a once-per-generation **delivery acknowledgment**, not a physical presentation claim. Reset/seek invalidates copying an old epoch immediately, even while its already copied bitmap remains visible. Caller lengths above isize::MAX are rejected before constructing a slice.
 
-See [PHASE_2_PLAYBACK_CONTRACT.md](PHASE_2_PLAYBACK_CONTRACT.md) for all state/seek/clock/EOF semantics. The managed wrapper adds Play/Pause/Resume/Stop and caches LastReadView for diagnostic readers without extra ABI polling. Only the opt-in FrameView render diagnostic hook changed in the frontend; visual transport bindings remain Claude's integration responsibility.
+See [PHASE_2_PLAYBACK_CONTRACT.md](PHASE_2_PLAYBACK_CONTRACT.md) for state/seek/clock/EOF semantics. The managed wrapper exposes Play/Pause/Resume/Stop and caches LastReadView for diagnostics. Phase 2B integrated the production visual controls; Phase 3A adds document operations while preserving them.
 
 Status codes: 0 OK, 1 INVALID_ARGUMENT, 2 INVALID_HANDLE, 3 ABI_MISMATCH, 4 BUFFER_TOO_SMALL, 5 NO_FRAME, 6 STALE_FRAME, 7 BUSY (bounded queue full), 8 FAILED, 9 PANIC.
 

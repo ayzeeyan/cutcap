@@ -7,7 +7,7 @@ using Avalonia.Media;
 namespace CutCap.Desktop.Controls;
 
 /// <summary>What the lanes need to know about one track; immutable per engine revision.</summary>
-public readonly record struct LaneInfo(bool IsVideo, bool Selected);
+public readonly record struct LaneInfo(bool IsVideo, bool Selected, string LaneLabel);
 
 /// <summary>
 /// Custom-drawn track lanes: one band per track and the timeline playhead.
@@ -90,7 +90,7 @@ public sealed class TimelineLanes : Control
             var lane = lanes[index];
             var band = new Rect(2, index * TrackHeight + 5, Math.Max(0, width - 4), TrackHeight - 10);
             context.DrawRectangle(lane.Selected ? SelectedBrush : BandBrush, lane.Selected ? SelectedPen : null, band, 4, 4);
-            var label = new FormattedText(lane.IsVideo ? "Empty video track" : "Empty audio track",
+            var label = new FormattedText(lane.LaneLabel,
                 CultureInfo.CurrentCulture, FlowDirection.LeftToRight, Ui, 11, LabelBrush);
             context.DrawText(label, new Point(scale.TimeToX(0) + 14, band.Y + (band.Height - label.Height) / 2));
         }

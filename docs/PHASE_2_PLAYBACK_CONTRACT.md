@@ -1,6 +1,8 @@
-# Source playback contract — ABI 2
+# Source playback contract — ABI 2 foundation, retained by ABI 3
 
-Status: engine/interop implementation contract for the frontend owner to review. The owner will relay it to Claude; agreement from Claude is not claimed. This document defines the engine-facing interface before shared signatures change. Avalonia XAML, visual controls and styling remain frontend-owned. Project schema 1 and project-command contract 2 stay unchanged; source playback is independent of the timeline.
+Phase 3A amendment: native ABI and project contracts are now 3 for persistence; core schema stays 1. Phase 2B integrated these production controls. Playing/playing-seek startup now stays Starting/Seeking until an actual successor frame or EOF is ready, then anchors/offers the first frame. Paused first previews still require only one frame. This corrects a false startup Buffering transition without changing due-frame deadlines, guessing a frame interval or delaying the UI indicator. Real post-preroll starvation still freezes the clock in Buffering. See ADR 019 and PHASE_3A_PROJECT_PERSISTENCE_REPORT.md for evidence.
+
+Status: implemented and integrated in Phase 2B; the Phase 3A amendment above is current. Avalonia owns presentation; Rust owns transport/timing and project semantics. Source playback remains independent of the timeline. Earlier Phase 2 reports retain their historical ABI 2 evidence.
 
 ## Commands and acceptance
 
