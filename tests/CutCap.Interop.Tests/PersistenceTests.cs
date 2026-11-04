@@ -4,7 +4,7 @@ using Xunit;
 
 namespace CutCap.Interop.Tests;
 
-/// <summary>Real ABI 3 document workflows; every file is owned by a disposable fixture directory.</summary>
+/// <summary>Real ABI 4 document workflows; every file is owned by a disposable fixture directory.</summary>
 [Collection("engine")]
 public sealed class PersistenceTests
 {

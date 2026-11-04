@@ -1,7 +1,15 @@
 # UIA lookups for the Avalonia build. Visible elements only; interactive types first.
 function All-Elements([IntPtr]$h) {
-  $root = [System.Windows.Automation.AutomationElement]::FromHandle($h)
-  $root.FindAll([System.Windows.Automation.TreeScope]::Descendants, [System.Windows.Automation.Condition]::TrueCondition)
+  # A tree being replaced (for example during Open) can briefly fail the COM walk.
+  for ($attempt = 1; ; $attempt++) {
+    try {
+      $root = [System.Windows.Automation.AutomationElement]::FromHandle($h)
+      return $root.FindAll([System.Windows.Automation.TreeScope]::Descendants, [System.Windows.Automation.Condition]::TrueCondition)
+    } catch {
+      if ($attempt -ge 4) { throw }
+      Start-Sleep -Milliseconds 400
+    }
+  }
 }
 function Visible($e) {
   $r = $e.Current.BoundingRectangle

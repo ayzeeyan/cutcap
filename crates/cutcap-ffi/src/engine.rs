@@ -871,3 +871,7 @@ mod tests {
         assert_eq!(disk.project.id(), initial.id);
     }
 }
+
+#[cfg(test)]
+#[path = "editing_tests.rs"]
+mod editing_tests;

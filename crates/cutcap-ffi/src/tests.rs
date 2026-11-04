@@ -676,3 +676,6 @@ fn abi_frame_copy_validates_buffers_generation_and_stride() {
     assert_eq!(&padded[24..28], &[0, 10, 20, 255]);
     assert_eq!(cutcap_session_destroy(handle), CUTCAP_OK);
 }
+
+#[path = "timeline_tests.rs"]
+mod timeline;
