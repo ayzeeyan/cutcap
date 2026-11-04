@@ -29,9 +29,18 @@ public partial class MainWindow : Window
     /// Space toggles source playback anywhere in the workspace except where it
     /// already means something: text fields keep typing spaces and a focused
     /// button (or toggle) keeps Space for activating itself. Enter is never taken.
+    /// Timeline editing keys (Ctrl+Z, Ctrl+Y / Ctrl+Shift+Z, Delete) are taken
+    /// everywhere except in text fields, which keep their own undo and delete.
     /// </summary>
     private void OnPreviewKeyDown(object? sender, KeyEventArgs e)
     {
+        if (EditingCommand(e) is { } command)
+        {
+            if (FocusManager?.GetFocusedElement() is TextBox) { return; }
+            if (command.CanExecute(null)) { command.Execute(null); }
+            e.Handled = true;
+            return;
+        }
         if (e.Key != Key.Space || e.KeyModifiers != KeyModifiers.None
             || FocusManager?.GetFocusedElement() is TextBox or Avalonia.Controls.Primitives.ToggleButton or Button
             || DataContext is not MainWindowViewModel { Player: var player })
@@ -43,6 +52,19 @@ public partial class MainWindow : Window
             player.PlayPauseCommand.Execute(null);
         }
         e.Handled = true;
+    }
+
+    private System.Windows.Input.ICommand? EditingCommand(KeyEventArgs e)
+    {
+        if (DataContext is not MainWindowViewModel { Timeline: var timeline }) { return null; }
+        return (e.Key, e.KeyModifiers) switch
+        {
+            (Key.Z, KeyModifiers.Control) => timeline.UndoCommand,
+            (Key.Y, KeyModifiers.Control) or (Key.Z, KeyModifiers.Control | KeyModifiers.Shift) => timeline.RedoCommand,
+            (Key.Delete, KeyModifiers.None) or (Key.Back, KeyModifiers.None) when timeline.SelectedClip is not null
+                => timeline.RemoveClipCommand,
+            _ => null,
+        };
     }
 
     protected override void OnDataContextChanged(EventArgs e)

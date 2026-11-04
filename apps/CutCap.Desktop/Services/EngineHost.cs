@@ -44,6 +44,12 @@ public sealed class EngineHost : IDisposable
 
     public EngineSession? Session => _session;
 
+    /// <summary>
+    /// The latest clip list. Read only when the view's timeline generation
+    /// changes (edits, opens), never per playback frame.
+    /// </summary>
+    public TimelineView? Timeline { get; private set; }
+
     /// <summary>True while the engine is in a playback epoch that may offer new frames.</summary>
     public bool PlaybackActive { get; private set; }
 
@@ -124,6 +130,10 @@ public sealed class EngineHost : IDisposable
                 return;
             }
             var view = _session.ReadView();
+            if (Timeline is null || Timeline.Generation != view.TimelineGeneration)
+            {
+                Timeline = _session.ReadTimeline();
+            }
             View = view;
             PlaybackActive = view.Playback?.State is PlaybackState.Starting or PlaybackState.Playing
                 or PlaybackState.Seeking or PlaybackState.Buffering;

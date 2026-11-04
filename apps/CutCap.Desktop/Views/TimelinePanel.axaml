@@ -9,17 +9,28 @@
       <!-- Editing tools: those the engine cannot back yet are visible and disabled. -->
       <Grid DockPanel.Dock="Top" Height="40" ColumnDefinitions="Auto,*,Auto" Margin="8,0,10,0">
         <StackPanel Orientation="Horizontal" Spacing="2" VerticalAlignment="Center">
-          <Button Classes="tool" IsEnabled="False" AutomationProperties.Name="Undo" ToolTip.Tip="Undo arrives with the editing engine.">
+          <Button Classes="tool" Command="{Binding UndoCommand}" AutomationProperties.Name="Undo"
+                  ToolTip.Tip="{Binding UndoTip}" ToolTip.ShowOnDisabled="True">
             <c:IconView Glyph="Undo" />
           </Button>
-          <Button Classes="tool" IsEnabled="False" AutomationProperties.Name="Redo" ToolTip.Tip="Redo arrives with the editing engine.">
+          <Button Classes="tool" Command="{Binding RedoCommand}" AutomationProperties.Name="Redo"
+                  ToolTip.Tip="{Binding RedoTip}" ToolTip.ShowOnDisabled="True">
             <c:IconView Glyph="Redo" />
           </Button>
           <Border Classes="vrule" Height="18" />
-          <Button Classes="tool" IsEnabled="False" AutomationProperties.Name="Split clip" ToolTip.Tip="Splitting clips arrives with the editing engine.">
+          <Button Classes="filled" Margin="2,0" Command="{Binding AddClipCommand}" AutomationProperties.Name="Add to timeline"
+                  ToolTip.Tip="{Binding AddClipTip}" ToolTip.ShowOnDisabled="True">
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <c:IconView Glyph="Plus" />
+              <TextBlock Text="Add to timeline" VerticalAlignment="Center" />
+            </StackPanel>
+          </Button>
+          <Button Classes="tool" IsEnabled="False" AutomationProperties.Name="Split clip"
+                  ToolTip.Tip="Splitting clips is not available yet." ToolTip.ShowOnDisabled="True">
             <c:IconView Glyph="Scissors" />
           </Button>
-          <Button Classes="tool" IsEnabled="False" AutomationProperties.Name="Delete clip" ToolTip.Tip="Deleting clips arrives with the editing engine.">
+          <Button Classes="tool" Command="{Binding RemoveClipCommand}" AutomationProperties.Name="Delete clip"
+                  ToolTip.Tip="{Binding RemoveClipTip}" ToolTip.ShowOnDisabled="True">
             <c:IconView Glyph="Trash" />
           </Button>
           <Border Classes="vrule" Height="18" />
@@ -39,9 +50,10 @@
           </Button>
         </StackPanel>
         <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="2" VerticalAlignment="Center">
+          <TextBlock Text="{Binding ClipCountText}" Classes="fine faint" VerticalAlignment="Center" Margin="0,0,10,0" />
           <TextBlock Text="{Binding PlayheadText}" Classes="mono muted" VerticalAlignment="Center" Margin="0,0,6,0"
                      AutomationProperties.Name="Timeline playhead position"
-                     ToolTip.Tip="Timeline playhead. It stays at zero until clips and timeline playback exist; the source preview never moves it." />
+                     ToolTip.Tip="Timeline playhead. It stays at zero until timeline playback exists; the source preview never moves it." />
           <Border Classes="vrule" Height="18" />
           <Button Classes="tool" Command="{Binding ZoomOutCommand}" AutomationProperties.Name="Zoom out"
                   ToolTip.Tip="Zoom the timeline view out (Ctrl+Minus)">
@@ -103,8 +115,9 @@
 
         <ScrollViewer Name="LanesScroll" Grid.Row="1" Grid.Column="1"
                       HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
-          <c:TimelineLanes Name="Lanes" Lanes="{Binding Lanes}" Zoom="{Binding Zoom}" HorizontalAlignment="Left"
-                           VerticalAlignment="Top" AutomationProperties.Name="Track lanes" />
+          <c:TimelineLanes Name="Lanes" Lanes="{Binding Lanes}" Clips="{Binding Clips}" Zoom="{Binding Zoom}"
+                           HorizontalAlignment="Left" VerticalAlignment="Top"
+                           AutomationProperties.Name="{Binding LanesAccessibleName}" />
         </ScrollViewer>
         <Border Grid.Row="1" Width="1" HorizontalAlignment="Right" Background="{StaticResource Line}" />
       </Grid>

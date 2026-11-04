@@ -31,6 +31,8 @@
     <Grid Classes="row" ColumnDefinitions="*,Auto"><TextBlock Text="New project" /><Border Classes="key"><TextBlock Text="Ctrl+N" /></Border></Grid>
     <Grid Classes="row" ColumnDefinitions="*,Auto"><TextBlock Text="Open project" /><Border Classes="key"><TextBlock Text="Ctrl+O" /></Border></Grid>
     <Grid Classes="row" ColumnDefinitions="*,Auto"><TextBlock Text="Save / Save As" /><Border Classes="key"><TextBlock Text="Ctrl+S / Ctrl+Shift+S" /></Border></Grid>
+    <Grid Classes="row" ColumnDefinitions="*,Auto"><TextBlock Text="Undo / Redo a timeline edit" /><Border Classes="key"><TextBlock Text="Ctrl+Z / Ctrl+Y" /></Border></Grid>
+    <Grid Classes="row" ColumnDefinitions="*,Auto"><TextBlock Text="Remove the selected clip" /><Border Classes="key"><TextBlock Text="Delete" /></Border></Grid>
     <Grid Classes="row" ColumnDefinitions="*,Auto"><TextBlock Text="Clear selection" /><Border Classes="key"><TextBlock Text="Ctrl+Shift+A" /></Border></Grid>
     <Grid Classes="row" ColumnDefinitions="*,Auto"><TextBlock Text="Reset layout and zoom" /><Border Classes="key"><TextBlock Text="Ctrl+0" /></Border></Grid>
     <Grid Classes="row" ColumnDefinitions="*,Auto"><TextBlock Text="Zoom the timeline" /><Border Classes="key"><TextBlock Text="Ctrl+Plus / Minus" /></Border></Grid>

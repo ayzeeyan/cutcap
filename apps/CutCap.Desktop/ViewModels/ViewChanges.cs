@@ -24,7 +24,10 @@ public readonly record struct ViewChanges(bool Library, bool Inspector, bool Tim
             || previous.Inspector.Title != next.Inspector.Title
             || previous.Inspector.Detail != next.Inspector.Detail
             || !SameSections(previous.Inspector.Sections, next.Inspector.Sections);
-        var timeline = previous.EngineReady != next.EngineReady || !previous.Tracks.SequenceEqual(next.Tracks);
+        // Clips arrive in a separate document whose generation is in the view.
+        var timeline = previous.EngineReady != next.EngineReady || !previous.Tracks.SequenceEqual(next.Tracks)
+            || previous.TimelineGeneration != next.TimelineGeneration || previous.History != next.History
+            || !previous.Media.SequenceEqual(next.Media);
         return new ViewChanges(library, inspector, timeline);
     }
 

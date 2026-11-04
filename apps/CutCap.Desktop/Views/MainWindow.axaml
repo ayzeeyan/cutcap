@@ -84,6 +84,9 @@
                 <MenuItem Header="Save" Command="{Binding SaveProjectCommand}" InputGesture="Ctrl+S" />
                 <MenuItem Header="Save As…" Command="{Binding SaveProjectAsCommand}" InputGesture="Ctrl+Shift+S" />
                 <Separator />
+                <MenuItem Header="Undo" Command="{Binding Timeline.UndoCommand}" InputGesture="Ctrl+Z" />
+                <MenuItem Header="Redo" Command="{Binding Timeline.RedoCommand}" InputGesture="Ctrl+Y" />
+                <Separator />
                 <MenuItem Header="Relink selected source…" Command="{Binding RelinkMediaCommand}" />
               </MenuFlyout>
             </Button.Flyout>

@@ -151,7 +151,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
         }
         if (changes.Timeline)
         {
-            Timeline.Apply(view);
+            Timeline.Apply(view, _engine.Timeline);
         }
     }
 
