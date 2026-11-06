@@ -110,7 +110,17 @@ public sealed partial class TimelineViewModel : ObservableObject
 
     public string ZoomText => $"{Zoom}%";
     public string TrackCountText => Tracks.Count == 1 ? "1 track" : $"{Tracks.Count} tracks";
-    public string PlayheadText => "00:00.000";
+    [ObservableProperty]
+    public partial string PlayheadText { get; set; } = "00:00.000";
+    [ObservableProperty]
+    public partial long PlayheadMs { get; set; }
+    public void ApplyPreview(TimelinePreviewView? preview)
+    {
+        if (preview is null) return;
+        PlayheadText = preview.PositionText;
+        PlayheadMs = preview.PositionMs;
+    }
+    public void SeekRuler(long milliseconds) => _engine.Run(s => s.SeekTimelineMilliseconds(milliseconds));
     public bool HasTracks => Tracks.Count > 0;
 
     partial void OnZoomChanged(int value)

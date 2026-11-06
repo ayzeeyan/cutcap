@@ -2,6 +2,7 @@ using System.Globalization;
 using Avalonia;
 using Avalonia.Automation.Peers;
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Media;
 
 namespace CutCap.Desktop.Controls;
@@ -12,6 +13,9 @@ namespace CutCap.Desktop.Controls;
 /// </summary>
 public sealed class TimelineRuler : Control
 {
+    public static readonly StyledProperty<long> PlayheadMsProperty = AvaloniaProperty.Register<TimelineRuler, long>(nameof(PlayheadMs));
+    public long PlayheadMs { get => GetValue(PlayheadMsProperty); set => SetValue(PlayheadMsProperty, value); }
+    public event EventHandler<long>? PositionPressed;
     public static readonly StyledProperty<int> ZoomProperty =
         AvaloniaProperty.Register<TimelineRuler, int>(nameof(Zoom), 100);
 
@@ -25,7 +29,7 @@ public sealed class TimelineRuler : Control
 
     static TimelineRuler()
     {
-        AffectsRender<TimelineRuler>(ZoomProperty, OffsetProperty);
+        AffectsRender<TimelineRuler>(ZoomProperty, OffsetProperty, PlayheadMsProperty);
     }
 
     public int Zoom
@@ -42,6 +46,18 @@ public sealed class TimelineRuler : Control
 
     /// <summary>Named in the automation tree (a plain Control has no peer).</summary>
     protected override AutomationPeer OnCreateAutomationPeer() => new TimelineLanes.SurfacePeer(this);
+
+    protected override void OnPointerPressed(PointerPressedEventArgs e)
+    {
+        base.OnPointerPressed(e);
+        if (e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
+        {
+            var time = TimelineScale.ForZoom(Zoom).XToTime(e.GetPosition(this).X + Offset);
+            if (double.IsFinite(time) && time >= 0 && time < long.MaxValue)
+                PositionPressed?.Invoke(this, (long)Math.Floor(time));
+            e.Handled = true;
+        }
+    }
 
     public override void Render(DrawingContext context)
     {
@@ -66,7 +82,7 @@ public sealed class TimelineRuler : Control
                 }
             }
             // Timeline playhead head at zero. It does not move until timeline playback exists.
-            var head = Math.Round(scale.TimeToX(0) - Offset);
+            var head = Math.Round(scale.TimeToX(PlayheadMs) - Offset);
             if (head > -8 && head < Bounds.Width + 8)
             {
                 context.DrawRectangle(PlayheadBrush, null, new Rect(head - 4.5, 3, 10, 13), 3, 3);

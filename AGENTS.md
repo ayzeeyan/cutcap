@@ -42,6 +42,9 @@ CutCap is a native, offline-first Windows 11 x64 non-linear video editor. The st
 
 ## Time and model rules
 
+- Timeline preview follows PHASE_3C_TIMELINE_PREVIEW_CONTRACT.md: core indexed `[start,end)` lookup, rational source_in + clip-local offset rounded once, and exclusive source-end validation. No nominal-frame-rate timestamps, successor-frame leakage, C# clip evaluation or fake timeline playback. Gaps and no valid frame inside a clip are distinct from decoder failures.
+- Keep evaluation/index/monitor state transient. Use project/model/request identities independently of undoable revisions; mode/track/edit/relink/Open changes invalidate stale frame permissions. Seeks return small evaluation messages, never a clip snapshot. Rebuild sorted indexes and selected-clip caches only on model updates, not seeks/renders.
+
 - Persistence uses `.cutcap` envelope format 1 around core schema 1 (docs/PROJECT_FORMAT.md); source expectations/fingerprints are outside Project. Keep file I/O on the owned file worker. Validate byte/structure budgets before typed graph construction and adopt only complete valid documents.
 - Document revisions belong to the project owner and are distinct from coalesced view revisions. Mark only the captured successfully written revision saved; newer edits stay dirty. Never equate ABI acceptance with save completion. Preserve the previous file/live project on failure and retain missing references.
 - Relative source paths mean project-directory-relative descendants; never reinterpret them against the working directory. Relink requires verified original content/metadata. Do not silently conform changed footage. Preserve unsaved-change confirmation for New/Open/close.

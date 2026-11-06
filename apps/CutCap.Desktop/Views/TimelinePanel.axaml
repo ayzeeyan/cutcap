@@ -74,7 +74,7 @@
 
       <Grid ColumnDefinitions="176,*" RowDefinitions="28,*">
         <TextBlock Text="{Binding TrackCountText}" Classes="fine faint" VerticalAlignment="Center" Margin="12,0,0,0" />
-        <c:TimelineRuler Name="Ruler" Grid.Column="1" Zoom="{Binding Zoom}"
+        <c:TimelineRuler Name="Ruler" Grid.Column="1" Zoom="{Binding Zoom}" PlayheadMs="{Binding PlayheadMs}"
                          AutomationProperties.Name="Timeline ruler" />
 
         <!-- Track headers scroll vertically with the lanes and stay fixed horizontally. -->
@@ -115,7 +115,7 @@
 
         <ScrollViewer Name="LanesScroll" Grid.Row="1" Grid.Column="1"
                       HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
-          <c:TimelineLanes Name="Lanes" Lanes="{Binding Lanes}" Clips="{Binding Clips}" Zoom="{Binding Zoom}"
+          <c:TimelineLanes Name="Lanes" Lanes="{Binding Lanes}" Clips="{Binding Clips}" Zoom="{Binding Zoom}" PlayheadMs="{Binding PlayheadMs}"
                            HorizontalAlignment="Left" VerticalAlignment="Top"
                            AutomationProperties.Name="{Binding LanesAccessibleName}" />
         </ScrollViewer>

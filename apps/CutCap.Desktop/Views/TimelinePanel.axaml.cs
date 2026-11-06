@@ -26,6 +26,7 @@ public partial class TimelinePanel : UserControl
         };
         Lanes.LanePressed += (_, index) => (DataContext as TimelineViewModel)?.SelectIndex(index);
         Lanes.ClipPressed += (_, clip) => (DataContext as TimelineViewModel)?.SelectClip(clip);
+        Ruler.PositionPressed += (_, milliseconds) => (DataContext as TimelineViewModel)?.SeekRuler(milliseconds);
     }
 
     private void FollowLanes()

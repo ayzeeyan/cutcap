@@ -1,5 +1,21 @@
 # Windows 11 x64 setup
 
+## Timeline preview (Phase 3C)
+
+Switch Player → Timeline, then click the ruler or enter a time. `2160000 ticks` addresses an exact project position; numeric/timecode inputs use milliseconds. The viewer monitors the selected video track (selected clip's track or first video track as fallback). Gaps clear the picture. Timeline Play is intentionally disabled; switching away from Source pauses its transport.
+
+Native diagnostics reuse the existing editor, not a separate demo:
+
+```powershell
+# In a disposable directory containing media/A red.mkv and media/B blue.mkv:
+tools/CutCap.PlaybackProbe/bin/Release/net10.0/win-x64/CutCap.PlaybackProbe.exe --timeline .artifacts/phase3c .artifacts/phase3c/measurement.json
+# Same editor at minimum geometry; holds the final real still for visual QA.
+# Close that diagnostic window to finish/write its report:
+tools/CutCap.PlaybackProbe/bin/Release/net10.0/win-x64/CutCap.PlaybackProbe.exe --timeline-min .artifacts/phase3c .artifacts/phase3c/minimum.json
+```
+
+The two synthetic sources can be generated with the separately installed FFmpeg: `-f lavfi -i color=c=red:s=320x180:r=4:d=3 -c:v ffv1` and the equivalent blue source. Use `-n` and disposable output paths; never overwrite user media. The driver builds a 5,000-clip fixture from a real saved project on a background task. Draw callbacks measure rendering/recording, not physical scanout; run benchmarks without concurrent builds/other media apps.
+
 ## Build requirements
 
 - Git for Windows.

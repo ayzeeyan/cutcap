@@ -1,5 +1,7 @@
 # Claude onboarding
 
+Phase 3C current handoff: read docs/PHASE_3C_TIMELINE_PREVIEW_CONTRACT.md and docs/PHASE_3C_TIMELINE_PREVIEW_REPORT.md with ABI/contract 5. Preserve Rust-only clip evaluation, generation invalidation, independent Source/Timeline positions and disabled Timeline Play. Project schema/envelope remain 1.
+
 Read [AGENTS.md](AGENTS.md) first; it is the single engineering constitution. Then read [ARCHITECTURE](docs/ARCHITECTURE.md), [NATIVE_ABI](docs/NATIVE_ABI.md), [ENGINE_UI_CONTRACT](docs/ENGINE_UI_CONTRACT.md), [DECISIONS](docs/DECISIONS.md), [MODEL_RESPONSIBILITIES](docs/MODEL_RESPONSIBILITIES.md), [PROJECT_FORMAT](docs/PROJECT_FORMAT.md) and the latest [Phase 3A report](docs/PHASE_3A_PROJECT_PERSISTENCE_REPORT.md). The migration and Phase 2/2B reports remain historical evidence.
 
 The frontend is Avalonia (C#/.NET 10) in `apps/CutCap.Desktop`, over `src-dotnet/CutCap.Interop` and the Rust engine DLL built from `crates/cutcap-ffi`. Phase 0/1 engine, media and contracts belong to GPT-6.1 Sol; the interop layer was added during the owner-directed migration and is documented for Sol's continued backend work. Proposed Claude work is Avalonia views, controls, interaction, accessibility and UI validation, with cross-review. This does not authorize concurrent edits without ownership coordination.

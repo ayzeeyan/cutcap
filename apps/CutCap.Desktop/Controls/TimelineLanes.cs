@@ -19,6 +19,8 @@ public readonly record struct LaneInfo(bool IsVideo, bool Selected, string LaneL
 /// </summary>
 public sealed class TimelineLanes : Control
 {
+    public static readonly StyledProperty<long> PlayheadMsProperty = AvaloniaProperty.Register<TimelineLanes, long>(nameof(PlayheadMs));
+    public long PlayheadMs { get => GetValue(PlayheadMsProperty); set => SetValue(PlayheadMsProperty, value); }
     public const double TrackHeight = 50;
     /// <summary>Space after the last clip so the end of the timeline is reachable.</summary>
     public const double TrailingSpace = 240;
@@ -68,7 +70,7 @@ public sealed class TimelineLanes : Control
 
     static TimelineLanes()
     {
-        AffectsRender<TimelineLanes>(LanesProperty, ClipsProperty, ZoomProperty, ScrollOffsetProperty, ViewportProperty);
+        AffectsRender<TimelineLanes>(LanesProperty, ClipsProperty, ZoomProperty, ScrollOffsetProperty, ViewportProperty, PlayheadMsProperty);
         AffectsMeasure<TimelineLanes>(LanesProperty, ClipsProperty, ZoomProperty, ViewportProperty);
     }
 
@@ -166,6 +168,9 @@ public sealed class TimelineLanes : Control
     /// <summary>Opt-in diagnostic: CUTCAP_TRACE_TIMELINE=1 prints draw-call recording time per 30 renders.</summary>
     private static readonly bool TraceTimeline = Environment.GetEnvironmentVariable("CUTCAP_TRACE_TIMELINE") == "1";
     private readonly List<double> _renderMicroseconds = [];
+    /// <summary>Opt-in draw-call recording diagnostic, not compositor raster/presentation time.</summary>
+    public double LastDrawMicroseconds { get; private set; }
+    public ulong DiagnosticRenderCount { get; private set; }
 
     public override void Render(DrawingContext context)
     {
@@ -199,11 +204,13 @@ public sealed class TimelineLanes : Control
             }
         }
         LastDrawnClips = drawn;
-        var x = Math.Round(scale.TimeToX(0)) + 0.5;
+        var x = Math.Round(scale.TimeToX(PlayheadMs)) + 0.5;
         context.DrawLine(PlayheadPen, new Point(x, 0), new Point(x, Math.Max(TrackHeight, lanes.Count * TrackHeight)));
         if (TraceTimeline)
         {
-            _renderMicroseconds.Add(System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMicroseconds);
+            LastDrawMicroseconds = System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMicroseconds;
+            DiagnosticRenderCount++;
+            _renderMicroseconds.Add(LastDrawMicroseconds);
             if (_renderMicroseconds.Count == 30)
             {
                 Console.WriteLine(FormattableString.Invariant($"timeline-render clips={_geometry.Count} drawn={drawn} avg_us={_renderMicroseconds.Average():F1} max_us={_renderMicroseconds.Max():F1} width_px={Bounds.Width:F0}"));

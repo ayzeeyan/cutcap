@@ -23,6 +23,9 @@ public sealed partial class PlayerViewModel : ObservableObject
     private long _display;
     private string _title = "";
     private long _duration;
+    private PreviewMode _mode;
+    private long _timelineEndTicks;
+    private long _timelineRequestedTicks = -1;
 
     public PlayerViewModel(EngineHost engine)
     {
@@ -40,6 +43,22 @@ public sealed partial class PlayerViewModel : ObservableObject
     public EngineSession? Session => _engine.Session;
 
     public IRelayCommand? ImportCommand { get; set; }
+
+    [ObservableProperty]
+    public partial int PreviewTabIndex { get; set; }
+    partial void OnPreviewTabIndexChanged(int value)
+    {
+        if (!_applying) { _engine.Run(s => s.SetPreviewMode(value == 1 ? PreviewMode.Timeline : PreviewMode.Source)); }
+    }
+    public string SeekName => _mode == PreviewMode.Timeline ? "Timeline position" : "Source position";
+    public string GoToName => _mode == PreviewMode.Timeline ? "Go to timeline time" : "Go to source time";
+    public string FrameName => _mode == PreviewMode.Timeline ? "Decoded timeline frame" : "Decoded source frame";
+    public string GoToHint => _mode == PreviewMode.Timeline
+        ? "Accepts milliseconds, 1.5s, 00:01.500 or an exact integer followed by ticks. Enter requests a timeline frame."
+        : "Accepts 1500 (milliseconds), 1.5s or 00:01.500. Enter requests the frame.";
+    public string SeekHint => _mode == PreviewMode.Timeline
+        ? "Seek the monitored video track. Milliseconds, timecode, or an exact integer followed by ticks. Timeline Play is unavailable."
+        : "Source position. Drag or use arrows (100 ms) and Page keys (1 s); works while playing or paused.";
 
     [ObservableProperty]
     public partial bool Ready { get; set; }
@@ -174,7 +193,7 @@ public sealed partial class PlayerViewModel : ObservableObject
     {
         PreviewTrace.MarkRequest();
         PreviewTrace.Command("seek", milliseconds);
-        _engine.Run(session => session.Seek(milliseconds));
+        _engine.Run(session => { if (_mode == PreviewMode.Timeline) session.SeekTimelineMilliseconds(milliseconds); else session.Seek(milliseconds); });
     }
 
     [RelayCommand]
@@ -188,7 +207,11 @@ public sealed partial class PlayerViewModel : ObservableObject
     private void Forward() => Seek(Math.Min(_display + 1000, _duration > 0 ? LastMs : 86_400_000));
 
     [RelayCommand]
-    private void GoToEnd() => Seek(LastMs);
+    private void GoToEnd()
+    {
+        if (_mode == PreviewMode.Timeline) _engine.Run(s => s.SeekTimeline(_timelineEndTicks));
+        else Seek(LastMs);
+    }
 
     /// <summary>Accepts 1500 (milliseconds), 1.5s or 00:01.500; parsed by the engine.</summary>
     [RelayCommand]
@@ -196,11 +219,11 @@ public sealed partial class PlayerViewModel : ObservableObject
     {
         PreviewTrace.MarkRequest();
         PreviewTrace.Command("seek-text");
-        _engine.Run(session => session.SeekText(GoToText));
+        _engine.Run(session => { if (_mode == PreviewMode.Timeline) session.SeekTimelineText(GoToText); else session.SeekText(GoToText); });
     }
 
     [RelayCommand]
-    private void CancelPreview() => _engine.Run(session => session.CancelPreview());
+    private void CancelPreview() => _engine.Run(session => { if (_mode == PreviewMode.Timeline) session.CancelTimelinePreview(); else session.CancelPreview(); });
 
     /// <summary>Toggles by the engine's intent: Pause while it intends to play, otherwise Play (Ended restarts at zero).</summary>
     [RelayCommand(CanExecute = nameof(CanPlay))]
@@ -225,6 +248,45 @@ public sealed partial class PlayerViewModel : ObservableObject
     {
         PreviewTrace.Command("stop");
         _engine.Run(session => session.Stop());
+    }
+
+    public void ApplyMonitor(SourceView source, PlaybackView? playback, PreviewMode mode, TimelinePreviewView? timeline, bool canImport, bool engineReady)
+    {
+        if (_mode != mode)
+        {
+            _scrub.Cancel(); _requested = -1; _timelineRequestedTicks = -1; _title = "";
+            _mode = mode;
+            OnPropertyChanged(nameof(SeekName)); OnPropertyChanged(nameof(SeekHint));
+            OnPropertyChanged(nameof(GoToName)); OnPropertyChanged(nameof(GoToHint)); OnPropertyChanged(nameof(FrameName));
+        }
+        _mode = mode;
+        _applying = true;
+        PreviewTabIndex = mode == PreviewMode.Timeline ? 1 : 0;
+        _applying = false;
+        if (mode == PreviewMode.Source || timeline is null) { Apply(source, playback, canImport, engineReady); return; }
+        var status = timeline.State switch
+        {
+            "evaluating" => "Evaluating timeline…", "loading" => "Decoding timeline frame…", "blank" => "Blank timeline frame",
+            "unavailable" => "Timeline source unavailable", "no_frame" => "No source frame inside this clip", "failed" => "Timeline preview failed",
+            "cancelled" => "Timeline preview cancelled", _ => "Timeline frame ready",
+        };
+        Apply(new SourceView(engineReady, timeline.Title, timeline.PositionMs, timeline.SeekMaxMs, false,
+            timeline.Busy, timeline.HasFrame, status, timeline.Detail, timeline.Caption), null, false, engineReady);
+        CanPlay = false; CanStop = false; ShowPause = false;
+        PlayName = "Timeline Play unavailable";
+        PlayHint = "Timeline playback is not implemented. Seek to evaluate one video track.";
+        PositionText = timeline.PositionText;
+        PositionName = $"Timeline position, {timeline.PositionTicks} project ticks. Monitoring {timeline.TrackName}";
+        DurationText = timeline.ExtentText;
+        _timelineEndTicks = timeline.ExtentTicks;
+        Chip = timeline.Busy ? (timeline.State == "evaluating" ? "Evaluating…" : "Loading…") : null;
+        ChipBusy = timeline.Busy;
+        PlaybackError = timeline.State == "failed" ? timeline.Detail : null;
+        if (_timelineRequestedTicks != timeline.PositionTicks)
+        {
+            _timelineRequestedTicks = timeline.PositionTicks;
+            GoToText = timeline.PositionInput;
+        }
     }
 
     public void Apply(SourceView source, PlaybackView? playback, bool canImport, bool engineReady)

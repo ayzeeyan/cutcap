@@ -17,19 +17,22 @@
       <Grid DockPanel.Dock="Top" Height="40" ColumnDefinitions="Auto,*" Margin="12,0,12,0">
         <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
           <TextBlock Text="Player" FontWeight="SemiBold" VerticalAlignment="Center" />
-          <TabStrip SelectedIndex="0" ItemContainerTheme="{StaticResource ViewTab}" AutomationProperties.Name="Preview source">
+          <TabStrip SelectedIndex="{Binding PreviewTabIndex, Mode=TwoWay}" ItemContainerTheme="{StaticResource ViewTab}" AutomationProperties.Name="Preview mode">
             <TabStripItem Content="Source" ToolTip.Tip="Real frames decoded from the selected media asset" />
-            <TabStripItem Content="Timeline" IsEnabled="False"
-                          ToolTip.Tip="Timeline preview arrives with timeline playback." />
+            <TabStripItem Content="Timeline"
+                          ToolTip.Tip="Seek one monitored video track. Continuous timeline playback is unavailable." />
           </TabStrip>
         </StackPanel>
         <Grid Grid.Column="1" ColumnDefinitions="*,Auto" Margin="12,0,0,0" VerticalAlignment="Center">
           <TextBlock Text="{Binding Title}" Classes="label" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
-                     TextAlignment="Right" />
+                     TextAlignment="Right" ToolTip.Tip="{Binding Title}" />
           <!-- Actual displayed frame (first PTS at or after the request). -->
-          <TextBlock Grid.Column="1" Text="{Binding Caption}" Classes="fine faint wide-only" VerticalAlignment="Center"
-                     TextTrimming="CharacterEllipsis" MaxWidth="230" Margin="10,0,0,0" IsVisible="{Binding HasFrame}"
-                     AutomationProperties.Name="Displayed frame" />
+          <Border Grid.Column="1" IsVisible="{Binding HasFrame}" Margin="10,0,0,0">
+            <!-- Visibility belongs to the wrapper so the narrow-panel style can
+                 hide the caption without losing to a local IsVisible binding. -->
+            <TextBlock Text="{Binding Caption}" Classes="fine faint wide-only" VerticalAlignment="Center"
+                       TextTrimming="CharacterEllipsis" MaxWidth="230" AutomationProperties.Name="Displayed frame" />
+          </Border>
         </Grid>
       </Grid>
 
@@ -37,8 +40,7 @@
       <StackPanel DockPanel.Dock="Bottom" Margin="12,0,12,8">
         <Slider Name="Scrubber" Minimum="0" Maximum="{Binding ScrubMaximum}" Value="{Binding ScrubValue}"
                 IsEnabled="{Binding CanScrub}" SmallChange="100" LargeChange="1000" Margin="0,-6,0,-10"
-                AutomationProperties.Name="Source position"
-                ToolTip.Tip="Source position. Drag or use arrows (100 ms) and Page keys (1 s); works while playing or paused." />
+                AutomationProperties.Name="{Binding SeekName}" ToolTip.Tip="{Binding SeekHint}" />
         <Grid ColumnDefinitions="Auto,*,Auto" Height="38">
           <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
             <TextBlock Text="{Binding PositionText}" Classes="mono" Foreground="{StaticResource Accent}"
@@ -79,8 +81,8 @@
           </StackPanel>
           <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="4" HorizontalAlignment="Right" VerticalAlignment="Center">
             <TextBox Classes="compact mono" Width="96" Text="{Binding GoToText}" IsEnabled="{Binding Ready}"
-                     PlaceholderText="00:00.000" AutomationProperties.Name="Go to source time"
-                     ToolTip.Tip="Accepts 1500 (milliseconds), 1.5s or 00:01.500. Enter requests the frame.">
+                     PlaceholderText="00:00.000" AutomationProperties.Name="{Binding GoToName}"
+                     ToolTip.Tip="{Binding GoToHint}">
               <TextBox.KeyBindings>
                 <KeyBinding Gesture="Enter" Command="{Binding GoToCommand}" />
               </TextBox.KeyBindings>
@@ -94,7 +96,7 @@
       <!-- Stage: the decoded picture, fitted with its real aspect ratio. -->
       <Border Background="{StaticResource Stage}">
         <Panel>
-          <c:FrameView Name="Frame" Margin="8" AutomationProperties.Name="Decoded source frame" />
+          <c:FrameView Name="Frame" Margin="8" AutomationProperties.Name="{Binding FrameName}" />
 
           <StackPanel IsVisible="{Binding ShowEmptyState}" VerticalAlignment="Center" HorizontalAlignment="Center"
                       Spacing="8" MaxWidth="360" Margin="20">
