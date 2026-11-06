@@ -8,7 +8,7 @@ use crate::{
     VerifiedMedia,
 };
 
-pub const CONTRACT_VERSION: u32 = 6;
+pub const CONTRACT_VERSION: u32 = 7;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TrackKind {
@@ -91,6 +91,35 @@ pub enum Command {
     RemoveClip {
         clip_id: ClipId,
     },
+    /// Places the whole Ready video source on a video track at `position`
+    /// (drag-and-drop). Rejected, never shifted, when it would overlap.
+    PlaceClip {
+        media_id: MediaId,
+        track_id: TrackId,
+        position: crate::TimelineSeek,
+    },
+    /// Moves a clip to `position` on a video track, keeping identity, media,
+    /// source in-point and duration. `anchor` says which edge `position` names.
+    MoveClip {
+        clip_id: ClipId,
+        track_id: TrackId,
+        position: crate::TimelineSeek,
+        anchor: ClipEdge,
+    },
+    /// Moves one boundary of a clip within its source range. A start trim keeps
+    /// the retained frames' source mapping by moving source_in by the same
+    /// amount, aligned to the source tick grid (see `cutcap_core::edit`).
+    TrimClip {
+        clip_id: ClipId,
+        edge: ClipEdge,
+        position: crate::TimelineSeek,
+    },
+    /// Splits a clip at an interior position aligned to the source tick grid.
+    /// The left part keeps the clip identity; the right part is a new clip.
+    SplitClip {
+        clip_id: ClipId,
+        position: crate::TimelineSeek,
+    },
     Seek {
         position: TimelineTime,
     },
@@ -129,6 +158,14 @@ pub struct ClipSummary {
     pub source_in: SourceTime,
 }
 
+/// Which boundary of a clip a move anchor or trim refers to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ClipEdge {
+    Start,
+    End,
+}
+
 /// Editing history availability. Labels describe the edit that would be undone/redone.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -161,6 +198,9 @@ pub struct ProjectSnapshot {
     /// Clips in project order.
     pub clips: Vec<ClipSummary>,
     pub history: HistoryStatus,
+    /// How the last successful edit adjusted the requested position (source
+    /// tick alignment), when it had to. Cleared by the next command.
+    pub edit_notice: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

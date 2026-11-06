@@ -5,6 +5,7 @@
 //! `unsafe` and the only one the frontend links against.
 pub mod abi;
 mod bridge;
+mod edits;
 mod engine;
 mod history;
 pub mod media;

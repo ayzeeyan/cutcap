@@ -1,5 +1,5 @@
 //! The lightweight command owner. Future media jobs must not run in this loop.
-use crate::history::{Edit, EditKind, History, bump};
+use crate::history::{Edit, History, bump};
 use crate::persistence::{Document, FileJob, FileOutput, SavedSource};
 use cutcap_contracts::*;
 use cutcap_core::{Clip, Project, ProjectError, TimelineIndex, Track, map_clip_source};
@@ -21,6 +21,8 @@ pub struct Engine {
     /// Highest document revision ever issued in this session (revisions are unique).
     next_revision: u64,
     evaluation_generation: RequestId,
+    /// Adjustment made by the last successful edit, for the status line.
+    edit_notice: Option<String>,
     evaluation_index: Option<Arc<TimelineIndex>>,
     timeline_position: TimelineTime,
 }
@@ -45,6 +47,10 @@ impl Engine {
                 | Command::AddTrack { .. }
                 | Command::InsertClip { .. }
                 | Command::RemoveClip { .. }
+                | Command::PlaceClip { .. }
+                | Command::MoveClip { .. }
+                | Command::TrimClip { .. }
+                | Command::SplitClip { .. }
                 | Command::Undo
                 | Command::Redo
         );
@@ -119,6 +125,7 @@ impl Engine {
             self.sources.clear();
             self.availability.clear();
             self.history.clear();
+            self.edit_notice = None;
             self.timeline_position = TimelineTime::ZERO;
             let mut revision = 0;
             bump(&mut self.next_revision, &mut revision);
@@ -139,6 +146,7 @@ impl Engine {
                     "This action belongs to a previous project. Try again.",
                 ));
             }
+            let mut notice = None;
             match envelope.command {
                 Command::GetSnapshot => {}
                 Command::RegisterMedia { media, fingerprint } => {
@@ -311,37 +319,63 @@ impl Engine {
                     let clip = append_clip(project, summary, track_id)?;
                     let index = project.clips().len();
                     let label = format!("add {}", crate::view::file_name(summary));
-                    project.insert_clip(clip.clone()).map_err(domain_error)?;
+                    let id = clip.id;
+                    let change = project
+                        .replace_clips(&[], &[(index, clip)])
+                        .map_err(domain_error)?;
                     let before = self.document.revision;
                     let after = bump(&mut self.next_revision, &mut self.document.revision);
-                    self.selection = SelectionState::Clip(clip.id);
+                    self.selection = SelectionState::Clip(id);
                     self.history.record(Edit {
-                        kind: EditKind::Insert,
-                        index,
-                        clip,
+                        change,
                         before,
                         after,
                         label,
                     });
                 }
                 Command::RemoveClip { clip_id } => {
-                    let (index, clip) = project.remove_clip(clip_id).map_err(domain_error)?;
-                    let label = self.media_details.get(&clip.media_id).map_or_else(
-                        || "remove clip".to_owned(),
-                        |m| format!("remove {}", crate::view::file_name(m)),
-                    );
+                    let change = project
+                        .replace_clips(&[clip_id], &[])
+                        .map_err(domain_error)?;
+                    let label = change
+                        .removed
+                        .first()
+                        .and_then(|(_, clip)| self.media_details.get(&clip.media_id))
+                        .map_or_else(
+                            || "remove clip".to_owned(),
+                            |m| format!("remove {}", crate::view::file_name(m)),
+                        );
                     let before = self.document.revision;
                     let after = bump(&mut self.next_revision, &mut self.document.revision);
                     if self.selection == SelectionState::Clip(clip_id) {
                         self.selection = SelectionState::None;
                     }
                     self.history.record(Edit {
-                        kind: EditKind::Remove,
-                        index,
-                        clip,
+                        change,
                         before,
                         after,
                         label,
+                    });
+                }
+                command @ (Command::PlaceClip { .. }
+                | Command::MoveClip { .. }
+                | Command::TrimClip { .. }
+                | Command::SplitClip { .. }) => {
+                    let outcome = crate::edits::apply(
+                        project,
+                        command,
+                        &self.media_details,
+                        &self.availability,
+                    )?;
+                    let before = self.document.revision;
+                    let after = bump(&mut self.next_revision, &mut self.document.revision);
+                    self.selection = outcome.selection;
+                    notice = outcome.notice;
+                    self.history.record(Edit {
+                        change: outcome.change,
+                        before,
+                        after,
+                        label: outcome.label,
                     });
                 }
                 Command::Undo | Command::Redo => {
@@ -389,6 +423,7 @@ impl Engine {
                     ));
                 }
             }
+            self.edit_notice = notice;
         }
         let monitor = self
             .evaluation_index
@@ -598,6 +633,7 @@ impl Engine {
                 })
                 .collect(),
             history: self.history.status(),
+            edit_notice: self.edit_notice.clone(),
             media_state: project
                 .media()
                 .iter()
@@ -700,6 +736,7 @@ impl Engine {
                 self.timeline_position = TimelineTime::ZERO;
                 self.selection = SelectionState::None;
                 self.history.clear();
+                self.edit_notice = None;
                 self.source_media = None;
                 self.media_details.clear();
                 self.availability.clear();

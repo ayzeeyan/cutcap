@@ -24,7 +24,11 @@ public sealed record SessionView(
     HistoryStatus? History = null,
     PreviewMode PreviewMode = PreviewMode.Source,
     TimelinePreviewView? TimelinePreview = null,
-    TimelinePlaybackView? TimelinePlayback = null);
+    TimelinePlaybackView? TimelinePlayback = null,
+    EditingView? Editing = null);
+
+/// <summary>Editing affordances that depend on Rust-owned time (ABI 7).</summary>
+public sealed record EditingView(bool SplitEnabled, string SplitDetail, string? Notice = null);
 
 /// <summary>Project-tick clock and copied frame identity; no clip semantics or pixels in managed state.</summary>
 public sealed record TimelinePlaybackView(
@@ -58,9 +62,14 @@ public sealed record TimelineView(ulong Generation, IReadOnlyList<ClipView> Clip
 public sealed record ClipView(
     string Id, string TrackId, int TrackIndex, string MediaId, string Name,
     long StartMs, long DurationMs, string StartText, string DurationText, string EndText,
-    string Availability, bool Selected)
+    string Availability, bool Selected,
+    long StartTicks = 0, long EndTicks = 0, long MinStartTicks = 0, long MinStartMs = 0,
+    long? MaxEndTicks = null, long? MaxEndMs = null,
+    [property: JsonPropertyName("end_ms")] long? ExactEndMs = null)
 {
-    public long EndMs => StartMs + DurationMs;
+    /// <summary>Floor of the exact end; older/test rows fall back to start + duration.</summary>
+    [JsonIgnore]
+    public long EndMs => ExactEndMs ?? StartMs + DurationMs;
     public bool SourceReady => Availability == "ready";
 }
 

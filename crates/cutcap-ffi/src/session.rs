@@ -237,6 +237,122 @@ impl Session {
         self.submit(Command::RemoveClip { clip_id: id }).map(|_| ())
     }
 
+    /// Drop placement: the whole Ready source at `position` (undoable).
+    pub fn place_clip(
+        &mut self,
+        media: MediaId,
+        track: TrackId,
+        position: TimelineSeek,
+    ) -> Result<(), SessionError> {
+        self.requests.inspecting_media = false;
+        self.submit(Command::PlaceClip {
+            media_id: media,
+            track_id: track,
+            position,
+        })
+        .map(|_| ())
+    }
+
+    pub fn move_clip(
+        &mut self,
+        id: ClipId,
+        track: TrackId,
+        position: TimelineSeek,
+        anchor: ClipEdge,
+    ) -> Result<(), SessionError> {
+        self.submit(Command::MoveClip {
+            clip_id: id,
+            track_id: track,
+            position,
+            anchor,
+        })
+        .map(|_| ())
+    }
+
+    pub fn trim_clip(
+        &mut self,
+        id: ClipId,
+        edge: ClipEdge,
+        position: TimelineSeek,
+    ) -> Result<(), SessionError> {
+        self.submit(Command::TrimClip {
+            clip_id: id,
+            edge,
+            position,
+        })
+        .map(|_| ())
+    }
+
+    pub fn split_clip(&mut self, id: ClipId, position: TimelineSeek) -> Result<(), SessionError> {
+        self.submit(Command::SplitClip {
+            clip_id: id,
+            position,
+        })
+        .map(|_| ())
+    }
+
+    /// The Rust-owned timeline playhead: the transport clock while timeline
+    /// playback is active, otherwise the still-preview position.
+    pub fn timeline_playhead(&self) -> TimelineTime {
+        if self.timeline_playback.active() {
+            self.timeline_playback.position()
+        } else {
+            TimelineTime(self.timeline_preview.view.position_ticks)
+        }
+    }
+
+    /// Splits at the playhead. Like every structural edit this stops timeline
+    /// playback (the plan is invalidated) and does not resume it.
+    pub fn split_clip_at_playhead(&mut self, id: ClipId) -> Result<(), SessionError> {
+        let position = self.timeline_playhead();
+        self.split_clip(id, TimelineSeek::Ticks(position))
+    }
+
+    fn editing_view(&self) -> view::EditingView {
+        let Some(snapshot) = self.requests.snapshot.as_ref() else {
+            return view::EditingView::default();
+        };
+        let notice = snapshot.edit_notice.clone();
+        let SelectionState::Clip(id) = snapshot.selection else {
+            return view::EditingView {
+                split_enabled: false,
+                split_detail: "Select a clip, then place the playhead inside it to split (Ctrl+B)."
+                    .into(),
+                notice,
+            };
+        };
+        let Some(clip) = self
+            .clip_lookup
+            .get(&id)
+            .and_then(|i| snapshot.clips.get(*i))
+        else {
+            return view::EditingView {
+                notice,
+                ..Default::default()
+            };
+        };
+        let core = cutcap_core::Clip {
+            id: clip.id,
+            media_id: clip.media_id,
+            track_id: clip.track_id,
+            start: clip.start,
+            duration: clip.duration,
+            source_in: clip.source_in,
+        };
+        match cutcap_core::edit::split_offset(&core, self.timeline_playhead(), snapshot.timebase) {
+            Ok(_) => view::EditingView {
+                split_enabled: true,
+                split_detail: "Split the selected clip at the playhead (Ctrl+B)".into(),
+                notice,
+            },
+            Err(reason) => view::EditingView {
+                split_enabled: false,
+                split_detail: reason.to_string(),
+                notice,
+            },
+        }
+    }
+
     /// Timeline selection only: never dirties the document or enters history.
     pub fn select_clip(&mut self, id: ClipId) -> Result<(), SessionError> {
         self.requests.inspecting_media = false;
@@ -928,6 +1044,15 @@ impl Session {
                     text: "Ready".into(),
                     error: false,
                 };
+                // An edit aligned to the source tick grid says so; otherwise Ready.
+                if let Some(notice) = self
+                    .requests
+                    .snapshot
+                    .as_ref()
+                    .and_then(|s| s.edit_notice.clone())
+                {
+                    self.status.text = notice;
+                }
             }
             EngineEvent::Failed { request_id, error } => {
                 self.requests.pending.remove(&request_id);
@@ -1104,6 +1229,7 @@ impl Session {
             playback: self.media.playback.view.clone(),
             timeline_generation: self.timeline_generation,
             history: snapshot.map(|s| s.history.clone()).unwrap_or_default(),
+            editing: self.editing_view(),
             preview_mode: self.preview_mode,
             timeline_preview,
             timeline_playback,
