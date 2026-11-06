@@ -1,0 +1,734 @@
+{
+  "date_utc": "2026-11-06T12:48:57.9308447+00:00",
+  "method": "Existing Avalonia editor/EngineHost/FrameView, distinct DrawImage generations, not physical scanout. Rust continuous timeline. Host plus observed FFmpeg/FFprobe resources sampled every 100ms, child CPU is observed lower bound. One isolated run, no other FFmpeg at start. Three episodes per source/project; 5000-clip episodes run first 10 timeline seconds.",
+  "percentiles": "nearest rank, pooled within source; three Release episodes per source/project",
+  "hardware": "Core Ultra 7 255H; Intel integrated graphics; 16 GB; 1920x1200 at 150%; 16 logical processors",
+  "maximum_rgba_frame_bytes": 3686400,
+  "groups": [
+    {
+      "source": "720p",
+      "episodes": 3,
+      "clip_count": 2,
+      "client": {
+        "AspectRatio": 1.7333333333333334,
+        "Width": 1248,
+        "Height": 720
+      },
+      "scale": 1.5,
+      "seconds": [
+        10.1291217,
+        10.1306068,
+        10.1531524
+      ],
+      "distinct_render_count": [
+        300,
+        299,
+        300
+      ],
+      "distinct_render_fps_including_startup": {
+        "n": 3,
+        "min": 29.515,
+        "p50": 29.547,
+        "p95": 29.618,
+        "p99": 29.618,
+        "max": 29.618
+      },
+      "play_to_first_render_ms": {
+        "n": 3,
+        "min": 122.708,
+        "p50": 130.485,
+        "p95": 131.215,
+        "p99": 131.215,
+        "max": 131.215
+      },
+      "render_gap_ms": {
+        "n": 896,
+        "min": 5.476,
+        "p50": 33.358,
+        "p95": 43.415,
+        "p99": 50.08,
+        "max": 64.611
+      },
+      "last_outgoing_to_first_incoming_render_ms": {
+        "n": 3,
+        "min": 35.55,
+        "p50": 37.811,
+        "p95": 41.228,
+        "p99": 41.228,
+        "max": 41.228
+      },
+      "seek_to_render_ms": {
+        "n": 9,
+        "min": 126.633,
+        "p50": 221.943,
+        "p95": 360.273,
+        "p99": 360.273,
+        "max": 360.273
+      },
+      "frame_copy_us": {
+        "n": 899,
+        "min": 268.5,
+        "p50": 406.5,
+        "p95": 1443.7,
+        "p99": 1883.9,
+        "max": 2762.2
+      },
+      "sampled_timeline_draw_us": {
+        "n": 899,
+        "min": 93.6,
+        "p50": 139.5,
+        "p95": 517.8,
+        "p99": 735,
+        "max": 7388.8
+      },
+      "diagnostic_dispatcher_gap_ms": {
+        "n": 1583,
+        "min": 15.063,
+        "p50": 16.031,
+        "p95": 32.056,
+        "p99": 38.964,
+        "max": 53.672
+      },
+      "counters_by_episode": {
+        "Decoded": [
+          300,
+          300,
+          300
+        ],
+        "Offered": [
+          300,
+          300,
+          300
+        ],
+        "Copied": [
+          300,
+          300,
+          300
+        ],
+        "Dropped": [
+          0,
+          0,
+          0
+        ],
+        "BufferStalls": [
+          0,
+          0,
+          0
+        ],
+        "Handoffs": [
+          1,
+          1,
+          1
+        ],
+        "DecoderStarts": [
+          2,
+          2,
+          2
+        ]
+      },
+      "peak_host_plus_children_working_bytes": 548868096,
+      "peak_host_plus_children_private_bytes": 449024000,
+      "host_working_peaks_by_episode": [
+        387391488,
+        411324416,
+        413986816
+      ],
+      "peak_observed_children": 2,
+      "observed_cpu_machine_percent_lower_bound": {
+        "n": 3,
+        "min": 10.099,
+        "p50": 10.392,
+        "p95": 12.312,
+        "p99": 12.312,
+        "max": 12.312
+      },
+      "peak_view_bytes": 4227,
+      "timeline_bytes": 685,
+      "timeline_document_reads_during_play": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "source": "1080p",
+      "episodes": 3,
+      "clip_count": 2,
+      "client": {
+        "AspectRatio": 1.7333333333333334,
+        "Width": 1248,
+        "Height": 720
+      },
+      "scale": 1.5,
+      "seconds": [
+        10.1612376,
+        10.1413083,
+        10.1502496
+      ],
+      "distinct_render_count": [
+        300,
+        300,
+        300
+      ],
+      "distinct_render_fps_including_startup": {
+        "n": 3,
+        "min": 29.524,
+        "p50": 29.556,
+        "p95": 29.582,
+        "p99": 29.582,
+        "max": 29.582
+      },
+      "play_to_first_render_ms": {
+        "n": 3,
+        "min": 120.215,
+        "p50": 154.797,
+        "p95": 156.024,
+        "p99": 156.024,
+        "max": 156.024
+      },
+      "render_gap_ms": {
+        "n": 897,
+        "min": 15.201,
+        "p50": 33.39,
+        "p95": 41.459,
+        "p99": 45.892,
+        "max": 54.704
+      },
+      "last_outgoing_to_first_incoming_render_ms": {
+        "n": 3,
+        "min": 30.924,
+        "p50": 33.487,
+        "p95": 33.547,
+        "p99": 33.547,
+        "max": 33.547
+      },
+      "seek_to_render_ms": {
+        "n": 9,
+        "min": 137.469,
+        "p50": 259.888,
+        "p95": 415.643,
+        "p99": 415.643,
+        "max": 415.643
+      },
+      "frame_copy_us": {
+        "n": 900,
+        "min": 255.5,
+        "p50": 551.1,
+        "p95": 1071.8,
+        "p99": 1343,
+        "max": 1595.5
+      },
+      "sampled_timeline_draw_us": {
+        "n": 900,
+        "min": 90.9,
+        "p50": 131.3,
+        "p95": 224.9,
+        "p99": 294.9,
+        "max": 7036.3
+      },
+      "diagnostic_dispatcher_gap_ms": {
+        "n": 1632,
+        "min": 15.042,
+        "p50": 16.017,
+        "p95": 30.56,
+        "p99": 33.455,
+        "max": 45.434
+      },
+      "counters_by_episode": {
+        "Decoded": [
+          300,
+          300,
+          300
+        ],
+        "Offered": [
+          300,
+          300,
+          300
+        ],
+        "Copied": [
+          300,
+          300,
+          300
+        ],
+        "Dropped": [
+          0,
+          0,
+          0
+        ],
+        "BufferStalls": [
+          0,
+          0,
+          0
+        ],
+        "Handoffs": [
+          1,
+          1,
+          1
+        ],
+        "DecoderStarts": [
+          2,
+          2,
+          2
+        ]
+      },
+      "peak_host_plus_children_working_bytes": 593838080,
+      "peak_host_plus_children_private_bytes": 494571520,
+      "host_working_peaks_by_episode": [
+        413663232,
+        415645696,
+        419393536
+      ],
+      "peak_observed_children": 2,
+      "observed_cpu_machine_percent_lower_bound": {
+        "n": 3,
+        "min": 10.564,
+        "p50": 10.62,
+        "p95": 11.449,
+        "p99": 11.449,
+        "max": 11.449
+      },
+      "peak_view_bytes": 4239,
+      "timeline_bytes": 687,
+      "timeline_document_reads_during_play": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "source": "4k",
+      "episodes": 3,
+      "clip_count": 2,
+      "client": {
+        "AspectRatio": 1.7333333333333334,
+        "Width": 1248,
+        "Height": 720
+      },
+      "scale": 1.5,
+      "seconds": [
+        10.2388043,
+        10.2309901,
+        10.210861
+      ],
+      "distinct_render_count": [
+        300,
+        300,
+        299
+      ],
+      "distinct_render_fps_including_startup": {
+        "n": 3,
+        "min": 29.283,
+        "p50": 29.3,
+        "p95": 29.323,
+        "p99": 29.323,
+        "max": 29.323
+      },
+      "play_to_first_render_ms": {
+        "n": 3,
+        "min": 201.458,
+        "p50": 222.75,
+        "p95": 223.174,
+        "p99": 223.174,
+        "max": 223.174
+      },
+      "render_gap_ms": {
+        "n": 896,
+        "min": 10.817,
+        "p50": 33.337,
+        "p95": 42.588,
+        "p99": 46.776,
+        "max": 59.806
+      },
+      "last_outgoing_to_first_incoming_render_ms": {
+        "n": 3,
+        "min": 33.413,
+        "p50": 34.99,
+        "p95": 43.635,
+        "p99": 43.635,
+        "max": 43.635
+      },
+      "seek_to_render_ms": {
+        "n": 9,
+        "min": 261.684,
+        "p50": 487.8,
+        "p95": 825.916,
+        "p99": 825.916,
+        "max": 825.916
+      },
+      "frame_copy_us": {
+        "n": 899,
+        "min": 266.7,
+        "p50": 407.9,
+        "p95": 1040.3,
+        "p99": 1438.2,
+        "max": 3297.4
+      },
+      "sampled_timeline_draw_us": {
+        "n": 899,
+        "min": 87.2,
+        "p50": 131.4,
+        "p95": 233.9,
+        "p99": 299.1,
+        "max": 7659.8
+      },
+      "diagnostic_dispatcher_gap_ms": {
+        "n": 1629,
+        "min": 15.06,
+        "p50": 16.02,
+        "p95": 31.147,
+        "p99": 35.023,
+        "max": 54.591
+      },
+      "counters_by_episode": {
+        "Decoded": [
+          300,
+          300,
+          300
+        ],
+        "Offered": [
+          300,
+          300,
+          300
+        ],
+        "Copied": [
+          300,
+          300,
+          300
+        ],
+        "Dropped": [
+          0,
+          0,
+          0
+        ],
+        "BufferStalls": [
+          0,
+          0,
+          0
+        ],
+        "Handoffs": [
+          1,
+          1,
+          1
+        ],
+        "DecoderStarts": [
+          2,
+          2,
+          2
+        ]
+      },
+      "peak_host_plus_children_working_bytes": 801374208,
+      "peak_host_plus_children_private_bytes": 703102976,
+      "host_working_peaks_by_episode": [
+        419753984,
+        418463744,
+        417779712
+      ],
+      "peak_observed_children": 2,
+      "observed_cpu_machine_percent_lower_bound": {
+        "n": 3,
+        "min": 13.315,
+        "p50": 13.772,
+        "p95": 13.793,
+        "p99": 13.793,
+        "max": 13.793
+      },
+      "peak_view_bytes": 4212,
+      "timeline_bytes": 681,
+      "timeline_document_reads_during_play": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "source": "vfr",
+      "episodes": 3,
+      "clip_count": 2,
+      "client": {
+        "AspectRatio": 1.7333333333333334,
+        "Width": 1248,
+        "Height": 720
+      },
+      "scale": 1.5,
+      "seconds": [
+        4.9209324,
+        4.916735,
+        4.9062571
+      ],
+      "distinct_render_count": [
+        10,
+        10,
+        10
+      ],
+      "distinct_render_fps_including_startup": {
+        "n": 3,
+        "min": 2.032,
+        "p50": 2.034,
+        "p95": 2.038,
+        "p99": 2.038,
+        "max": 2.038
+      },
+      "play_to_first_render_ms": {
+        "n": 3,
+        "min": 89.883,
+        "p50": 99.712,
+        "p95": 116.815,
+        "p99": 116.815,
+        "max": 116.815
+      },
+      "render_gap_ms": {
+        "n": 27,
+        "min": 98.816,
+        "p50": 499.66,
+        "p95": 803.594,
+        "p99": 823.843,
+        "max": 823.843
+      },
+      "last_outgoing_to_first_incoming_render_ms": {
+        "n": 3,
+        "min": 98.816,
+        "p50": 102.228,
+        "p95": 104.494,
+        "p99": 104.494,
+        "max": 104.494
+      },
+      "seek_to_render_ms": {
+        "n": 9,
+        "min": 82.51,
+        "p50": 95.388,
+        "p95": 99.248,
+        "p99": 99.248,
+        "max": 99.248
+      },
+      "frame_copy_us": {
+        "n": 30,
+        "min": 6.3,
+        "p50": 11.4,
+        "p95": 179.8,
+        "p99": 181.3,
+        "max": 181.3
+      },
+      "sampled_timeline_draw_us": {
+        "n": 30,
+        "min": 107.6,
+        "p50": 146.1,
+        "p95": 238.2,
+        "p99": 319.5,
+        "max": 319.5
+      },
+      "diagnostic_dispatcher_gap_ms": {
+        "n": 808,
+        "min": 15.091,
+        "p50": 16.023,
+        "p95": 27.315,
+        "p99": 29.592,
+        "max": 40.113
+      },
+      "counters_by_episode": {
+        "Decoded": [
+          10,
+          10,
+          10
+        ],
+        "Offered": [
+          10,
+          10,
+          10
+        ],
+        "Copied": [
+          10,
+          10,
+          10
+        ],
+        "Dropped": [
+          0,
+          0,
+          0
+        ],
+        "BufferStalls": [
+          0,
+          0,
+          0
+        ],
+        "Handoffs": [
+          1,
+          1,
+          1
+        ],
+        "DecoderStarts": [
+          2,
+          2,
+          2
+        ]
+      },
+      "peak_host_plus_children_working_bytes": 364863488,
+      "peak_host_plus_children_private_bytes": 285114368,
+      "host_working_peaks_by_episode": [
+        361910272,
+        362975232,
+        341614592
+      ],
+      "peak_observed_children": 1,
+      "observed_cpu_machine_percent_lower_bound": {
+        "n": 3,
+        "min": 8.176,
+        "p50": 8.181,
+        "p95": 8.243,
+        "p99": 8.243,
+        "max": 8.243
+      },
+      "peak_view_bytes": 4241,
+      "timeline_bytes": 697,
+      "timeline_document_reads_during_play": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "source": "large",
+      "episodes": 3,
+      "clip_count": 5000,
+      "client": {
+        "AspectRatio": 1.7333333333333334,
+        "Width": 1248,
+        "Height": 720
+      },
+      "scale": 1.5,
+      "seconds": [
+        10.1185846,
+        10.1338165,
+        10.1104001
+      ],
+      "distinct_render_count": [
+        300,
+        299,
+        297
+      ],
+      "distinct_render_fps_including_startup": {
+        "n": 3,
+        "min": 29.376,
+        "p50": 29.505,
+        "p95": 29.648,
+        "p99": 29.648,
+        "max": 29.648
+      },
+      "play_to_first_render_ms": {
+        "n": 3,
+        "min": 109.284,
+        "p50": 119.171,
+        "p95": 122.459,
+        "p99": 122.459,
+        "max": 122.459
+      },
+      "render_gap_ms": {
+        "n": 893,
+        "min": 8.13,
+        "p50": 33.307,
+        "p95": 48.914,
+        "p99": 56.956,
+        "max": 65.289
+      },
+      "last_outgoing_to_first_incoming_render_ms": {
+        "n": 30,
+        "min": 12.328,
+        "p50": 31.454,
+        "p95": 44.737,
+        "p99": 51.433,
+        "max": 51.433
+      },
+      "seek_to_render_ms": {
+        "n": 9,
+        "min": 142.779,
+        "p50": 161.754,
+        "p95": 232.704,
+        "p99": 232.704,
+        "max": 232.704
+      },
+      "frame_copy_us": {
+        "n": 896,
+        "min": 275.8,
+        "p50": 397.2,
+        "p95": 1366.7,
+        "p99": 1843.9,
+        "max": 2905
+      },
+      "sampled_timeline_draw_us": {
+        "n": 896,
+        "min": 752.3,
+        "p50": 911.9,
+        "p95": 2217,
+        "p99": 9792.5,
+        "max": 17667.1
+      },
+      "diagnostic_dispatcher_gap_ms": {
+        "n": 1524,
+        "min": 15.06,
+        "p50": 16.062,
+        "p95": 34.393,
+        "p99": 41.809,
+        "max": 50.183
+      },
+      "counters_by_episode": {
+        "Decoded": [
+          335,
+          336,
+          336
+        ],
+        "Offered": [
+          301,
+          301,
+          301
+        ],
+        "Copied": [
+          300,
+          301,
+          301
+        ],
+        "Dropped": [
+          0,
+          0,
+          0
+        ],
+        "BufferStalls": [
+          0,
+          0,
+          0
+        ],
+        "Handoffs": [
+          10,
+          10,
+          10
+        ],
+        "DecoderStarts": [
+          12,
+          12,
+          12
+        ]
+      },
+      "peak_host_plus_children_working_bytes": 577298432,
+      "peak_host_plus_children_private_bytes": 483880960,
+      "host_working_peaks_by_episode": [
+        431710208,
+        442404864,
+        435863552
+      ],
+      "peak_observed_children": 2,
+      "observed_cpu_machine_percent_lower_bound": {
+        "n": 3,
+        "min": 10.906,
+        "p50": 11.13,
+        "p95": 11.639,
+        "p99": 11.639,
+        "max": 11.639
+      },
+      "peak_view_bytes": 4220,
+      "timeline_bytes": 1668914,
+      "timeline_document_reads_during_play": [
+        0,
+        0,
+        0
+      ]
+    }
+  ]
+}

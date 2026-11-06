@@ -18,7 +18,7 @@ public sealed class TimelinePreviewTests
     {
         using var host=new EngineHost(); var player=new PlayerViewModel(host); var timeline=Preview();
         player.ApplyMonitor(Source,Paused,PreviewMode.Timeline,timeline,true,true);
-        Assert.False(player.CanPlay); Assert.False(player.CanStop); Assert.True(player.HasFrame);
+        Assert.True(player.CanPlay); Assert.True(player.CanStop); Assert.True(player.HasFrame);
         Assert.Equal("00:00.500",player.PositionText); Assert.Contains("Timeline",player.PositionName);
         Assert.Contains("Video 1",player.Title); Assert.Equal("360001 ticks",player.GoToText);
         player.GoToText="00:02.000";
@@ -38,5 +38,22 @@ public sealed class TimelinePreviewTests
         timeline.ApplyPreview(Preview() with { State="cancelled",HasFrame=false });
         Assert.Same(lanes,timeline.Lanes); Assert.Same(clips,timeline.Clips);
         Assert.Equal(500,timeline.PlayheadMs); // source mode keeps the independent position
+    }
+    [Fact]
+    public void ContinuousClockChangesOnlyReadoutAndSliderNotTypedGoToOrTimelineModels()
+    {
+        using var host = new EngineHost(); var player = new PlayerViewModel(host); var timeline = Preview(0);
+        var playing = new TimelinePlaybackView(PlaybackState.Playing,true,"epoch",0,"00:00.000",0,0,"00:00.000",
+            0,null,null,null,null,2,1,0,0,0,0,1,2,1,2,null,100);
+        player.ApplyMonitor(Source,Paused,PreviewMode.Timeline,timeline,true,true,playing);
+        Assert.True(player.CanPlay); Assert.True(player.CanStop); Assert.True(player.ShowPause); Assert.Equal("Pause timeline",player.PlayName);
+        player.GoToText = "00:02.333";
+        player.ApplyMonitor(Source,Paused,PreviewMode.Timeline,timeline with { PositionTicks=720000,PositionMs=1000,PositionText="00:01.000",PositionInput="00:01.000" },true,true,
+            playing with { ClockTicks=720000,ClockMs=1000,ClockText="00:01.000" });
+        Assert.Equal("00:02.333",player.GoToText); Assert.Equal("00:01.000",player.PositionText); Assert.Equal(1000,player.ScrubValue);
+        player.ApplyMonitor(Source,Paused,PreviewMode.Timeline,timeline,true,true,playing with { State=PlaybackState.Buffering });
+        Assert.True(player.ShowPause); Assert.Equal("Buffering…",player.Chip);
+        player.ApplyMonitor(Source,Paused,PreviewMode.Timeline,timeline,true,true,playing with { State=PlaybackState.Ended,DesiredPlaying=false });
+        Assert.False(player.ShowPause); Assert.Equal("Replay timeline",player.PlayName);
     }
 }

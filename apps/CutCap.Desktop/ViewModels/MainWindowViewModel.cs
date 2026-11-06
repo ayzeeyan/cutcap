@@ -144,7 +144,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
             Library.Apply(view);
             ImportCommand.NotifyCanExecuteChanged();
         }
-        Player.ApplyMonitor(view.Source, view.Playback, view.PreviewMode, view.TimelinePreview, view.EngineReady && !view.Import.Busy, view.EngineReady);
+        Player.ApplyMonitor(view.Source, view.Playback, view.PreviewMode, view.TimelinePreview, view.EngineReady && !view.Import.Busy, view.EngineReady, view.TimelinePlayback);
         Timeline.ApplyPreview(view.TimelinePreview);
         if (changes.Inspector)
         {

@@ -53,7 +53,7 @@
           <TextBlock Text="{Binding ClipCountText}" Classes="fine faint" VerticalAlignment="Center" Margin="0,0,10,0" />
           <TextBlock Text="{Binding PlayheadText}" Classes="mono muted" VerticalAlignment="Center" Margin="0,0,6,0"
                      AutomationProperties.Name="Timeline playhead position"
-                     ToolTip.Tip="Timeline playhead. It stays at zero until timeline playback exists; the source preview never moves it." />
+                     ToolTip.Tip="Rust timeline clock position. Source preview keeps an independent position." />
           <Border Classes="vrule" Height="18" />
           <Button Classes="tool" Command="{Binding ZoomOutCommand}" AutomationProperties.Name="Zoom out"
                   ToolTip.Tip="Zoom the timeline view out (Ctrl+Minus)">

@@ -16,4 +16,16 @@ Rust 1.99.1, the .NET 10.0.401 SDK and Avalonia 12.1.5 are pinned; Cargo.lock an
 
 No release publishing, secrets or user telemetry belong in validation. The Windows workflow runs on hosted Windows with repository-read permission and cache only. Local scripts use PowerShell and standard Cargo/dotnet commands.
 
+Timeline transport changes also require PHASE_3D_TIMELINE_PLAYBACK_CONTRACT.md.
+Use controlled-clock/readiness tests for cut, gap and real starvation semantics,
+plus external timestamp-oracle and real editor checks. For opt-in application
+render measurements run `CutCap.PlaybackProbe --timeline-play
+.artifacts/playback/sources .artifacts/phase3d/timeline-performance.json` after
+generating the documented playback fixtures and building the tool in Release.
+It opens the existing editor and uses its production pump/bitmap; it does not
+measure physical scanout. Run without concurrent builds, tests or other FFmpeg.
+Only sanitized measurements/screenshots belong in docs; local logs, absolute
+source paths, media copies and published binaries stay ignored. Source and
+timeline transport regression suites must both pass.
+
 For persistence changes, read PROJECT_FORMAT.md: byte/structure/graph validation precedes adoption, Save completion marks the captured revision only, and failures preserve both the live project and prior file. Test with disposable source directories. Close the local editor before running verify.ps1: Windows locks loaded engine DLLs and prevents a rebuild from replacing them. global.json requests SDK 10.0.401 but currently permits latestFeature roll-forward (Phase 3A used 10.0.403); record the actual SDK, not just the requested version.

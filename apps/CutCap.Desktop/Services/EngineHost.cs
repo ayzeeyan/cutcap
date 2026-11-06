@@ -135,7 +135,8 @@ public sealed class EngineHost : IDisposable
                 Timeline = _session.ReadTimeline();
             }
             View = view;
-            PlaybackActive = view.Playback?.State is PlaybackState.Starting or PlaybackState.Playing
+            var activeState = view.PreviewMode == PreviewMode.Timeline ? view.TimelinePlayback?.State : view.Playback?.State;
+            PlaybackActive = activeState is PlaybackState.Starting or PlaybackState.Playing
                 or PlaybackState.Seeking or PlaybackState.Buffering;
             PreviewTrace.Transport(view.Playback);
             ViewChanged?.Invoke(this, view);

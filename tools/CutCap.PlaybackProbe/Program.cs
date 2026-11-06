@@ -11,6 +11,8 @@ internal static class Program
     [STAThread]
     public static int Main(string[] args)
     {
+        if (args.FirstOrDefault() == "--timeline-cleanup") { TimelineCleanup(args.Skip(1).ToArray()); return 0; }
+        if (args.FirstOrDefault() == "--timeline-play") return TimelineTransportProbe.Run(args.Skip(1).ToArray());
         if (args.FirstOrDefault() == "--timeline") return TimelineProbe.Run(args.Skip(1).ToArray());
         if (args.FirstOrDefault() == "--timeline-min")
         {
@@ -25,6 +27,52 @@ internal static class Program
         }
         Offscreen(args);
         return 0;
+    }
+    private static void TimelineCleanup(string[] args)
+    {
+        if (args.Length != 2) throw new ArgumentException("--timeline-cleanup <two-source-project.cutcap> <report.json>");
+        var samples = new List<object>();
+        for (var run = 0; run < 3; run++)
+        {
+            using var session = EngineSession.Start();
+            SessionView Wait(Func<SessionView,bool> ready)
+            {
+                var timeout = Stopwatch.StartNew();
+                while (timeout.Elapsed < TimeSpan.FromSeconds(25))
+                {
+                    session.Pump(); var view = session.ReadView(); if (ready(view)) return view;
+                    if (view.TimelinePlayback?.State == PlaybackState.Failed) throw new InvalidOperationException(view.TimelinePlayback.Error);
+                    Thread.Sleep(2);
+                }
+                throw new TimeoutException("Timeline cleanup sample did not become ready");
+            }
+            Wait(v=>v.EngineReady); session.OpenProject(Path.GetFullPath(args[0]));
+            Wait(v=>v.Project?.Document?.State=="opened" && v.Media.All(m=>m.Availability=="ready"));
+            session.SeekTimelineMilliseconds(11000); Wait(v=>v.TimelinePreview is {Busy:false,PositionMs:11000});
+            session.PlayTimeline();
+            var playing=Wait(v=>v.TimelinePlayback is {State:PlaybackState.Playing,ProcessId:>0,PreparedProcessId:>0});
+            var processes = new[] {playing.TimelinePlayback!.ProcessId!.Value,playing.TimelinePlayback.PreparedProcessId!.Value}
+                .Select(id=>Process.GetProcessById((int)id)).ToArray();
+            try
+            {
+                var watch=Stopwatch.StartNew(); session.SeekTimelineMilliseconds(500);
+                Wait(v=>v.TimelinePlayback is {State:PlaybackState.Playing,RequestedText:"00:00.500"} && v.Frame is not null);
+                if(!session.TryGetFrameInfo(out var info)) throw new InvalidOperationException("No replacement frame");
+                var pixels=new byte[checked((int)(info.Stride*info.Height))];
+                if(session.CopyFrame(info.Generation,pixels,(int)info.Stride)!=FrameCopyResult.Copied) throw new InvalidOperationException("Replacement copy failed");
+                var cancelToCopiedMs=watch.Elapsed.TotalMilliseconds;
+                var oldChildrenExited=processes.All(p=>p.HasExited);
+                var last=session.ReadView().TimelinePlayback!;
+                watch.Restart(); session.Dispose(); var shutdownMs=watch.Elapsed.TotalMilliseconds;
+                var survivor=false;
+                if(last.ProcessId is {} active)
+                { try { using var p=Process.GetProcessById((int)active); survivor=!p.HasExited; } catch(ArgumentException) { } }
+                if(!oldChildrenExited || survivor) throw new InvalidOperationException("A cancelled timeline child survived cleanup");
+                samples.Add(new {run=run+1,cancelToCopiedMs,shutdownMs,oldChildrenExited,survivor});
+            }
+            finally { foreach(var process in processes) process.Dispose(); }
+        }
+        File.WriteAllText(args[1],JsonSerializer.Serialize(new {method="Real native ABI, two active/prepared children; seek cancellation to replacement frame copy, then disposal of playing epoch. No GUI/scanout timing claimed.",samples},new JsonSerializerOptions{WriteIndented=true}));
     }
     private static void Offscreen(string[] args)
     {

@@ -20,13 +20,13 @@
           <TabStrip SelectedIndex="{Binding PreviewTabIndex, Mode=TwoWay}" ItemContainerTheme="{StaticResource ViewTab}" AutomationProperties.Name="Preview mode">
             <TabStripItem Content="Source" ToolTip.Tip="Real frames decoded from the selected media asset" />
             <TabStripItem Content="Timeline"
-                          ToolTip.Tip="Seek one monitored video track. Continuous timeline playback is unavailable." />
+                          ToolTip.Tip="Play or seek one monitored video track. Video only; source position stays independent." />
           </TabStrip>
         </StackPanel>
         <Grid Grid.Column="1" ColumnDefinitions="*,Auto" Margin="12,0,0,0" VerticalAlignment="Center">
           <TextBlock Text="{Binding Title}" Classes="label" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
                      TextAlignment="Right" ToolTip.Tip="{Binding Title}" />
-          <!-- Actual displayed frame (first PTS at or after the request). -->
+          <!-- Actual decoded PTS; still requests use ceiling, continuous playback uses intervals. -->
           <Border Grid.Column="1" IsVisible="{Binding HasFrame}" Margin="10,0,0,0">
             <!-- Visibility belongs to the wrapper so the narrow-panel style can
                  hide the caption without losing to a local IsVisible binding. -->
@@ -36,7 +36,7 @@
         </Grid>
       </Grid>
 
-      <!-- Mode-aware seeking; continuous Play remains Source-only. -->
+      <!-- Independent Source/Timeline transports; positions come from Rust. -->
       <StackPanel DockPanel.Dock="Bottom" Margin="12,0,12,8">
         <Slider Name="Scrubber" Minimum="0" Maximum="{Binding ScrubMaximum}" Value="{Binding ScrubValue}"
                 IsEnabled="{Binding CanScrub}" SmallChange="100" LargeChange="1000" Margin="0,-6,0,-10"
@@ -46,11 +46,11 @@
             <TextBlock Text="{Binding PositionText}" Classes="mono" Foreground="{StaticResource Accent}"
                        AutomationProperties.Name="{Binding PositionName}" ToolTip.Tip="{Binding PositionName}" />
             <TextBlock Text="/" Classes="mono faint wide-only" />
-            <TextBlock Text="{Binding DurationText}" Classes="mono faint wide-only" AutomationProperties.Name="Source duration" />
+            <TextBlock Text="{Binding DurationText}" Classes="mono faint wide-only" AutomationProperties.Name="Monitor duration" />
           </StackPanel>
           <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center" HorizontalAlignment="Center">
             <Button Classes="tool wide-only" Command="{Binding GoToStartCommand}" IsEnabled="{Binding Ready}"
-                    AutomationProperties.Name="Go to source start" ToolTip.Tip="Request the first frame">
+                    AutomationProperties.Name="Go to monitor start" ToolTip.Tip="Request position zero in the current monitor">
               <c:IconView Glyph="ToStart" />
             </Button>
             <Button Classes="tool" Command="{Binding BackCommand}" IsEnabled="{Binding Ready}"
@@ -66,7 +66,7 @@
               </Panel>
             </Button>
             <Button Classes="tool" Command="{Binding StopCommand}"
-                    AutomationProperties.Name="Stop" ToolTip.Tip="Stop and return to the start of the source">
+                    AutomationProperties.Name="Stop" ToolTip.Tip="Stop the current monitor and request position zero">
               <c:IconView Glyph="Stop" />
             </Button>
             <Button Classes="tool" Command="{Binding ForwardCommand}" IsEnabled="{Binding Ready}"
@@ -74,7 +74,7 @@
               <c:IconView Glyph="Forward" />
             </Button>
             <Button Classes="tool wide-only" Command="{Binding GoToEndCommand}" IsEnabled="{Binding CanScrub}"
-                    AutomationProperties.Name="Go to source end"
+                    AutomationProperties.Name="Go to monitor end"
                     ToolTip.Tip="Request the last reported position; the final frame may come earlier">
               <c:IconView Glyph="ToEnd" />
             </Button>

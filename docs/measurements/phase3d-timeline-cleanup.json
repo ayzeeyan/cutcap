@@ -1,0 +1,26 @@
+{
+  "method": "Real native ABI, two active/prepared children; seek cancellation to replacement frame copy, then disposal of playing epoch. No GUI/scanout timing claimed.",
+  "samples": [
+    {
+      "run": 1,
+      "cancelToCopiedMs": 128.5467,
+      "shutdownMs": 6.1496,
+      "oldChildrenExited": true,
+      "survivor": false
+    },
+    {
+      "run": 2,
+      "cancelToCopiedMs": 156.8173,
+      "shutdownMs": 7.3706,
+      "oldChildrenExited": true,
+      "survivor": false
+    },
+    {
+      "run": 3,
+      "cancelToCopiedMs": 156.9873,
+      "shutdownMs": 6.1696,
+      "oldChildrenExited": true,
+      "survivor": false
+    }
+  ]
+}

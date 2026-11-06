@@ -57,7 +57,7 @@ public sealed partial class PlayerViewModel : ObservableObject
         ? "Accepts milliseconds, 1.5s, 00:01.500 or an exact integer followed by ticks. Enter requests a timeline frame."
         : "Accepts 1500 (milliseconds), 1.5s or 00:01.500. Enter requests the frame.";
     public string SeekHint => _mode == PreviewMode.Timeline
-        ? "Seek the monitored video track. Milliseconds, timecode, or an exact integer followed by ticks. Timeline Play is unavailable."
+        ? "Seek the monitored video track while playing or paused. Milliseconds, timecode, or an exact integer followed by ticks."
         : "Source position. Drag or use arrows (100 ms) and Page keys (1 s); works while playing or paused.";
 
     [ObservableProperty]
@@ -232,13 +232,13 @@ public sealed partial class PlayerViewModel : ObservableObject
         if (ShowPause)
         {
             PreviewTrace.Command("pause");
-            _engine.Run(session => session.Pause());
+            _engine.Run(session => { if (_mode == PreviewMode.Timeline) session.PauseTimeline(); else session.Pause(); });
         }
         else
         {
             PreviewTrace.MarkRequest();
             PreviewTrace.Command("play");
-            _engine.Run(session => session.Play());
+            _engine.Run(session => { if (_mode == PreviewMode.Timeline) session.PlayTimeline(); else session.Play(); });
         }
     }
 
@@ -247,10 +247,10 @@ public sealed partial class PlayerViewModel : ObservableObject
     private void Stop()
     {
         PreviewTrace.Command("stop");
-        _engine.Run(session => session.Stop());
+        _engine.Run(session => { if (_mode == PreviewMode.Timeline) session.StopTimeline(); else session.Stop(); });
     }
 
-    public void ApplyMonitor(SourceView source, PlaybackView? playback, PreviewMode mode, TimelinePreviewView? timeline, bool canImport, bool engineReady)
+    public void ApplyMonitor(SourceView source, PlaybackView? playback, PreviewMode mode, TimelinePreviewView? timeline, bool canImport, bool engineReady, TimelinePlaybackView? timelinePlayback = null)
     {
         if (_mode != mode)
         {
@@ -266,26 +266,33 @@ public sealed partial class PlayerViewModel : ObservableObject
         if (mode == PreviewMode.Source || timeline is null) { Apply(source, playback, canImport, engineReady); return; }
         var status = timeline.State switch
         {
+            "starting" => "Starting timeline…", "playing" => "Playing timeline", "paused" => "Timeline paused",
+            "seeking" => "Seeking timeline…", "buffering" => "Timeline buffering…", "ended" => "End of timeline",
             "evaluating" => "Evaluating timeline…", "loading" => "Decoding timeline frame…", "blank" => "Blank timeline frame",
             "unavailable" => "Timeline source unavailable", "no_frame" => "No source frame inside this clip", "failed" => "Timeline preview failed",
             "cancelled" => "Timeline preview cancelled", _ => "Timeline frame ready",
         };
         Apply(new SourceView(engineReady, timeline.Title, timeline.PositionMs, timeline.SeekMaxMs, false,
             timeline.Busy, timeline.HasFrame, status, timeline.Detail, timeline.Caption), null, false, engineReady);
-        CanPlay = false; CanStop = false; ShowPause = false;
-        PlayName = "Timeline Play unavailable";
-        PlayHint = "Timeline playback is not implemented. Seek to evaluate one video track.";
+        State = timelinePlayback?.State ?? PlaybackState.Stopped;
+        CanPlay = engineReady && timeline.TrackId is not null && timeline.ExtentTicks > 0;
+        CanStop = engineReady && (timeline.PositionTicks != 0 || State != PlaybackState.Stopped);
+        ShowPause = timelinePlayback is { DesiredPlaying: true, State: PlaybackState.Starting or PlaybackState.Playing or PlaybackState.Seeking or PlaybackState.Buffering };
+        PlayName = ShowPause ? "Pause timeline" : State == PlaybackState.Ended ? "Replay timeline" : "Play timeline";
+        PlayHint = "Video only · plays the monitored track. Source playback keeps its own position.";
         PositionText = timeline.PositionText;
         PositionName = $"Timeline position, {timeline.PositionTicks} project ticks. Monitoring {timeline.TrackName}";
         DurationText = timeline.ExtentText;
         _timelineEndTicks = timeline.ExtentTicks;
-        Chip = timeline.Busy ? (timeline.State == "evaluating" ? "Evaluating…" : "Loading…") : null;
-        ChipBusy = timeline.Busy;
-        PlaybackError = timeline.State == "failed" ? timeline.Detail : null;
-        if (_timelineRequestedTicks != timeline.PositionTicks)
+        Chip = State switch { PlaybackState.Starting => "Starting…", PlaybackState.Seeking => "Seeking…", PlaybackState.Buffering => "Buffering…", PlaybackState.Ended => "End of timeline", PlaybackState.Failed => "Failed", _ => timeline.Busy ? "Loading…" : null };
+        ChipBusy = State is PlaybackState.Starting or PlaybackState.Seeking or PlaybackState.Buffering || timeline.Busy;
+        PlaybackError = timelinePlayback?.Error ?? (timeline.State == "failed" ? timeline.Detail : null);
+        // A request changes independently of a running clock. Preserve typed text.
+        var requestedTicks = State != PlaybackState.Stopped && timelinePlayback is not null ? timelinePlayback.RequestedTicks : timeline.PositionTicks;
+        if (_timelineRequestedTicks != requestedTicks)
         {
-            _timelineRequestedTicks = timeline.PositionTicks;
-            GoToText = timeline.PositionInput;
+            _timelineRequestedTicks = requestedTicks;
+            GoToText = State != PlaybackState.Stopped && timelinePlayback is not null ? timelinePlayback.RequestedText : timeline.PositionInput;
         }
     }
 
@@ -334,7 +341,7 @@ public sealed partial class PlayerViewModel : ObservableObject
                 ? (source.DurationEstimated ? "≈" : "") + Sync.Precise(source.DurationMs)
                 : "--:--.---";
             var requested = playback is { State: not PlaybackState.Stopped } ? playback.RequestedMs : source.PositionMs;
-            if (requested != _requested)
+            if (requested != _requested && _mode != PreviewMode.Timeline)
             {
                 _requested = requested;
                 GoToText = Sync.Precise(requested);

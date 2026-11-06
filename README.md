@@ -1,6 +1,6 @@
 # CutCap
 
-A native Windows video editor foundation: Avalonia (C#/.NET 10) over Rust. Import/play source video, save/open `.cutcap` projects, append/select/remove clips and undo/redo. Phase 3C adds exact single-track timeline frame preview through ABI 5: switch to Timeline and seek the ruler or time field. Rust selects the clip/source PTS; cuts, gaps and unavailable sources are explicit. Continuous timeline playback, compositing, audio playback, drag/trim/split and export remain unavailable.
+A native Windows video editor foundation: Avalonia (C#/.NET 10) over Rust. Import/play source video, save/open `.cutcap` projects, append/select/remove clips and undo/redo. Phase 3D adds continuous single-video-track Timeline Play/Pause/Stop across cuts and gaps through ABI 6. Rust owns the exact clock, clip/source PTS, buffering and cancellation. Source transport stays independent. Compositing, audio playback, drag/trim/split and export remain unavailable.
 
 ```powershell
 dotnet run --project apps/CutCap.Desktop      # builds the Rust engine DLL first
@@ -20,7 +20,7 @@ Requires Windows 11 x64, the pinned Rust/MSVC toolchain, the .NET 10 SDK (global
 - Background project Save/Save As/Open, exact snapshot revisions and unsaved-change protection. Missing/changed media remains in the library; relink the original through the Project menu. See [project format and integrity limits](docs/PROJECT_FORMAT.md).
 - Optional DX12 adapter diagnostic: `cargo run -p cutcap-ffi --features gpu-diagnostics --bin cutcap-gpu-info`.
 
-Audio/Text/Stickers/Effects/Transitions/Filters/Adjustment, clip inspector settings, Split, Export and track visibility/mute/lock remain unavailable. Timeline preview monitors the selected video track, otherwise the selected clip's video track, otherwise the first video track; it does not composite stacked tracks. Leaving Source pauses its transport; returning does not auto-play. New/Open/close protect unsaved document changes. Originals are never modified.
+Audio/Text/Stickers/Effects/Transitions/Filters/Adjustment, clip inspector settings, Split, Export and track visibility/mute/lock remain unavailable. Timeline preview monitors the selected video track, otherwise the selected clip's video track, otherwise the first video track; it does not composite stacked tracks. Leaving either preview mode pauses its transport; returning does not auto-play. New/Open/close protect unsaved document changes. Originals are never modified.
 
 | Shortcut | Action |
 |---|---|
