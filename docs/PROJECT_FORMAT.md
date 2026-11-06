@@ -1,5 +1,17 @@
 # CutCap project documents — format 1, core schema 1
 
+Phase 3E adds no format/schema change. Moved, trimmed and split clips are
+ordinary schema-1 clips: identity, track, exact integer `start`/`duration` in
+project ticks and an integer `source_in` in the stream clock. Start trims and
+splits keep `source_in` integral by aligning their offset to the stream's tick
+grid (ADR 023), so a reopened project maps every position to exactly the same
+source tick as before saving. Split parts are adjacent clips sharing a media
+reference; the left part keeps the original identity. Editing history, gesture
+previews, snap state and edit notices are not serialized; opening starts with
+empty history. Files written by Phase 3B-3D open unchanged, and Phase 3E files
+open in those builds (same format), although older builds cannot edit with the
+new gestures.
+
 Phase 3C adds no format/schema change. The timeline playhead, monitor mode/track, lookup index, transient model-generation UUID, evaluation results and preview frames are not serialized. Exact Clip source_in/start/duration values are evaluated after reopening and asynchronous media verification. A fresh session begins in Source mode; Timeline evaluates from its transient position. No rendered/decoded buffers or derived indexes enter a project file.
 
 `.cutcap` is UTF-8 JSON with `format: "CutCap"`, `format_version: 1`, a complete `project`, and a `sources` manifest. This is the editor's document, not an export. Opening adopts the validated Rust model; saving snapshots that same model. No migration is needed from core schema 1. There was no previously shipped project-file format. Unknown fields, duplicate fields/IDs, future versions and invalid graphs are rejected rather than guessed or partially loaded.

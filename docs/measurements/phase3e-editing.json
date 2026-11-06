@@ -1,0 +1,46 @@
+{
+  "phase": "3E advanced timeline editing",
+  "machine": "Windows 11 Home 10.0.26300, Intel Core Ultra 7 255H, integrated Intel graphics, 16 GB RAM, 150% scaling",
+  "engine_edit_latency_release": {
+    "source": "crates/cutcap-ffi/src/clip_edit_tests.rs measure_edit_latency (--release; command owner only, includes snapshot construction)",
+    "rows": [
+      { "clips": 1000, "move_us": 38.7, "trim_us": 41.6, "split_us": 37.5, "undo_us": 38.4, "redo_us": 36.5 },
+      { "clips": 5000, "move_us": 79.8, "trim_us": 347.5, "split_us": 74.4, "undo_us": 49.9, "redo_us": 56.3 },
+      { "clips": 20000, "move_us": 988.0, "trim_us": 1459.6, "split_us": 743.7, "undo_us": 1079.7, "redo_us": 855.6 }
+    ],
+    "note": "Cost is dominated by the per-command ProjectSnapshot clone and core overlap validation, both O(clips); one command per gesture, never per pointer move."
+  },
+  "history": { "max_entries": 200, "note": "each entry stores at most three clip values (split) plus a label; bounded independent of project size" },
+  "desktop_lookup_release": {
+    "source": "tests/CutCap.Desktop.Tests TimelineGestureTests.SnapAndOverlapLookupsStayLogarithmicAtTheClipLimit and TimelineEditingTests.MeasureLayoutCullingAndHitTestAtTheClipLimit (Release)",
+    "clips": 100000,
+    "snapper_and_geometry_build_ms": 55.7,
+    "snap_plus_overlap_per_pointer_move_us": 1.30,
+    "layout_build_ms": 29.86,
+    "cull_per_frame_us": 11.7,
+    "visible_clips_per_frame": 112,
+    "hit_test_us": 1.00,
+    "note": "Built once per clip-list change (an accepted edit), never per pointer move."
+  },
+  "native_draw_debug": {
+    "source": "scripts/native-ui/timeline-draw.ps1 with CUTCAP_TRACE_TIMELINE=1 (Debug build, 5,000-clip project, wheel scroll)",
+    "clips": 5000, "drawn_per_frame": 18, "content_width_px": 300252,
+    "render_record_avg_us": [823.8, 908.1], "render_record_max_us": [3809.4, 10146.4],
+    "phase3b_baseline_avg_us": [638.6, 447.7],
+    "note": "DrawingContext recording only (no compositor raster). The native drag-preview segment of this script did not complete: the Claude desktop app took the foreground and the input guard aborted without sending input; drag responsiveness is covered by the per-move lookup cost above and the native scenario."
+  },
+  "transport_recovery": {
+    "source": "tests/CutCap.Interop.Tests TimelineAdvancedEditingTests.TimelinePlaybackRunsAcrossAnEditedCutAndGapAfterTheEditStopsIt (real FFmpeg, Debug)",
+    "edit_stops_transport": true, "auto_resume": false,
+    "play_after_edit_to_first_copied_frame_ms": 93
+  },
+  "persistence": {
+    "source": "generate_large_timeline_project (real FFmpeg, --release)", "clips": 5000, "save_ms": 87.4,
+    "edit_during_pending_save": "accepted; file holds the captured revision; document stays dirty (timeline_edit_session_tests)"
+  },
+  "native_ui_latency": {
+    "source": "docs/measurements/phase3e-native-scenario.txt",
+    "release_to_lanes_update_ms": "149-200",
+    "note": "Release of a gesture to the UIA-observed lanes change, including UI Automation polling on a machine where an external UIA client also walks the tree."
+  }
+}

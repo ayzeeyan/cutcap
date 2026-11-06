@@ -1,5 +1,18 @@
 # CutCap architecture — Avalonia frontend over the Rust engine
 
+Phase 3E current addition: **ABI/contract 7**, exact clip editing. Core
+`edit.rs` holds the source-tick grid arithmetic, trim limits, split alignment
+and the atomic `Project::replace_clips` transaction (`ClipChange` with exact
+indices). `ffi/edits.rs` turns PlaceClip/MoveClip/TrimClip/SplitClip into one
+validated transaction and one `history.rs` entry. The session adds
+split-at-playhead (the Rust-owned position) and an `editing` view. In Avalonia,
+`TimelineGestures` (pure) computes move/trim/place previews,
+`TimelineSnapper` holds clip edges sorted once per clip-list change for binary
+search, and `TimelineGeometry` adds binary-searched overlap/neighbour lookup;
+`TimelineLanes` runs one pointer gesture at a time, draws a ghost and snap
+guide, autoscrolls at viewport edges, accepts library drops, and sends exactly
+one edit on release (Escape cancels). No C# code computes project time.
+
 Phase 3D current addition: **ABI/contract 6**, continuous video-only timeline
 transport. `ffi/timeline_plan.rs` carries an owner-built immutable shared core
 index plus bounded verified-source descriptors; `ffi/timeline_playback.rs` owns

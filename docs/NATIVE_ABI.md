@@ -1,6 +1,41 @@
-# CutCap native engine ABI, version 6
+# CutCap native engine ABI, version 7
 
-## Phase 3D additions (current authority)
+## Phase 3E additions (current authority)
+
+Rust `ABI_VERSION`, managed `NativeMethods.AbiVersion` and `CONTRACT_VERSION`
+are **7** (ADR 023). Project envelope/core schema remain 1. Every ABI 6 export,
+status number, frame layout and handle rule is unchanged; the bump is required
+because the frontend consumes new view fields and calls new exports, and it is
+the guard that stops a stale ABI-6 DLL from failing on the first edit.
+
+| New export | Semantics |
+|---|---|
+| `cutcap_session_place_clip(u64, u8* media, usize, u8* track, usize, i64 position, u32 unit)` | Enqueue PlaceClip: the whole Ready video source at `position` (drag-and-drop). |
+| `cutcap_session_move_clip(u64, u8* clip, usize, u8* track, usize, i64 position, u32 unit, u32 anchor)` | Enqueue MoveClip: the clip's `anchor` edge (0 start, 1 end) lands at `position` on `track`. |
+| `cutcap_session_trim_clip(u64, u8* clip, usize, u32 edge, i64 position, u32 unit)` | Enqueue TrimClip of the start (0) or end (1) boundary. |
+| `cutcap_session_split_clip(u64, u8* clip, usize, i64 position, u32 unit)` | Enqueue SplitClip at an explicit position. |
+| `cutcap_session_split_clip_at_playhead(u64, u8* clip, usize)` | Split at the Rust-owned timeline playhead (transport clock while playing, else the still-preview position). |
+
+`unit` is 0 for exact project ticks and 1 for whole milliseconds (floored to
+ticks by the owner); any other unit/edge/anchor, malformed or nil UUIDs and
+null-with-length pointers return `INVALID_ARGUMENT`. All exports mean
+acceptance only; engine rejections (overlap, audio track, source range, edge,
+grid) arrive as view status and change nothing. Every accepted edit is one
+history entry and, like ABI 6 structural edits, invalidates the timeline epoch:
+playback stops, the playhead is kept, nothing auto-resumes.
+
+View additions: clip rows add `end_ms`, `start_ticks`, `end_ticks`,
+`min_start_ticks`/`min_start_ms` (earliest start a start trim can reach inside
+the source, on its tick grid) and `max_end_ticks`/`max_end_ms` (latest end an
+end trim can reach; null when the source end is unknown). The session view adds
+`editing { split_enabled, split_detail, notice }`, computed by Rust from the
+selected clip and the playhead each view; `notice` repeats the last edit's
+source-tick alignment note. The wrapper adds PlaceClip/MoveClip/TrimClip/
+SplitClip/SplitClipAtPlayhead with a `TimelinePosition` (ticks or ms) and
+`ClipEdge`. Tests: `crates/cutcap-ffi/src/timeline_edit_session_tests.rs`,
+`clip_edit_tests.rs`; `tests/CutCap.Interop.Tests/TimelineAdvancedEditingTests.cs`.
+
+## Phase 3D additions (ABI 6, retained)
 
 Rust ABI_VERSION, managed NativeMethods.AbiVersion and CONTRACT_VERSION are **6**.
 Project envelope/core schema remain 1. All prior exports/status numbers and the

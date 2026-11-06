@@ -1,0 +1,44 @@
+00:03:16.361 imported two sources | lanes='Track lanes, 0 clips' ticks='' undo=False redo=False split=False title='Untitled project * — CutCap'
+00:03:23.922 drag interview -> V1 @2s: hint at release='Place interview take.mp4 at 00:02.000'
+00:03:24.110 placed: 178 ms
+00:03:26.663 dropped on Video 1 | lanes='Track lanes, 1 clip. Selected clip interview take.mp4, 00:02.000 to 00:22.000' ticks='1440000 + 14400000 @ 1/720000 s' undo=True redo=False split=False title='Untitled project * — CutCap'
+00:03:29.458 move body +3 s: hint='Move to 00:05.000'
+00:03:29.616 moved: 156 ms
+00:03:30.315 moved within Video 1 | lanes='Track lanes, 1 clip. Selected clip interview take.mp4, 00:05.000 to 00:25.000' ticks='3600000 + 14400000 @ 1/720000 s' undo=True redo=False split=False title='Untitled project * — CutCap'
+00:03:34.185 move to Video 2: hint='Move to 00:05.000'
+00:03:34.964 inspector after cross-track move: 'Video clip on Video 2'
+00:03:35.673 moved to Video 2 | lanes='Track lanes, 1 clip. Selected clip interview take.mp4, 00:05.000 to 00:25.000' ticks='3600000 + 14400000 @ 1/720000 s' undo=True redo=False split=False title='Untitled project * — CutCap'
+00:03:38.298 trim start +2 s: hint='Start 00:07.000'
+00:03:38.463 start trimmed: 163 ms
+00:03:40.600 trim end -4 s: hint='End 00:21.000'
+00:03:40.779 end trimmed: 178 ms
+00:03:41.546 trimmed both edges | lanes='Track lanes, 1 clip. Selected clip interview take.mp4, 00:07.000 to 00:21.000' ticks='5040000 + 10080000 @ 1/720000 s' undo=True redo=False split=False title='Untitled project * — CutCap'
+00:03:41.668 source in after trims: 'PTS 30720 @ 1/15360'
+00:03:44.986 split tip: 'Split the selected clip at the playhead (Ctrl+B)' enabled=True
+00:03:46.367 split: 198 ms
+00:03:47.082 split at the playhead | lanes='Track lanes, 2 clips. Selected clip interview take.mp4, 00:07.000 to 00:14.000' ticks='5040000 + 5040000 @ 1/720000 s' undo=True redo=False split=False title='Untitled project * — CutCap'
+00:03:48.122 undo split: 182 ms
+00:03:48.800 undo split | lanes='Track lanes, 1 clip. Selected clip interview take.mp4, 00:07.000 to 00:21.000' ticks='5040000 + 10080000 @ 1/720000 s' undo=True redo=True split=True title='Untitled project * — CutCap'
+00:03:49.381 redo split: 173 ms
+00:03:50.094 redo split | lanes='Track lanes, 2 clips. Selected clip interview take.mp4, 00:07.000 to 00:14.000' ticks='5040000 + 5040000 @ 1/720000 s' undo=True redo=False split=False title='Untitled project * — CutCap'
+00:03:56.493 drop colors near 21 s on V2: hint='Place colors 视频.mkv at 00:21.000'
+00:03:56.650 snapped drop: 155 ms
+00:03:59.317 snapped drop (selected = colors) | lanes='Track lanes, 3 clips. Selected clip colors 视频.mkv, 00:21.000 to 00:24.000' ticks='15120000 + 2160000 @ 1/720000 s' undo=True redo=False split=False title='Untitled project * — CutCap'
+00:04:08.389 overlapping drop: hint='Clips cannot overlap' lanes='Track lanes, 3 clips. Selected clip colors 视频.mkv, 00:21.000 to 00:24.000'
+00:04:10.812 move onto audio lane: hint='Video clips go on a video track' lanes='Track lanes, 3 clips. Selected clip colors 视频.mkv, 00:21.000 to 00:24.000'
+00:04:12.032 mid-drag hint='Move to 00:25.000'
+00:04:13.795 escape cancelled the drag | lanes='Track lanes, 3 clips. Selected clip colors 视频.mkv, 00:21.000 to 00:24.000' ticks='15120000 + 2160000 @ 1/720000 s' undo=True redo=False split=False title='Untitled project * — CutCap'
+00:04:19.985 timeline playing: play button='Pause timeline,Timeline,Add to timeline' playhead='00:09.134'
+00:04:23.818 seek across the cut while playing: playhead='00:14.920'
+00:04:34.331 saved | lanes='Track lanes, 3 clips. Selected clip interview take.mp4, 00:07.000 to 00:14.000' ticks='5040000 + 5040000 @ 1/720000 s' undo=True redo=False split=False title='Untitled project — CutCap'
+00:04:34.341 saved clips: 39e2a0c3-b802-40f7-9515-3fd5d4e2d675|207e52d4-216a-4113-893d-38d3b0804ecf|5040000|5040000|30720 ; e36d3b92-1b91-45a9-9b75-f33af2c8b03a|207e52d4-216a-4113-893d-38d3b0804ecf|10080000|5040000|138240 ; 6d4d626a-07c8-409e-a06a-6517a6b1a14f|207e52d4-216a-4113-893d-38d3b0804ecf|15120000|2160000|0
+00:04:36.823 close after save | exited=True in 653 ms code=0 leftover=0
+00:04:47.136 unsaved prompt for the empty untitled project; continuing without saving
+00:04:48.092 reopened: 172 ms
+00:04:51.544 clip at 9000 ms: ticks='5040000 + 5040000 @ 1/720000 s' source='PTS 30720 @ 1/15360'
+00:04:52.500 clip at 16000 ms: ticks='10080000 + 5040000 @ 1/720000 s' source='PTS 138240 @ 1/15360'
+00:04:53.390 clip at 22000 ms: ticks='15120000 + 2160000 @ 1/720000 s' source='PTS 0 @ 1/1000'
+00:04:53.393 file clips after reopen (unchanged file): 39e2a0c3-b802-40f7-9515-3fd5d4e2d675|207e52d4-216a-4113-893d-38d3b0804ecf|5040000|5040000|30720 ; e36d3b92-1b91-45a9-9b75-f33af2c8b03a|207e52d4-216a-4113-893d-38d3b0804ecf|10080000|5040000|138240 ; 6d4d626a-07c8-409e-a06a-6517a6b1a14f|207e52d4-216a-4113-893d-38d3b0804ecf|15120000|2160000|0 identical=True
+00:04:54.052 reopened | lanes='Track lanes, 3 clips. Selected clip colors 视频.mkv, 00:21.000 to 00:24.000' ticks='15120000 + 2160000 @ 1/720000 s' undo=False redo=False split=False title='Untitled project — CutCap'
+00:05:06.212 source playing: button='Pause' lanes='Track lanes, 3 clips. Selected clip colors 视频.mkv, 00:21.000 to 00:24.000'
+00:05:07.281 close during active source decode | exited=True in 620 ms code=0 leftover=0

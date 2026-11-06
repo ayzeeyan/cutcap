@@ -1,5 +1,36 @@
 # Architecture decisions
 
+## ADR 023 — Exact clip move/trim/split, grouped history and ABI 7 (Phase 3E)
+
+Keep schema/envelope 1: a clip's identity, track, start, duration and integer
+`source_in` already describe every result of a move, trim or split. The one
+representability limit is that `source_in` is an integer number of stream
+ticks while edits are expressed in project ticks. Rather than adding a
+fractional in-point (a schema migration) or rounding per frame, edits that move
+`source_in` (start trim, split) are aligned to the exact grid on which the
+offset is a whole number of stream ticks: `source_step = den(project_tick /
+stream_tick)`, e.g. 375 project ticks (0.52 ms) for 1/15360 s, 720 (1 ms) for
+1/1000 s, 8 for 1/90000 s. Splits round to the nearest grid point; start trims
+round up toward the retained part so they never overlap a preceding clip or
+move before a snap target. The adjustment is at most one stream tick, reported
+in `edit_notice`, and never accumulates: the retained frames keep exactly the
+mapping they had (tested over twenty consecutive off-grid splits, VFR, nonzero
+and negative start PTS, three stream clocks, with real FFmpeg frames).
+
+Edits are atomic core transactions (`Project::replace_clips`, all-or-nothing
+with exact rollback) recorded as `ClipChange` values, which generalizes the
+Phase 3B insert/remove history without changing its revision semantics. A
+gesture is one transaction because the frontend previews locally and commits
+once on release; the authoritative project never mutates per pointer move.
+Structural edits reuse the Phase 3D invalidation path (new evaluation
+generation → transport cancelled, playhead kept, no auto-resume).
+
+ABI/contract 7 add five exports and consumed clip/editing fields. The frontend
+never derives project time: it compares and selects exact tick values the view
+supplies (clip edges, trim limits, playhead) and otherwise commits whole
+milliseconds. Library drag-and-drop uses an in-process data format carrying
+only the media identity, name, duration and readiness.
+
 ## ADR 022 — Independent timeline interval transport and ABI 6 (Phase 3D)
 
 Keep schema/envelope 1. Share an immutable owner-built core index through a

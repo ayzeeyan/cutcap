@@ -1,6 +1,12 @@
 # Claude onboarding
 
-Phase 3D current handoff: ABI/contract 6 support real independent timeline
+Phase 3E current handoff: ABI/contract 7 add exact clip place/move/trim/split
+with one undo step per gesture (docs/PHASE_3E_ADVANCED_TIMELINE_REPORT.md,
+ADR 023). Start trims and splits align to the source tick grid so source_in
+stays an exact integer; the frontend previews gestures locally and commits
+once, using exact tick values from the view. Schema/envelope remain 1.
+
+Phase 3D handoff: ABI/contract 6 support real independent timeline
 Play/Pause/Stop across single-video-track cuts and gaps. Read
 docs/PHASE_3D_TIMELINE_PLAYBACK_CONTRACT.md and the Phase 3D report. Keep positions,
 clock, interval selection, stale gates and source endpoints Rust-owned. The

@@ -1,6 +1,6 @@
 # CutCap
 
-A native Windows video editor foundation: Avalonia (C#/.NET 10) over Rust. Import/play source video, save/open `.cutcap` projects, append/select/remove clips and undo/redo. Phase 3D adds continuous single-video-track Timeline Play/Pause/Stop across cuts and gaps through ABI 6. Rust owns the exact clock, clip/source PTS, buffering and cancellation. Source transport stays independent. Compositing, audio playback, drag/trim/split and export remain unavailable.
+A native Windows video editor foundation: Avalonia (C#/.NET 10) over Rust. Import/play source video, save/open `.cutcap` projects, append/select/remove clips and undo/redo. Phase 3D adds continuous single-video-track Timeline Play/Pause/Stop across cuts and gaps. Phase 3E adds real timeline editing through ABI 7: drag media onto a video track, move clips within and between video tracks, trim both edges, split at the playhead, snapping, and one exact undo step per gesture. Rust owns the exact clock, clip/source PTS, edits, buffering and cancellation. Source transport stays independent. Compositing, audio playback, ripple/roll/slip edits and export remain unavailable.
 
 ```powershell
 dotnet run --project apps/CutCap.Desktop      # builds the Rust engine DLL first

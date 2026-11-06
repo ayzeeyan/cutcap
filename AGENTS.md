@@ -42,6 +42,7 @@ CutCap is a native, offline-first Windows 11 x64 non-linear video editor. The st
 
 ## Time and model rules
 
+- Timeline edits (Phase 3E, ABI/contract 7) are Rust transactions: one validated `ClipChange` per gesture, one history entry, no per-pointer-move mutation. Start trims/splits keep `source_in` integral by aligning to the source tick grid (ADR 023); never round source offsets per frame. The frontend selects exact tick values from the view and never computes project time.
 - Continuous timeline playback follows PHASE_3D_TIMELINE_PLAYBACK_CONTRACT.md (ABI/contract 6): a separate Rust project-tick clock, active/next persistent slots, real-PTS intervals and exact cut/gap permissions. Never regress to per-frame subprocesses, nominal-FPS clocks, C# clip evaluation or per-frame clip-document rebuilds. Keep stopped ceiling seeks separate from continuous interval seeks. Structural changes stop/re-evaluate; mode leave pauses independently. Retest actual cut buffering, VFR, source offsets, missing/relinked sources and cleanup when changing this path.
 
 - Timeline preview follows PHASE_3C_TIMELINE_PREVIEW_CONTRACT.md: core indexed `[start,end)` lookup, rational source_in + clip-local offset rounded once, and exclusive source-end validation. No nominal-frame-rate timestamps, successor-frame leakage, C# clip evaluation or fake timeline playback. Gaps and no valid frame inside a clip are distinct from decoder failures.

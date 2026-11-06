@@ -1,6 +1,46 @@
-# UI–engine and media contracts, version 6
+# UI–engine and media contracts, version 7
 
-## Phase 3D current contract
+## Phase 3E additions (current authority)
+
+ABI/CONTRACT_VERSION are 7 (ADR 023); schema/envelope remain 1. The Phase 3D
+contract below still binds transport and evaluation.
+
+- **PlaceClip { media, track, position }** places the whole Ready video source
+  (duration as for append) at `position`; overlap is rejected, never shifted.
+- **MoveClip { clip, track, position, anchor }** keeps ClipId, MediaId,
+  `source_in` and duration; only start and track change. `anchor` End means the
+  new end is `position`. Rejections: non-video or unknown track, overlap,
+  start < 0, overflow, no change.
+- **TrimClip { clip, edge, position }**: End keeps start and `source_in` and sets
+  the end (any project tick). Start moves the start and `source_in` together by
+  the same exact offset `d`, so every retained position maps to the same source
+  tick. Because `source_in` is an integer number of stream ticks, `d` must lie
+  on the source tick grid (`cutcap_core::edit::source_step`, e.g. 375 project
+  ticks for a 1/15360 s stream); a requested start is rounded **up** to the next
+  grid point (toward the retained part, never onto a preceding clip) and the
+  snapshot's `edit_notice` reports the adjustment. Both edges are bounded by the
+  original stream range `[start_pts, start_pts + duration_ticks]`; with unknown
+  metadata only shrinking is allowed.
+- **SplitClip { clip, position }**: an interior cut rounded to the **nearest**
+  grid point; the left part keeps the ClipId and `source_in`, the right part is a
+  new ClipId with `source_in + d` exactly, so the left part's exclusive source
+  endpoint equals the right part's `source_in` (no repeated or skipped tick).
+  Cuts at/outside the edges or that round onto an edge are rejected.
+- **History**: each successful edit is exactly one entry holding the exact clip
+  values removed and inserted with their indices (`ClipChange`); one undo/redo
+  restores/reproduces identities, ranges and order. Failed edits change nothing
+  and record nothing; selection is never an entry; a new edit clears redo;
+  bound 200; New/Open reset. Saved-revision rules are unchanged (ADR 020).
+- **Transport**: every accepted edit renews the evaluation generation; the
+  session cancels timeline playback, keeps the playhead, re-evaluates the still
+  and never auto-resumes. Old-epoch frames cannot be copied. Source playback and
+  source position are unaffected.
+- **Frontend**: gestures are previews only; exactly one command is sent on
+  release. Snapping chooses one of the engine's exact boundaries (zero,
+  playhead, clip starts/ends) within 8 px and commits it as ticks; otherwise
+  whole milliseconds are committed and Rust floors them.
+
+## Phase 3D contract
 
 ABI/CONTRACT_VERSION are 6; document schema/envelope remain 1. Read
 PHASE_3D_TIMELINE_PLAYBACK_CONTRACT.md for binding scheduling semantics.
