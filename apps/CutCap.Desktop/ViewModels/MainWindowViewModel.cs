@@ -146,6 +146,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
         }
         Player.ApplyMonitor(view.Source, view.Playback, view.PreviewMode, view.TimelinePreview, view.EngineReady && !view.Import.Busy, view.EngineReady, view.TimelinePlayback);
         Timeline.ApplyPreview(view.TimelinePreview);
+        Timeline.ApplyEditing(view.Editing);
         if (changes.Inspector)
         {
             Inspector.Apply(view.Inspector);

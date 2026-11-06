@@ -25,8 +25,8 @@
               <TextBlock Text="Add to timeline" VerticalAlignment="Center" />
             </StackPanel>
           </Button>
-          <Button Classes="tool" IsEnabled="False" AutomationProperties.Name="Split clip"
-                  ToolTip.Tip="Splitting clips is not available yet." ToolTip.ShowOnDisabled="True">
+          <Button Classes="tool" Command="{Binding SplitCommand}" AutomationProperties.Name="Split clip"
+                  ToolTip.Tip="{Binding SplitTip}" ToolTip.ShowOnDisabled="True">
             <c:IconView Glyph="Scissors" />
           </Button>
           <Button Classes="tool" Command="{Binding RemoveClipCommand}" AutomationProperties.Name="Delete clip"
@@ -49,10 +49,14 @@
             </StackPanel>
           </Button>
         </StackPanel>
+        <!-- The live gesture hint takes only the space left between the tool groups. -->
+        <TextBlock Grid.Column="1" Text="{Binding EditHint}" Classes="fine faint" VerticalAlignment="Center"
+                   HorizontalAlignment="Right" Margin="12,0,14,0" TextTrimming="CharacterEllipsis"
+                   AutomationProperties.AutomationId="TimelineEditHint" AutomationProperties.LiveSetting="Polite" />
         <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="2" VerticalAlignment="Center">
           <TextBlock Text="{Binding ClipCountText}" Classes="fine faint" VerticalAlignment="Center" Margin="0,0,10,0" />
           <TextBlock Text="{Binding PlayheadText}" Classes="mono muted" VerticalAlignment="Center" Margin="0,0,6,0"
-                     AutomationProperties.Name="Timeline playhead position"
+                     AutomationProperties.Name="Timeline playhead position" AutomationProperties.AutomationId="TimelinePlayhead"
                      ToolTip.Tip="Rust timeline clock position. Source preview keeps an independent position." />
           <Border Classes="vrule" Height="18" />
           <Button Classes="tool" Command="{Binding ZoomOutCommand}" AutomationProperties.Name="Zoom out"
@@ -115,7 +119,7 @@
 
         <ScrollViewer Name="LanesScroll" Grid.Row="1" Grid.Column="1"
                       HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
-          <c:TimelineLanes Name="Lanes" Lanes="{Binding Lanes}" Clips="{Binding Clips}" Zoom="{Binding Zoom}" PlayheadMs="{Binding PlayheadMs}"
+          <c:TimelineLanes Name="Lanes" Lanes="{Binding Lanes}" Clips="{Binding Clips}" Zoom="{Binding Zoom}" PlayheadMs="{Binding PlayheadMs}" PlayheadTicks="{Binding PlayheadTicks}"
                            HorizontalAlignment="Left" VerticalAlignment="Top"
                            AutomationProperties.Name="{Binding LanesAccessibleName}" />
         </ScrollViewer>

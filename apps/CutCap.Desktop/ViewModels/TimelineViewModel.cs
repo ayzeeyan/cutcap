@@ -34,8 +34,10 @@ public sealed partial class TrackViewModel(TrackView track) : ObservableObject
 /// <summary>
 /// Timeline over the engine's tracks and clips. Every clip, selection and
 /// history value comes from the engine; this only forwards commands. Zoom is
-/// presentation state. The playhead stays at timeline zero until a timeline
-/// transport exists, and the source monitor never moves it.
+/// presentation state. The playhead is the Rust-owned timeline position; the
+/// source monitor never moves it. Gestures in the lanes (move, trim, drop)
+/// arrive here once, on release, as a single edit command (one undo step).
+/// Split uses the Rust-owned playhead; Rust also decides whether it is possible.
 /// <para>Insertion policy (explicit, append-to-end): the whole selected ready
 /// source is placed after the last clip of the target video track. The target
 /// is the selected track if it is a video track, else the track of the selected
@@ -63,7 +65,7 @@ public sealed partial class TimelineViewModel : ObservableObject
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(AddVideoTrackCommand), nameof(AddAudioTrackCommand), nameof(AddClipCommand),
-        nameof(RemoveClipCommand), nameof(UndoCommand), nameof(RedoCommand))]
+        nameof(RemoveClipCommand), nameof(UndoCommand), nameof(RedoCommand), nameof(SplitCommand))]
     public partial bool EngineReady { get; set; }
 
     /// <summary>Clips in project order, as the engine presents them.</summary>
@@ -71,9 +73,23 @@ public sealed partial class TimelineViewModel : ObservableObject
     public partial IReadOnlyList<ClipView> Clips { get; set; } = [];
 
     [ObservableProperty]
-    [NotifyCanExecuteChangedFor(nameof(RemoveClipCommand))]
+    [NotifyCanExecuteChangedFor(nameof(RemoveClipCommand), nameof(SplitCommand))]
     [NotifyPropertyChangedFor(nameof(RemoveClipTip))]
     public partial ClipView? SelectedClip { get; set; }
+
+    /// <summary>Rust's split availability for the selected clip at the playhead.</summary>
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(SplitCommand))]
+    [NotifyPropertyChangedFor(nameof(SplitTip))]
+    public partial EditingView Editing { get; set; } = new(false, "Select a clip, then place the playhead inside it to split (Ctrl+B).");
+
+    /// <summary>The live gesture hint while dragging, otherwise the editing help.</summary>
+    [ObservableProperty]
+    public partial string EditHint { get; set; } = DefaultHint;
+
+    public const string DefaultHint = "Drag clips to move · drag edges to trim · Shift: no snapping · Esc: cancel";
+
+    public string SplitTip => Editing.SplitDetail;
 
     /// <summary>The library's selected source, the candidate for insertion.</summary>
     [ObservableProperty]
@@ -114,11 +130,54 @@ public sealed partial class TimelineViewModel : ObservableObject
     public partial string PlayheadText { get; set; } = "00:00.000";
     [ObservableProperty]
     public partial long PlayheadMs { get; set; }
+    /// <summary>Exact playhead (project ticks), a snap target; never derived in C#.</summary>
+    [ObservableProperty]
+    public partial long PlayheadTicks { get; set; }
     public void ApplyPreview(TimelinePreviewView? preview)
     {
         if (preview is null) return;
         PlayheadText = preview.PositionText;
         PlayheadMs = preview.PositionMs;
+        PlayheadTicks = preview.PositionTicks;
+    }
+
+    /// <summary>Split availability can change with every playhead update.</summary>
+    public void ApplyEditing(EditingView? editing)
+    {
+        if (editing is not null && editing != Editing) Editing = editing;
+    }
+
+    public void ShowGestureHint(string? hint) => EditHint = hint ?? DefaultHint;
+
+    private bool CanSplit() => EngineReady && SelectedClip is not null && Editing.SplitEnabled;
+
+    [RelayCommand(CanExecute = nameof(CanSplit))]
+    private void Split()
+    {
+        if (SelectedClip is { } clip)
+        {
+            _engine.Run(session => session.SplitClipAtPlayhead(clip.Id));
+        }
+    }
+
+    /// <summary>Sends one completed gesture to the engine; Rust validates and applies it atomically.</summary>
+    public void Commit(GesturePreview edit)
+    {
+        switch (edit.Kind)
+        {
+            case GestureKind.Move when edit.ClipId is { } clip && edit.TrackId is { } track:
+                _engine.Run(s => s.MoveClip(clip, track, edit.Position, edit.Anchor));
+                break;
+            case GestureKind.TrimStart when edit.ClipId is { } clip:
+                _engine.Run(s => s.TrimClip(clip, ClipEdge.Start, edit.Position));
+                break;
+            case GestureKind.TrimEnd when edit.ClipId is { } clip:
+                _engine.Run(s => s.TrimClip(clip, ClipEdge.End, edit.Position));
+                break;
+            case GestureKind.Place when edit.MediaId is { } media && edit.TrackId is { } track:
+                _engine.Run(s => s.PlaceClip(media, track, edit.Position));
+                break;
+        }
     }
     public void SeekRuler(long milliseconds) => _engine.Run(s => s.SeekTimelineMilliseconds(milliseconds));
     public bool HasTracks => Tracks.Count > 0;
@@ -222,7 +281,7 @@ public sealed partial class TimelineViewModel : ObservableObject
         {
             EngineReady = view.EngineReady;
             Sync.Items(Tracks, view.Tracks, t => t.Id, t => t.Id, t => new TrackViewModel(t), (item, t) => item.Track = t);
-            Lanes = view.Tracks.Select(t => new LaneInfo(t.IsVideo, t.Selected, t.LaneLabel)).ToArray();
+            Lanes = view.Tracks.Select(t => new LaneInfo(t.IsVideo, t.Selected, t.LaneLabel, t.Id)).ToArray();
             SelectedTrack = Tracks.FirstOrDefault(t => t.Track.Selected);
             var clips = timeline?.Clips ?? [];
             if (!ReferenceEquals(clips, Clips)) { Clips = clips; }
@@ -230,6 +289,7 @@ public sealed partial class TimelineViewModel : ObservableObject
             Source = view.Media.FirstOrDefault(m => m.Selected);
             TargetTrack = ChooseTarget(Tracks, SelectedClip);
             History = view.History ?? new HistoryStatus(false, false, null, null, 0);
+            ApplyEditing(view.Editing);
         }
         finally
         {

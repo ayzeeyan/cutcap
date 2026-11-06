@@ -63,6 +63,7 @@ public partial class MainWindow : Window
             (Key.Y, KeyModifiers.Control) or (Key.Z, KeyModifiers.Control | KeyModifiers.Shift) => timeline.RedoCommand,
             (Key.Delete, KeyModifiers.None) or (Key.Back, KeyModifiers.None) when timeline.SelectedClip is not null
                 => timeline.RemoveClipCommand,
+            (Key.B, KeyModifiers.Control) => timeline.SplitCommand,
             _ => null,
         };
     }
