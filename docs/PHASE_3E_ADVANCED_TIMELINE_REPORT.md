@@ -15,7 +15,7 @@ Author: Claude Opus 5.5, sole active developer for this milestone (owner-directe
 ## 2. Git branch and commit history
 
 - Branch `claude/phase-3e-advanced-timeline`, created from `4fc0738`, not from `main`.
-- Phase 3E commits: {COMMITS}
+- Phase 3E commits: `743c9b1` feat(core) exact clip transactions and source-tick grid; `c922b30` feat(history) grouped edits, ABI 7 and interop; `67539b8` feat(ui) drag editing, trim handles, split and snapping; `8ab879c` test(timeline) engine/session/ABI/FFmpeg/desktop/native coverage; `2bb34ac` docs; plus this report update. Each intermediate commit was built (Rust clippy `-D warnings` and the .NET solution) in a clean worktree. Pushed with `git push -u origin claude/phase-3e-advanced-timeline` (no force); remote head verified equal to local. Against `origin/main` the branch is 12 commits ahead (Phase 3C 4, Phase 3D 3, Phase 3E 5) and `git merge-tree` reports no conflicts; `main`'s only extra commits are the PR #1/#2 merge commits, and its tree equals the Phase 3B tree it merged.
 
 ## 3. New editing commands
 
@@ -261,11 +261,22 @@ The native drag-preview segment of `timeline-draw.ps1` did not complete. The Cla
 
 ## 15. Pull request
 
-{PR}
+**[ayzeeyan/cutcap#3](https://github.com/ayzeeyan/cutcap/pull/3)**: "feat: integrate timeline preview, playback, and advanced editing (Phases 3C–3E)", base `main`, head `claude/phase-3e-advanced-timeline`. GitHub returned it open and not a draft, with head `2bb34ac` before this report commit. It is not set to auto-merge and is left for the owner to review and merge.
 
 ## 16. Branch cleanup results
 
-{CLEANUP}
+Each candidate was verified before deletion: tip reachable from a preserved published ref (`git merge-base --is-ancestor`), zero commits outside `origin/main` and `origin/claude/phase-3e-advanced-timeline`, no open PR using it as head or base, not the default branch (`main`), and not referenced by the repository workflow.
+
+| Deleted remote branch | Tip | Preserved in |
+|---|---|---|
+| `claude/phase-2b-playback-ui` | `3af9d04` | `main` and the 3E branch |
+| `codex/phase-2-playback` | `bab1659` | `main` and the 3E branch |
+| `codex/phase-3a-persistence` | `6ea31b0` | `main` and the 3E branch |
+| `claude/phase-3b-timeline-editing` | `eca2b0e` | `main` (PR #2) and the 3E branch |
+| `codex/phase-3c-timeline-preview` | `43d859c` | the 3E branch (PR #3) |
+| `codex/phase-3d-timeline-playback` | `4fc0738` | the 3E branch (PR #3) |
+
+Each was deleted by explicit name (`git push origin --delete <branch>`), with no wildcards and no force. After `git fetch origin --prune`, the remote has exactly `main` (`0b777c2`) and `claude/phase-3e-advanced-timeline`, and PR #3 still points at the published head. None were retained: every candidate met every condition. Local branch copies were left untouched. Once PR #3 merges, `claude/phase-3e-advanced-timeline` can be deleted separately, leaving only `main`.
 
 ## 17. Recommended next milestone
 
