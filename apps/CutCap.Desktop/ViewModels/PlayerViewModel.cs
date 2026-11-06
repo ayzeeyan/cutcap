@@ -7,9 +7,9 @@ using CutCap.Interop;
 namespace CutCap.Desktop.ViewModels;
 
 /// <summary>
-/// Source monitor and transport. Every position here is a source-media position;
-/// nothing in this view model touches the timeline playhead. Displayed values
-/// always come from the engine view (<see cref="Transport.Map"/>), so a command
+/// Source/Timeline monitor presentation. Source transport and timeline seeking
+/// use separate Rust-owned positions; this view model never evaluates clips.
+/// Displayed values come from the engine view (<see cref="Transport.Map"/>), so a command
 /// that was merely accepted never shows as done, user input can never leave a
 /// stale control behind (the Phase 1 slider/text regression), and no frontend
 /// timer invents media time.

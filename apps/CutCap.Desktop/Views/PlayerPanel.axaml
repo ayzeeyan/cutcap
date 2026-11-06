@@ -36,7 +36,7 @@
         </Grid>
       </Grid>
 
-      <!-- Source transport. Nothing here moves the timeline playhead. -->
+      <!-- Mode-aware seeking; continuous Play remains Source-only. -->
       <StackPanel DockPanel.Dock="Bottom" Margin="12,0,12,8">
         <Slider Name="Scrubber" Minimum="0" Maximum="{Binding ScrubMaximum}" Value="{Binding ScrubValue}"
                 IsEnabled="{Binding CanScrub}" SmallChange="100" LargeChange="1000" Margin="0,-6,0,-10"

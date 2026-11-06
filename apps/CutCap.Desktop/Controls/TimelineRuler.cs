@@ -81,7 +81,7 @@ public sealed class TimelineRuler : Control
                     context.DrawText(label, new Point(x + 8, 4));
                 }
             }
-            // Timeline playhead head at zero. It does not move until timeline playback exists.
+            // Rust-owned timeline position; Source playback never moves it.
             var head = Math.Round(scale.TimeToX(PlayheadMs) - Offset);
             if (head > -8 && head < Bounds.Width + 8)
             {

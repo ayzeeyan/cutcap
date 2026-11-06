@@ -32,6 +32,7 @@ use std::{
 /// or view JSON field the frontend depends on.
 /// ABI 4 (Phase 3B): clip insert/remove/select, undo/redo, the separately
 /// fetched timeline document and the view's `timeline_generation`/`history`.
+/// ABI 5 adds independent monitor modes, exact timeline seeks and monitor DTOs.
 pub const ABI_VERSION: u32 = 5;
 
 pub const CUTCAP_OK: i32 = 0;
