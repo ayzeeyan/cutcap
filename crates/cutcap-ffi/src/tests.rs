@@ -20,6 +20,9 @@ use std::{
 
 const PROBE: &[u8] = br#"{"streams":[{"index":0,"codec_type":"video","codec_name":"ffv1","width":320,"height":180,"time_base":"1/1000","start_pts":0,"duration_ts":3000}],"format":{"format_name":"matroska"}}"#;
 
+#[path = "timeline_preview_tests.rs"]
+mod timeline_preview;
+
 thread_local! {
     // Controlled media still exercises real source ownership/fingerprinting.
     // Each test thread cleans up its own disposable files, including Unicode.

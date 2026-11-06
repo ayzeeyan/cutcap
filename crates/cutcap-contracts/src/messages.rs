@@ -8,7 +8,7 @@ use crate::{
     VerifiedMedia,
 };
 
-pub const CONTRACT_VERSION: u32 = 4;
+pub const CONTRACT_VERSION: u32 = 5;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TrackKind {
@@ -41,6 +41,11 @@ pub enum Command {
         name: String,
     },
     GetSnapshot,
+    /// Ephemeral evaluation: responds without cloning/serializing a project snapshot.
+    EvaluateTimeline {
+        position: crate::TimelineSeek,
+        track_id: Option<TrackId>,
+    },
     AddTrack {
         kind: TrackKind,
     },
@@ -136,6 +141,8 @@ pub struct HistoryStatus {
 #[serde(deny_unknown_fields)]
 pub struct ProjectSnapshot {
     pub id: ProjectId,
+    /// Transient identity, refreshed independently of undoable document revisions.
+    pub evaluation_generation: RequestId,
     pub name: String,
     pub timebase: Timebase,
     pub tracks: Vec<TrackSummary>,
@@ -155,6 +162,10 @@ pub struct ProjectSnapshot {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type", content = "data")]
 pub enum EngineEvent {
+    TimelineEvaluated {
+        request_id: RequestId,
+        result: Result<Box<crate::TimelineEvaluation>, EngineError>,
+    },
     /// Nonterminal status update; accepted file operations remain pending.
     Updated { snapshot: ProjectSnapshot },
     FileFailed {

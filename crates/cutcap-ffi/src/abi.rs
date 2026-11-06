@@ -14,7 +14,9 @@
 #![allow(unsafe_code)]
 
 use crate::session::{Session, SessionError};
-use cutcap_contracts::{ClipId, MediaId, TrackId, TrackKind};
+use cutcap_contracts::{
+    ClipId, MediaId, PreviewMode, TimelineSeek, TimelineTime, TrackId, TrackKind,
+};
 use std::{
     cell::RefCell,
     collections::BTreeMap,
@@ -30,7 +32,7 @@ use std::{
 /// or view JSON field the frontend depends on.
 /// ABI 4 (Phase 3B): clip insert/remove/select, undo/redo, the separately
 /// fetched timeline document and the view's `timeline_generation`/`history`.
-pub const ABI_VERSION: u32 = 4;
+pub const ABI_VERSION: u32 = 5;
 
 pub const CUTCAP_OK: i32 = 0;
 pub const CUTCAP_INVALID_ARGUMENT: i32 = 1;
@@ -553,6 +555,54 @@ pub extern "C" fn cutcap_session_cancel_import(handle: u64) -> i32 {
 }
 
 /// Accepts source Play/Resume; decoding and scheduling remain asynchronous.
+#[unsafe(no_mangle)]
+pub extern "C" fn cutcap_session_set_preview_mode(handle: u64, mode: u32) -> i32 {
+    guard(|| {
+        let mode = match mode {
+            0 => PreviewMode::Source,
+            1 => PreviewMode::Timeline,
+            _ => return Err(Fail::argument("Unknown preview mode.")),
+        };
+        with_session(handle, |s| Ok(s.set_preview_mode(mode)?))
+    })
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn cutcap_session_seek_timeline(handle: u64, ticks: i64) -> i32 {
+    guard(|| {
+        with_session(handle, |s| {
+            Ok(s.seek_timeline(TimelineSeek::Ticks(TimelineTime(ticks)))?)
+        })
+    })
+}
+#[unsafe(no_mangle)]
+pub extern "C" fn cutcap_session_seek_timeline_ms(handle: u64, ms: i64) -> i32 {
+    guard(|| {
+        with_session(handle, |s| {
+            Ok(s.seek_timeline(TimelineSeek::Milliseconds(ms))?)
+        })
+    })
+}
+/// Seek using source-compatible millisecond text or an exact integer `ticks` suffix.
+/// # Safety
+/// `text` must be valid for `len` bytes; input_str bounds and validates it.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn cutcap_session_seek_timeline_text(
+    handle: u64,
+    text: *const u8,
+    len: usize,
+) -> i32 {
+    guard(|| {
+        // SAFETY: forwarded readable caller contract, with bounded validated UTF-8.
+        let text = unsafe { input_str(text, len) }?;
+        with_session(handle, |s| Ok(s.seek_timeline_text(text)?))
+    })
+}
+#[unsafe(no_mangle)]
+pub extern "C" fn cutcap_session_cancel_timeline_preview(handle: u64) -> i32 {
+    guard(|| with_session(handle, |s| Ok(s.cancel_timeline_preview()?)))
+}
+
 #[unsafe(no_mangle)]
 pub extern "C" fn cutcap_session_play(handle: u64) -> i32 {
     guard(|| with_session(handle, |s| Ok(s.play()?)))

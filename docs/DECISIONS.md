@@ -1,5 +1,15 @@
 # Architecture decisions
 
+## ADR 021 — Indexed single-track timeline evaluation and ABI 5 (Phase 3C)
+
+Core keeps a derived per-video-track sorted index rebuilt after geometry edits/Open, not on seeks. Owner evaluation uses binary lookup on `[start,end)` and returns a small result, with a transient generation UUID separate from undoable saved revisions. No ProjectSnapshot/clip serialization occurs per seek. Selected-clip view lookup is cached too, removing the remaining per-view clip scan. Indexes, monitor mode/position and preview results remain outside project schema/envelope 1.
+
+Map source_in plus clip-local time as exact rationals before one ceiling conversion to original stream ticks. Exclusively bound the clip's source endpoint and require exact rescaling of decoded PTS to the stream clock. A ceiling frame beyond that endpoint is NoFrame, not another clip or a decoder error; gaps are Blank and do not launch decoding. This intentionally preserves Phase 1's ceiling policy, including its sparse-VFR/short-clip no-frame cases.
+
+Reuse the one isolated latest decoder for timeline and source still frames, with one desired owner evaluation and one in-flight query. Leaving Source pauses its persistent transport and retains position/epoch/preroll; returning restores the cached source frame under a renewed shared generation, without auto-play. A bounded native source image and timeline image may coexist; no second frontend bitmap exists. Pending mutations, source availability/relink, track changes, mode switches and project adoption invalidate request/model generations independently. Current-epoch real frames alone can be copied.
+
+ABI/contract 5 add mode/exact-tick/millisecond/text/cancel controls and consumed monitor DTOs; signatures/status/frame layout from ABI 4 remain intact. Ruler/slider coordinates are presentation inputs; Rust rescales and owns the resulting timeline position. C# never locates an active clip or maps its source PTS. Continuous timeline Play stays disabled. This is a video-only monitored-track slice, not compositing or a new media architecture.
+
 ## ADR 020 — Rust-owned clip editing, bounded undo/redo and ABI 4 (Phase 3B)
 
 The command owner gains InsertClip { media_id, track_id } next to the existing RemoveClip, Select, Undo and Redo commands. Insertion is an explicit append-to-end policy: the whole verified, Ready video source is placed on a video track starting where that track's last clip ends; duration is the source's reported `duration_ticks` rescaled (floor) from the stream clock to the project clock, source_in is the stream's start PTS. Sources without a known positive duration, shorter than one project tick, not Ready, of the wrong kind, on a missing track, or whose end would overflow are rejected before mutation. Core validates overlap/kinds/limits as before; it only gains exact index restoration, removal returning the former index, and the append point. No new dependency, no schema change: `.cutcap` format 1/core schema 1 already persist clips.

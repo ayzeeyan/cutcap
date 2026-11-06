@@ -21,7 +21,21 @@ public sealed record SessionView(
     PreviewMetrics Metrics,
     PlaybackView? Playback = null,
     ulong TimelineGeneration = 0,
-    HistoryStatus? History = null);
+    HistoryStatus? History = null,
+    PreviewMode PreviewMode = PreviewMode.Source,
+    TimelinePreviewView? TimelinePreview = null);
+
+[JsonConverter(typeof(JsonStringEnumConverter<PreviewMode>))]
+public enum PreviewMode { Source, Timeline }
+
+/// <summary>Transient Rust evaluation/preview, independent of source transport and the clip-list document.</summary>
+public sealed record TimelinePreviewView(
+    long PositionTicks, RationalTimebase Timebase, long PositionMs, string PositionText, string PositionInput,
+    long SeekMaxMs, long ExtentMs, long ExtentTicks, string ExtentText,
+    string? TrackId, string TrackName, string Title, string State, string Detail, bool Busy, bool HasFrame,
+    string? ClipId, string? MediaId, string SourceName, long? ClipStartTicks, long? ClipEndTicks,
+    SourceTimestamp? Requested, SourceTimestamp? Actual, string Caption, string? EvaluationGeneration,
+    ulong? EvaluationUs, ulong? DecodeUs, ulong? RequestToReadyUs, uint? ProcessId, ulong FramesCopied);
 
 /// <summary>Rust-owned clip-edit history; labels describe the next undo/redo.</summary>
 public sealed record HistoryStatus(bool CanUndo, bool CanRedo, string? Undo, string? Redo, int Depth);

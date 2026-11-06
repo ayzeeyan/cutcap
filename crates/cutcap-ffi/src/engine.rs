@@ -2,7 +2,7 @@
 use crate::history::{Edit, EditKind, History, bump};
 use crate::persistence::{Document, FileJob, FileOutput, SavedSource};
 use cutcap_contracts::*;
-use cutcap_core::{Clip, Project, ProjectError, Track};
+use cutcap_core::{Clip, Project, ProjectError, TimelineIndex, Track, map_clip_source};
 use std::collections::BTreeMap;
 
 #[derive(Default)]
@@ -19,6 +19,9 @@ pub struct Engine {
     history: History,
     /// Highest document revision ever issued in this session (revisions are unique).
     next_revision: u64,
+    evaluation_generation: RequestId,
+    evaluation_index: Option<TimelineIndex>,
+    timeline_position: TimelineTime,
 }
 
 impl Engine {
@@ -27,6 +30,23 @@ impl Engine {
     }
     pub fn handle(&mut self, envelope: CommandEnvelope) -> EngineEvent {
         let request_id = envelope.request_id;
+        if let Command::EvaluateTimeline { position, track_id } = envelope.command {
+            return EngineEvent::TimelineEvaluated {
+                request_id,
+                result: self
+                    .evaluate(envelope.project_id, position, track_id)
+                    .map(Box::new),
+            };
+        }
+        let geometry = matches!(
+            envelope.command,
+            Command::NewProject { .. }
+                | Command::AddTrack { .. }
+                | Command::InsertClip { .. }
+                | Command::RemoveClip { .. }
+                | Command::Undo
+                | Command::Redo
+        );
         let verifying = matches!(envelope.command, Command::VerifyMedia { .. });
         let result = self.begin_file(&envelope);
         if let Ok(true) = result {
@@ -36,15 +56,23 @@ impl Engine {
             };
         }
         match result.and_then(|_| self.execute(envelope)) {
-            Ok(snapshot) => EngineEvent::Completed {
-                request_id,
-                snapshot,
-            },
-            Err(error) if verifying => EngineEvent::FileFailed {
-                request_id,
-                error,
-                snapshot: self.snapshot().ok(),
-            },
+            Ok(snapshot) => {
+                if geometry {
+                    self.evaluation_index = None;
+                }
+                EngineEvent::Completed {
+                    request_id,
+                    snapshot,
+                }
+            }
+            Err(error) if verifying => {
+                self.evaluation_generation = RequestId::new();
+                EngineEvent::FileFailed {
+                    request_id,
+                    error,
+                    snapshot: self.snapshot().ok(),
+                }
+            }
             Err(error) => EngineEvent::Failed { request_id, error },
         }
     }
@@ -81,6 +109,7 @@ impl Engine {
             self.sources.clear();
             self.availability.clear();
             self.history.clear();
+            self.timeline_position = TimelineTime::ZERO;
             let mut revision = 0;
             bump(&mut self.next_revision, &mut revision);
             self.document = DocumentStatus {
@@ -351,7 +380,137 @@ impl Engine {
                 }
             }
         }
+        self.evaluation_generation = RequestId::new();
         self.snapshot()
+    }
+
+    /// Constant-size response and O(log clips-on-track) lookup after index build.
+    fn evaluate(
+        &mut self,
+        scope: Option<ProjectId>,
+        input: TimelineSeek,
+        explicit_track: Option<TrackId>,
+    ) -> Result<TimelineEvaluation, EngineError> {
+        let started = std::time::Instant::now();
+        let invalid = |error: String| EngineError::new(ErrorCode::InvalidInput, error);
+        let project = self
+            .project
+            .as_ref()
+            .ok_or_else(|| EngineError::new(ErrorCode::NotFound, "No project is open."))?;
+        if scope != Some(project.id()) {
+            return Err(EngineError::new(
+                ErrorCode::StaleProject,
+                "Timeline request belongs to another project.",
+            ));
+        }
+        if self.file_job.as_ref().is_some_and(|job| !job.saving) {
+            return Err(EngineError::new(
+                ErrorCode::Busy,
+                "Project opening is in progress.",
+            ));
+        }
+        let position = match input {
+            TimelineSeek::Ticks(value) => value,
+            TimelineSeek::Milliseconds(ms) => TimelineTime(
+                SourceTime {
+                    ticks: ms,
+                    timebase: Timebase::new(1, 1000).expect("constant"),
+                }
+                .rescale(project.timebase(), Rounding::Floor)
+                .map_err(|e| invalid(e.to_string()))?
+                .ticks,
+            ),
+        };
+        if position.0 < 0 {
+            return Err(invalid("Timeline position must be nonnegative.".into()));
+        }
+        // The view uses signed integer milliseconds for coordinates/readouts.
+        // Reject an unrepresentable display position before changing owner state.
+        SourceTime {
+            ticks: position.0,
+            timebase: project.timebase(),
+        }
+        .rescale(Timebase::new(1, 1000).expect("constant"), Rounding::Floor)
+        .map_err(|e| invalid(e.to_string()))?;
+        let index = self
+            .evaluation_index
+            .get_or_insert_with(|| TimelineIndex::new(project));
+        let track = match explicit_track {
+            Some(id) => Some(
+                index
+                    .track(id)
+                    .ok_or_else(|| invalid("Monitor a video track.".into()))?,
+            ),
+            None => index.monitor(self.selection),
+        };
+        let extent = track
+            .map_or(Ok(TimelineTime::ZERO), |t| index.end(t.id))
+            .map_err(|e| invalid(e.to_string()))?;
+        let clip = track
+            .map_or(Ok(None), |t| index.active(project.id(), t.id, position))
+            .map_err(|e| invalid(e.to_string()))?;
+        let target = if let Some(clip) = clip {
+            let summary = ClipSummary {
+                id: clip.id,
+                media_id: clip.media_id,
+                track_id: clip.track_id,
+                start: clip.start,
+                duration: clip.duration,
+                source_in: clip.source_in,
+            };
+            let state = self.availability.get(&clip.media_id);
+            if !state.is_some_and(|s| s.state == Availability::Ready) {
+                TimelineTarget::Unavailable {
+                    clip: summary,
+                    path: state.map(|s| s.path.clone()).unwrap_or_default(),
+                    availability: state.map_or(Availability::Unavailable, |s| s.state),
+                    detail: state.map_or_else(
+                        || "Source has not been verified.".into(),
+                        |s| s.detail.clone(),
+                    ),
+                }
+            } else if let Some(media) = self.media_details.get(&clip.media_id) {
+                let mapping =
+                    map_clip_source(clip, position, project.timebase(), media.metadata.timebase)
+                        .map_err(|e| invalid(e.to_string()))?;
+                if mapping.requested.ticks >= mapping.end_exclusive.ticks {
+                    TimelineTarget::NoFrame {
+                        clip: summary,
+                        media: Box::new(media.clone()),
+                        requested: mapping.requested,
+                        end_exclusive: mapping.end_exclusive,
+                        detail: "No source tick remains inside this clip after ceiling conversion."
+                            .into(),
+                    }
+                } else {
+                    TimelineTarget::Frame {
+                        clip: summary,
+                        media: Box::new(media.clone()),
+                        requested: mapping.requested,
+                        end_exclusive: mapping.end_exclusive,
+                    }
+                }
+            } else {
+                return Err(invalid("Verified source metadata is missing.".into()));
+            }
+        } else {
+            TimelineTarget::Blank
+        };
+        self.timeline_position = position;
+        Ok(TimelineEvaluation {
+            project_id: project.id(),
+            generation: self.evaluation_generation,
+            document_revision: self.document.revision,
+            position,
+            timebase: project.timebase(),
+            track: track.map(|t| MonitoredTrack {
+                id: t.id,
+                name: t.name.clone(),
+            }),
+            extent,
+            target,
+            evaluation_us: started.elapsed().as_micros().min(u128::from(u64::MAX)) as u64,
+        })
     }
 
     fn snapshot(&self) -> Result<ProjectSnapshot, EngineError> {
@@ -365,6 +524,7 @@ impl Engine {
         }
         Ok(ProjectSnapshot {
             id: project.id(),
+            evaluation_generation: self.evaluation_generation,
             name: project.name().into(),
             timebase: project.timebase(),
             tracks: project
@@ -496,6 +656,9 @@ impl Engine {
             }
             Ok(FileOutput::Opened(doc, path)) => {
                 self.project = Some(doc.project);
+                self.evaluation_generation = RequestId::new();
+                self.evaluation_index = None;
+                self.timeline_position = TimelineTime::ZERO;
                 self.selection = SelectionState::None;
                 self.history.clear();
                 self.source_media = None;
@@ -875,3 +1038,7 @@ mod tests {
 #[cfg(test)]
 #[path = "editing_tests.rs"]
 mod editing_tests;
+
+#[cfg(test)]
+#[path = "evaluation_measurements.rs"]
+mod evaluation_measurements;

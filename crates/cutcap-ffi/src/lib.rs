@@ -11,6 +11,7 @@ pub mod media;
 mod persistence;
 mod playback;
 pub mod session;
+mod timeline_preview;
 pub mod view;
 
 #[cfg(test)]

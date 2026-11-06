@@ -10,7 +10,11 @@ use crate::{
 };
 use cutcap_contracts::*;
 use cutcap_media::{FfmpegBackend, MediaBackend, MediaError};
-use std::{collections::HashSet, path::PathBuf, sync::Arc};
+use std::{
+    collections::{HashMap, HashSet},
+    path::PathBuf,
+    sync::Arc,
+};
 
 pub const DEFAULT_PROJECT_NAME: &str = "Untitled project";
 
@@ -54,6 +58,9 @@ pub struct Session {
     /// rebuilt lazily from it (commands only, never per playback frame).
     timeline_generation: u64,
     timeline_cached: Option<String>,
+    preview_mode: PreviewMode,
+    timeline_preview: crate::timeline_preview::TimelinePreview,
+    clip_lookup: HashMap<ClipId, usize>,
     closed: bool,
 }
 
@@ -77,6 +84,9 @@ impl Session {
             cached: None,
             timeline_generation: 0,
             timeline_cached: None,
+            preview_mode: PreviewMode::Source,
+            timeline_preview: crate::timeline_preview::TimelinePreview::default(),
+            clip_lookup: HashMap::new(),
             closed: false,
         };
         session.new_project()?;
@@ -91,6 +101,7 @@ impl Session {
         if self.closed {
             return Err(SessionError::Invalid("The session is shut down."));
         }
+        let invalidate = !matches!(command, Command::GetSnapshot | Command::SaveProject { .. });
         let request_id = RequestId::new();
         let envelope = CommandEnvelope {
             request_id,
@@ -101,6 +112,9 @@ impl Session {
         match self.bridge.submit(envelope) {
             Ok(()) => {
                 self.requests.pending.insert(request_id);
+                if invalidate {
+                    self.invalidate_timeline();
+                }
                 Ok(request_id)
             }
             Err(error) => {
@@ -127,6 +141,8 @@ impl Session {
         self.requests.verifying = None;
         self.requests.verification_request = None;
         self.media.reset();
+        self.timeline_preview.reset_position();
+        self.invalidate_timeline();
         self.engine_ready = false;
         Ok(())
     }
@@ -271,7 +287,75 @@ impl Session {
         self.media.cancel_import();
     }
 
+    fn invalidate_timeline(&mut self) {
+        if self.preview_mode == PreviewMode::Timeline {
+            if let Err(error) = self.timeline_preview.invalidate(&mut self.media) {
+                self.status = StatusView {
+                    text: error.to_string(),
+                    error: true,
+                };
+            }
+            self.dirty = true;
+        }
+    }
+    pub fn set_preview_mode(&mut self, mode: PreviewMode) -> Result<(), SessionError> {
+        if self.closed {
+            return Err(SessionError::Invalid("The session is shut down."));
+        }
+        if mode == self.preview_mode {
+            return Ok(());
+        }
+        if self.current_project().is_none() {
+            return Err(SessionError::Invalid("Wait for the project to be ready."));
+        }
+        self.media
+            .show_source(mode == PreviewMode::Source, &mut self.status)?;
+        self.preview_mode = mode;
+        if mode == PreviewMode::Timeline {
+            self.invalidate_timeline();
+        } else {
+            self.timeline_preview.cancel(&mut self.media)?;
+        }
+        self.dirty = true;
+        Ok(())
+    }
+    pub fn seek_timeline(&mut self, position: TimelineSeek) -> Result<(), SessionError> {
+        let value = match position {
+            TimelineSeek::Ticks(t) => t.0,
+            TimelineSeek::Milliseconds(ms) => ms,
+        };
+        if value < 0 {
+            return Err(SessionError::Invalid(
+                "Timeline position must be nonnegative.",
+            ));
+        }
+        self.set_preview_mode(PreviewMode::Timeline)?;
+        self.timeline_preview.queue(position, &mut self.media)?;
+        self.dirty = true;
+        Ok(())
+    }
+    pub fn seek_timeline_text(&mut self, text: &str) -> Result<(), SessionError> {
+        let input = if let Some(ticks) = text.trim().strip_suffix("ticks") {
+            TimelineSeek::Ticks(TimelineTime(ticks.trim().parse().map_err(|_| {
+                SessionError::Invalid("Enter an integer project-tick position followed by 'ticks'.")
+            })?))
+        } else {
+            TimelineSeek::Milliseconds(i64::from(
+                view::parse_source_time(text).map_err(SessionError::Invalid)?,
+            ))
+        };
+        self.seek_timeline(input)
+    }
+    pub fn cancel_timeline_preview(&mut self) -> Result<(), SessionError> {
+        self.timeline_preview.cancel(&mut self.media)?;
+        self.dirty = true;
+        Ok(())
+    }
+
     pub fn seek(&mut self, milliseconds: i64) {
+        if self.preview_mode != PreviewMode::Source {
+            return;
+        }
         self.dirty = true;
         self.media.seek(milliseconds, &mut self.status);
     }
@@ -302,6 +386,11 @@ impl Session {
         self.media.cancel_preview(&mut self.status);
     }
     pub fn play(&mut self) -> Result<(), SessionError> {
+        if self.preview_mode != PreviewMode::Source {
+            return Err(SessionError::Invalid(
+                "Timeline playback is unavailable. Select Source to play source media.",
+            ));
+        }
         if self.current_project().is_none() || self.media.selected_media().is_none() {
             return Err(SessionError::Invalid("Select a source before playback."));
         }
@@ -314,18 +403,29 @@ impl Session {
         self.dirty = true;
     }
     pub fn stop(&mut self) -> Result<(), SessionError> {
+        if self.preview_mode != PreviewMode::Source {
+            return Err(SessionError::Invalid("Timeline playback is unavailable."));
+        }
         self.media.stop(&mut self.status)?;
         self.dirty = true;
         Ok(())
     }
     pub fn copy_allowed(&self, generation: u64) -> bool {
-        self.media.copy_allowed(generation)
+        match self.preview_mode {
+            PreviewMode::Source => self.media.copy_allowed(generation),
+            PreviewMode::Timeline => self.timeline_preview.copy_allowed(generation),
+        }
     }
     pub fn source_ready(&self) -> bool {
-        self.current_project().is_some() && self.media.selected_media().is_some()
+        self.preview_mode == PreviewMode::Source
+            && self.current_project().is_some()
+            && self.media.selected_media().is_some()
     }
     pub fn frame_copied(&mut self, generation: u64) -> Result<(), SessionError> {
-        self.media.frame_copied(generation)?;
+        match self.preview_mode {
+            PreviewMode::Source => self.media.frame_copied(generation)?,
+            PreviewMode::Timeline => self.timeline_preview.copied(generation),
+        }
         self.dirty = true;
         Ok(())
     }
@@ -363,6 +463,12 @@ impl Session {
         let current = self.current_project();
         let (registration, changed) = self.media.poll(current, &mut self.status);
         self.dirty |= changed;
+        if let Some(outcome) = self.media.take_timeline() {
+            if self.preview_mode == PreviewMode::Timeline {
+                self.timeline_preview.decoded(outcome, &mut self.media);
+            }
+            self.dirty = true;
+        }
         if let Some(registration) = registration
             && current == Some(registration.project_id)
         {
@@ -427,11 +533,42 @@ impl Session {
             self.requests.verifying = Some(id);
             self.dirty = true;
         }
+        if self.preview_mode == PreviewMode::Timeline
+            && self.engine_ready
+            && let Some(project) = self.current_project()
+            && let Some(query) = self.timeline_preview.next_query(project)
+        {
+            let request = query.request_id;
+            match self.bridge.submit(query) {
+                Ok(()) => self.timeline_preview.submitted(request),
+                Err(error) => {
+                    self.status = StatusView {
+                        text: error.to_string(),
+                        error: true,
+                    };
+                    self.dirty = true;
+                }
+            }
+        }
         self.dirty
     }
 
     fn apply(&mut self, event: EngineEvent) {
         match event {
+            EngineEvent::TimelineEvaluated { request_id, result } => {
+                let scope = self
+                    .requests
+                    .snapshot
+                    .as_ref()
+                    .map(|s| (s.id, s.evaluation_generation));
+                self.timeline_preview.evaluated(
+                    request_id,
+                    result,
+                    self.preview_mode == PreviewMode::Timeline,
+                    scope,
+                    &mut self.media,
+                );
+            }
             EngineEvent::Updated { snapshot } => {
                 self.engine_ready = snapshot.document.state != "opening";
                 self.set_snapshot(snapshot);
@@ -500,6 +637,7 @@ impl Session {
                     self.requests.verified = None;
                     if opened {
                         self.media.reset();
+                        self.timeline_preview.reset_position();
                         self.requests.desired_media = None;
                         self.requests.inspecting_media = false;
                         self.requests.checks.extend(
@@ -572,9 +710,23 @@ impl Session {
     }
 
     fn set_snapshot(&mut self, snapshot: ProjectSnapshot) {
+        let changed = self
+            .requests
+            .snapshot
+            .as_ref()
+            .is_none_or(|s| s.evaluation_generation != snapshot.evaluation_generation);
+        self.clip_lookup = snapshot
+            .clips
+            .iter()
+            .enumerate()
+            .map(|(i, c)| (c.id, i))
+            .collect();
         self.requests.snapshot = Some(snapshot);
         self.timeline_generation += 1;
         self.timeline_cached = None;
+        if changed {
+            self.invalidate_timeline();
+        }
     }
 
     pub fn view(&self) -> SessionView {
@@ -598,10 +750,13 @@ impl Session {
                     .tracks
                     .iter()
                     .find(|track| snapshot.selection == SelectionState::Track(track.id));
-                let clip = snapshot
-                    .clips
-                    .iter()
-                    .find(|clip| snapshot.selection == SelectionState::Clip(clip.id));
+                let clip = match snapshot.selection {
+                    SelectionState::Clip(id) => self
+                        .clip_lookup
+                        .get(&id)
+                        .and_then(|i| snapshot.clips.get(*i)),
+                    _ => None,
+                };
                 if let Some(clip) = clip.filter(|_| source.is_none()) {
                     let track_name = snapshot
                         .tracks
@@ -679,11 +834,19 @@ impl Session {
             },
             inspector,
             source: self.media.source.clone(),
-            frame: self.media.frame_view(),
+            frame: self.frame().map(|f| view::FrameView {
+                generation: f.generation,
+                width: f.image.width(),
+                height: f.image.height(),
+                actual: f.actual,
+                epoch: f.ticket.request_id.to_string(),
+            }),
             metrics: self.media.metrics,
             playback: self.media.playback.view.clone(),
             timeline_generation: self.timeline_generation,
             history: snapshot.map(|s| s.history.clone()).unwrap_or_default(),
+            preview_mode: self.preview_mode,
+            timeline_preview: self.timeline_preview.view.clone(),
         }
     }
 
@@ -719,7 +882,10 @@ impl Session {
     }
 
     pub fn frame(&self) -> Option<&PresentedFrame> {
-        self.media.frame()
+        match self.preview_mode {
+            PreviewMode::Source => self.media.frame(),
+            PreviewMode::Timeline => self.timeline_preview.frame.as_ref(),
+        }
     }
 
     /// Stops media work, then the command worker. Idempotent.

@@ -2,5 +2,7 @@
 #![forbid(unsafe_code)]
 
 mod project;
+mod timeline;
 
 pub use project::*;
+pub use timeline::*;

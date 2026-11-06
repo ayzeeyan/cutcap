@@ -27,6 +27,8 @@ pub struct SessionView {
     /// playback frame, while the clip list changes only on commands.
     pub timeline_generation: u64,
     pub history: HistoryStatus,
+    pub preview_mode: PreviewMode,
+    pub timeline_preview: crate::timeline_preview::TimelinePreviewView,
 }
 
 /// The clip list, serialized separately from [`SessionView`] and fetched by the

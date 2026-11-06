@@ -1,6 +1,22 @@
-# CutCap native engine ABI, version 4
+# CutCap native engine ABI, version 5
 
-## Phase 3B additions (current authority)
+## Phase 3C additions (current authority)
+
+ABI_VERSION / NativeMethods.AbiVersion and CONTRACT_VERSION are **5**. Format/core schema stay 1. Every ABI 4 export, numeric status and the 24-byte FrameInfo layout remains intact. New controls return acceptance only; no evaluation, file/process I/O or waits occur in the ABI call.
+
+| Export | Meaning |
+|---|---|
+| set_preview_mode(u64, u32) | 0 Source, 1 Timeline; other values INVALID_ARGUMENT. Source pauses on leaving, retains its epoch/position/preroll, and does not auto-resume. |
+| seek_timeline(u64, i64 ticks) | Exact nonnegative project ticks; switches to Timeline. |
+| seek_timeline_ms(u64, i64 ms) | UI milliseconds, floor-rescaled in the owner to project ticks. |
+| seek_timeline_text(u64, u8*, usize) | Existing source-style millisecond/timecode grammar or exact integer followed by `ticks`. |
+| cancel_timeline_preview(u64) | Cancel ephemeral evaluation/decode, clear timeline image; no project mutation. |
+
+All export names have the `cutcap_session_` prefix. New consumed view fields are `preview_mode` and `timeline_preview` (position ticks/timebase, display/input text, extent, monitored track, state/detail, active clip/media, exact requested/actual PTS, model generation and timing/copy diagnostics). `view.frame` always describes the visible mode only. Generations use one native counter across both modes and are renewed when a cached source image is restored; incompatible old copies are stale. Pixels still bypass JSON and MVVM. One frontend bitmap is reused.
+
+Timeline seek goes through a bounded latest desired slot and at most one reliable owner evaluation. TimelineEvaluated returns a small correlated result, not a ProjectSnapshot; it never changes `timeline_generation` or rebuilds the separately fetched clip document. Source transport APIs retain Source-only meaning and Play/Stop reject while Timeline is monitored. Timeline Play is unavailable. EngineSession exposes SetPreviewMode, SeekTimeline, SeekTimelineMilliseconds, SeekTimelineText and CancelTimelinePreview. See PHASE_3C_TIMELINE_PREVIEW_CONTRACT.md for exact half-open intervals, rational rounding, endpoint rejection and generation invalidation.
+
+## Phase 3B additions (ABI 4, retained)
 
 Rust `ABI_VERSION` and C# `NativeMethods.AbiVersion` are 4; CONTRACT_VERSION is 4 (ADR 020). The bump is required by AGENTS.md for new consumed view fields, and it is the guard that stops a stale ABI-3 DLL from passing the version check and failing on the first clip command. Every ABI 3 export, status number, frame layout and handle rule is unchanged.
 

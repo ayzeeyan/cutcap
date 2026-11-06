@@ -453,3 +453,23 @@ fn measure_command_latency_history_and_snapshot_size() {
         );
     }
 }
+
+#[test]
+fn timeline_display_overflow_is_rejected_before_owner_position_changes() {
+    let mut engine = Engine::default();
+    let (project, _, _, _) = editor(&mut engine, PROBE);
+    let mut data = serde_json::to_value(engine.project.as_ref().unwrap()).unwrap();
+    data["timebase"] = serde_json::json!({"numerator":u32::MAX,"denominator":1});
+    engine.project = Some(serde_json::from_value(data).unwrap());
+    let revision = engine.document.revision;
+    let error = engine
+        .evaluate(
+            Some(project),
+            TimelineSeek::Ticks(TimelineTime(i64::MAX)),
+            None,
+        )
+        .unwrap_err();
+    assert_eq!(error.code, ErrorCode::InvalidInput);
+    assert_eq!(engine.timeline_position, TimelineTime::ZERO);
+    assert_eq!(engine.document.revision, revision);
+}

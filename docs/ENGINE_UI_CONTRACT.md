@@ -1,6 +1,14 @@
-# UI–engine and media contracts, version 4
+# UI–engine and media contracts, version 5
 
-## Phase 3B additions (current authority)
+## Phase 3C current contract
+
+CONTRACT_VERSION/native ABI are 5. `EvaluateTimeline { position: Ticks|Milliseconds, track_id: optional }` is an ephemeral owner query with one TimelineEvaluated terminal result. It does not clone a ProjectSnapshot, enter edit history, dirty a document or invalidate the clip-list JSON cache. The owner builds a per-track sorted index after geometry changes and uses binary lookup. `evaluation_generation: RequestId` in snapshots/results is a transient UUID, independent of undoable document revisions; Open (including same ProjectId), edits, track/clip selection and media availability/relink invalidate incompatible results. Session view construction uses a selected-clip lookup cache rather than a clip scan on every preview update.
+
+Monitoring is selected video track → selected clip's video track → first video track; audio is ignored. Half-open `[start,end)` cuts/gaps and exact single-ceiling rational mapping are specified in PHASE_3C_TIMELINE_PREVIEW_CONTRACT.md. Decode uses the existing latest isolated worker and ceiling PTS policy. Results beyond the clip's exclusive original-stream endpoint produce NoFrame, not a gap, fabricated PTS or another clip. Blank returns without a decoder.
+
+Source/Timeline mode and timeline position are Rust transient state. Switching out pauses source transport and preserves its epoch/position; returning does not auto-play. Source selection remains independent. The source native frame plus one timeline frame can coexist (each <=3,686,400 bytes); one counter tags exposed generations and one frontend bitmap presents either mode. Active/pending/completed decoder bounds remain unchanged. There is one latest desired evaluation and one in-flight query; rapid seeks supersede, rather than queueing clip snapshots. Source/TL switches, pending edits and cancellation clear incompatible presentation permissions immediately. No continuous timeline clock/playback is implemented.
+
+## Phase 3B additions (retained)
 
 CONTRACT_VERSION and native ABI are 4 (ADR 020). Everything in the Phase 3A section below still holds.
 
@@ -9,7 +17,7 @@ CONTRACT_VERSION and native ABI are 4 (ADR 020). Everything in the Phase 3A sect
 - **Select { Clip }** is transient: no revision, no history, no dirtiness.
 - **Undo / Redo** reverse/reapply the newest clip edit exactly (identity, timing, source mapping, order); "Nothing to undo/redo." is an InvalidInput failure that changes nothing. A new edit clears redo; the history is bounded to 200 entries and reset by NewProject and adoption of an opened document. Revisions return to the saved value when an undo/redo lands exactly on it and no other mutation intervened; otherwise a fresh, never-reused revision is issued. AddTrack and relink are not undoable.
 - **ProjectSnapshot** adds `clips: Vec<ClipSummary>` (id, media, track, start, duration, source_in in exact ticks) and `history: HistoryStatus` (can_undo, can_redo, labels, depth).
-- **Timing.** TimelineTime is the project position (ticks of the project timebase); clip-local time is `t - start` in project ticks, in [0, duration); source time is `source_in + rescale(t - start, project → source timebase)` and stays a SourceTime distinct from TimelineTime. Display milliseconds are floored only for drawing; no float time feeds back. No timeline playback or evaluation exists yet: the timeline playhead stays at zero and source playback remains independent of clips.
+- **Timing.** TimelineTime is the project position (ticks of the project timebase); clip-local time is `t - start` in project ticks, in [0, duration); source time is `source_in + rescale(t - start, project → source timebase)` and stays a SourceTime distinct from TimelineTime. Display milliseconds are floored only for drawing; no float time feeds back. Timeline frame evaluation is implemented by the Phase 3C contract above; continuous timeline playback remains unavailable. Source playback never changes timeline position.
 - **View.** SessionView carries `timeline_generation` and `history`; clips are fetched through the separate timeline document whenever the generation changes (never per playback frame). Clip rows: `id, track_id, track_index, media_id, name, start_ms, duration_ms, start_text, duration_text, end_text, availability, selected`. The inspector adds kind `clip` with Timeline (track, start, duration, end, exact ticks) and Source (file, source-in PTS, status) sections.
 
 ## Phase 3A contract
@@ -28,7 +36,7 @@ Source playback readiness is refined by ADR 019: playing/playing-seek preroll re
 
 ## Retained media/command foundation (read with the additions above)
 
-cutcap-contracts is the Rust source of truth, reached through ABI 4 in NATIVE_ABI.md. Source Play/Pause/Stop and continuous seek/clock/frame delivery are specified in PHASE_2_PLAYBACK_CONTRACT.md with the Phase 3A preroll amendment. They never move the project timeline playhead.
+cutcap-contracts is the Rust source of truth, reached through ABI 5 in NATIVE_ABI.md. Source Play/Pause/Stop and continuous seek/clock/frame delivery are specified in PHASE_2_PLAYBACK_CONTRACT.md with the Phase 3A preroll amendment. They never move the project timeline playhead.
 
 ## Reliable commands
 
