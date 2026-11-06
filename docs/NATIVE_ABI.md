@@ -1,8 +1,41 @@
-# CutCap native engine ABI, version 5
+# CutCap native engine ABI, version 6
 
-## Phase 3C additions (current authority)
+## Phase 3D additions (current authority)
 
-ABI_VERSION / NativeMethods.AbiVersion and CONTRACT_VERSION are **5**. Format/core schema stay 1. Every ABI 4 export, numeric status and the 24-byte FrameInfo layout remains intact. New controls return acceptance only; no evaluation, file/process I/O or waits occur in the ABI call.
+Rust ABI_VERSION, managed NativeMethods.AbiVersion and CONTRACT_VERSION are **6**.
+Project envelope/core schema remain 1. All prior exports/status numbers and the
+24-byte FrameInfo layout are retained. Added nonblocking exports (u64 session):
+`cutcap_session_play_timeline`, `cutcap_session_pause_timeline`,
+`cutcap_session_stop_timeline`. Managed PlayTimeline/ResumeTimeline/PauseTimeline/
+StopTimeline mirror these. Play requires Timeline mode and a ready project; empty
+tracks reach Ended at zero. Existing source Play/Stop keep Source-only meaning.
+
+`timeline_playback` is a new small consumed view: state, desired_playing, epoch,
+stable requested_ticks/text, clock_ticks/ms/text, offered_ticks/PTS, copied_ticks/
+PTS/clip identity, decoded/offered/copied/dropped/stall/handoff/decoder-start
+counters, buffered scheduler frames, last observed active/prepared process IDs,
+error and request_to_ready_us. Copied ticks describe the offered frame's exact
+mapped timeline deadline, not the advancing clock or physical display. Process
+IDs are diagnostics and can name already reaped children. Counts include decoded
+preroll/lookahead; they are not physical presented FPS.
+
+`timeline_preview` continues supplying track/clip/media, extent, status and the
+Rust clock position during continuous playback. Stopped seeks retain ABI 5 ceiling
+semantics; active playback seeks use actual PTS intervals. Seek acceptance does
+not prove readiness. Failed owner plan requests surface Failed asynchronously.
+The source and timeline positions never copy into one another. Leaving either
+mode pauses it. Restored cached images receive a fresh shared frame generation.
+
+The owner returns a private immutable Arc<TimelineIndex> plan, not a serialized
+clip vector, through the same bounded reliable bridge. One desired plan and one
+in-flight query coalesce rapid seeks; two persistent workers bound active/next
+clip decoding. No per-frame owner commands, project snapshots or timeline JSON.
+See PHASE_3D_TIMELINE_PLAYBACK_CONTRACT.md for the full clock, VFR, half-open cut,
+gap, handoff, cancellation and structural-mutation policy.
+
+## Phase 3C additions (ABI 5, retained)
+
+ABI_VERSION / NativeMethods.AbiVersion and CONTRACT_VERSION were **5** for Phase 3C. Format/core schema stay 1. Every ABI 4 export, numeric status and the 24-byte FrameInfo layout remains intact. New controls return acceptance only; no evaluation, file/process I/O or waits occur in the ABI call.
 
 | Export | Meaning |
 |---|---|
@@ -14,7 +47,7 @@ ABI_VERSION / NativeMethods.AbiVersion and CONTRACT_VERSION are **5**. Format/co
 
 All export names have the `cutcap_session_` prefix. New consumed view fields are `preview_mode` and `timeline_preview` (position ticks/timebase, display/input text, extent, monitored track, state/detail, active clip/media, exact requested/actual PTS, model generation and timing/copy diagnostics). `view.frame` always describes the visible mode only. Generations use one native counter across both modes and are renewed when a cached source image is restored; incompatible old copies are stale. Pixels still bypass JSON and MVVM. One frontend bitmap is reused.
 
-Timeline seek goes through a bounded latest desired slot and at most one reliable owner evaluation. TimelineEvaluated returns a small correlated result, not a ProjectSnapshot; it never changes `timeline_generation` or rebuilds the separately fetched clip document. Source transport APIs retain Source-only meaning and Play/Stop reject while Timeline is monitored. Timeline Play is unavailable. EngineSession exposes SetPreviewMode, SeekTimeline, SeekTimelineMilliseconds, SeekTimelineText and CancelTimelinePreview. See PHASE_3C_TIMELINE_PREVIEW_CONTRACT.md for exact half-open intervals, rational rounding, endpoint rejection and generation invalidation.
+Timeline seek goes through a bounded latest desired slot and at most one reliable owner evaluation. TimelineEvaluated returns a small correlated result, not a ProjectSnapshot; it never changes `timeline_generation` or rebuilds the separately fetched clip document. Source transport APIs retain Source-only meaning and Play/Stop reject while Timeline is monitored. Timeline Play uses the separate Phase 3D controls above. EngineSession exposes SetPreviewMode, SeekTimeline, SeekTimelineMilliseconds, SeekTimelineText and CancelTimelinePreview. See PHASE_3C_TIMELINE_PREVIEW_CONTRACT.md for exact half-open intervals, rational rounding, endpoint rejection and generation invalidation.
 
 ## Phase 3B additions (ABI 4, retained)
 

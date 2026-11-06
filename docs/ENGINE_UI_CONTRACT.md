@@ -1,8 +1,36 @@
-# UI–engine and media contracts, version 5
+# UI–engine and media contracts, version 6
 
-## Phase 3C current contract
+## Phase 3D current contract
 
-CONTRACT_VERSION/native ABI are 5. `EvaluateTimeline { position: Ticks|Milliseconds, track_id: optional }` is an ephemeral owner query with one TimelineEvaluated terminal result. It does not clone a ProjectSnapshot, enter edit history, dirty a document or invalidate the clip-list JSON cache. The owner builds a per-track sorted index after geometry changes and uses binary lookup. `evaluation_generation: RequestId` in snapshots/results is a transient UUID, independent of undoable document revisions; Open (including same ProjectId), edits, track/clip selection and media availability/relink invalidate incompatible results. Session view construction uses a selected-clip lookup cache rather than a clip scan on every preview update.
+ABI/CONTRACT_VERSION are 6; document schema/envelope remain 1. Read
+PHASE_3D_TIMELINE_PLAYBACK_CONTRACT.md for binding scheduling semantics.
+PrepareTimelinePlayback is a bounded private host query: the owner validates
+scope/seek, builds or shares its immutable core index and returns a generation-
+tagged plan with at most 128 media descriptors. This is not a durable mutation
+and does not dirty/history/save or send a ProjectSnapshot. One in-flight plan
+and one latest desired request bound seek load. Plan results and current-epoch
+terminal errors are reliable; pixels stay in separate bounded workers.
+
+The timeline session transport owns Play/Pause/Stop, exact integer project clock,
+active/next persistent decoders and offered/copy acknowledgments. It evaluates
+the same core index used by still preview. Its monotonic clock is independent of
+the source transport and source FPS. Source-to-timeline deadlines ceil the exact
+rational difference once; wall-to-project advancement floors. Pause/buffering
+freeze; resume reanchors. Seek retains current playing intent, including paused
+or Ended (which seek to Paused). Play at Ended restarts zero. Stop sets zero and
+requests a still, with readiness separate from acceptance.
+
+The UI consumes `timeline_playback` and the existing `timeline_preview`; controls
+route explicitly to the displayed mode. Animation callbacks only pump engine
+state; they never advance a position. The go-to input follows stable requested
+time, not the continuous clock. Only player/playhead indicators update at clock
+frequency; the separate timeline document is unchanged. Structural changes stop
+and invalidate incompatible generations; same-monitor selection, source-only
+selection and Save preserve playback. Mode leave pauses; returning does not play.
+
+## Phase 3C still-evaluation contract (retained)
+
+Phase 3C introduced ABI/contract 5; its still evaluator remains available under ABI 6. `EvaluateTimeline { position: Ticks|Milliseconds, track_id: optional }` is an ephemeral owner query with one TimelineEvaluated terminal result. It does not clone a ProjectSnapshot, enter edit history, dirty a document or invalidate the clip-list JSON cache. The owner builds a per-track sorted index after geometry changes and uses binary lookup. `evaluation_generation: RequestId` in snapshots/results is a transient UUID, independent of undoable document revisions; Open (including same ProjectId), edits, effective monitored-track changes and media availability/relink invalidate incompatible results. Source-only and same-monitor selection preserve the transport generation. Session view construction uses a selected-clip lookup cache rather than a clip scan on every preview update.
 
 Monitoring is selected video track → selected clip's video track → first video track; audio is ignored. Half-open `[start,end)` cuts/gaps and exact single-ceiling rational mapping are specified in PHASE_3C_TIMELINE_PREVIEW_CONTRACT.md. Decode uses the existing latest isolated worker and ceiling PTS policy. Results beyond the clip's exclusive original-stream endpoint produce NoFrame, not a gap, fabricated PTS or another clip. Blank returns without a decoder.
 
@@ -17,7 +45,7 @@ CONTRACT_VERSION and native ABI are 4 (ADR 020). Everything in the Phase 3A sect
 - **Select { Clip }** is transient: no revision, no history, no dirtiness.
 - **Undo / Redo** reverse/reapply the newest clip edit exactly (identity, timing, source mapping, order); "Nothing to undo/redo." is an InvalidInput failure that changes nothing. A new edit clears redo; the history is bounded to 200 entries and reset by NewProject and adoption of an opened document. Revisions return to the saved value when an undo/redo lands exactly on it and no other mutation intervened; otherwise a fresh, never-reused revision is issued. AddTrack and relink are not undoable.
 - **ProjectSnapshot** adds `clips: Vec<ClipSummary>` (id, media, track, start, duration, source_in in exact ticks) and `history: HistoryStatus` (can_undo, can_redo, labels, depth).
-- **Timing.** TimelineTime is the project position (ticks of the project timebase); clip-local time is `t - start` in project ticks, in [0, duration); source time is `source_in + rescale(t - start, project → source timebase)` and stays a SourceTime distinct from TimelineTime. Display milliseconds are floored only for drawing; no float time feeds back. Timeline frame evaluation is implemented by the Phase 3C contract above; continuous timeline playback remains unavailable. Source playback never changes timeline position.
+- **Timing.** TimelineTime is the project position (ticks of the project timebase); clip-local time is `t - start` in project ticks, in [0, duration); source time is `source_in + rescale(t - start, project → source timebase)` and stays a SourceTime distinct from TimelineTime. Display milliseconds are floored only for drawing; no float time feeds back. Timeline frame evaluation is implemented by the Phase 3C contract above; continuous timeline playback is now provided by the Phase 3D contract above. Source playback never changes timeline position.
 - **View.** SessionView carries `timeline_generation` and `history`; clips are fetched through the separate timeline document whenever the generation changes (never per playback frame). Clip rows: `id, track_id, track_index, media_id, name, start_ms, duration_ms, start_text, duration_text, end_text, availability, selected`. The inspector adds kind `clip` with Timeline (track, start, duration, end, exact ticks) and Source (file, source-in PTS, status) sections.
 
 ## Phase 3A contract
@@ -36,7 +64,7 @@ Source playback readiness is refined by ADR 019: playing/playing-seek preroll re
 
 ## Retained media/command foundation (read with the additions above)
 
-cutcap-contracts is the Rust source of truth, reached through ABI 5 in NATIVE_ABI.md. Source Play/Pause/Stop and continuous seek/clock/frame delivery are specified in PHASE_2_PLAYBACK_CONTRACT.md with the Phase 3A preroll amendment. They never move the project timeline playhead.
+cutcap-contracts is the Rust source of truth, reached through ABI 6 in NATIVE_ABI.md. Source Play/Pause/Stop and continuous seek/clock/frame delivery are specified in PHASE_2_PLAYBACK_CONTRACT.md with the Phase 3A preroll amendment. They never move the project timeline playhead. Timeline transport is specified separately in the Phase 3D contract above.
 
 ## Reliable commands
 
@@ -105,4 +133,4 @@ See ARCHITECTURE.md for byte/source/input budgets and filesystem/OS limitations.
 
 ## Future extensions
 
-Source playback is implemented; audio and timeline evaluation remain future work. The UI pump is not the playback clock. Export terminal results will need a reliable job path separate from preview frames. Changing color/alpha, frame selection, queues, document schemas or public compatibility requires a decision and regression evidence.
+Source playback, indexed timeline evaluation and video-only timeline playback are implemented. Audio, compositing and export remain future work. The UI pump is not either playback clock. Export terminal results will need a reliable job path separate from preview frames. Changing color/alpha, frame selection, queues, document schemas or public compatibility requires a decision and regression evidence.

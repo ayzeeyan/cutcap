@@ -1,5 +1,14 @@
 # Licensing and distribution review
 
+Phase 3D update (2026-11-06): continuous timeline playback reuses the same external
+development FFmpeg/FFprobe 9.0.1 executables. It adds two bounded timeline worker
+slots; no executable/DLL, codec, font, new package or license is added, linked,
+copied or bundled. Self-contained .NET publishing includes CutCap's Rust DLL,
+not FFmpeg. The existing GPL-enabled development runtime and unresolved product
+distribution/application-license decisions below remain unchanged; subprocess
+separation is not automatic licensing clearance. Screenshots and generated QA
+videos use existing mathematical test sources, not third-party footage.
+
 Review date: 2026-11-03 (Phase 1); frontend section updated 2026-11-04 (Avalonia migration). This is an engineering inventory and distribution decision record, not a completed legal clearance. No CutCap application license is assigned. Packages set `publish = false`; no installer, public release or third-party binary bundle is produced.
 
 ## Application license — owner decision outstanding

@@ -4,7 +4,7 @@
 //! UI thread, then calls `pump` on a timer to drain bounded worker results. No
 //! callbacks cross into the frontend: it pulls the coalesced view and frame.
 use crate::{
-    bridge::EngineBridge,
+    bridge::{EngineBridge, HostEvent},
     media::{MediaHost, PresentedFrame},
     view::{self, InspectorView, ProjectView, SessionView, StatusView},
 };
@@ -60,6 +60,13 @@ pub struct Session {
     timeline_cached: Option<String>,
     preview_mode: PreviewMode,
     timeline_preview: crate::timeline_preview::TimelinePreview,
+    timeline_playback: crate::timeline_playback::TimelinePlayback,
+    timeline_request: RequestId,
+    timeline_desired: Option<TimelineSeek>,
+    timeline_inflight: Option<RequestId>,
+    timeline_intent: bool,
+    timeline_seeking: bool,
+    timeline_waiting: bool,
     clip_lookup: HashMap<ClipId, usize>,
     closed: bool,
 }
@@ -72,7 +79,7 @@ impl Session {
     pub fn with_backend(backend: Arc<dyn MediaBackend>) -> Result<Self, SessionError> {
         let mut session = Self {
             bridge: EngineBridge::start()?,
-            media: MediaHost::start(backend)?,
+            media: MediaHost::start(backend.clone())?,
             requests: Requests::default(),
             status: StatusView {
                 text: "Starting command worker…".into(),
@@ -86,6 +93,13 @@ impl Session {
             timeline_cached: None,
             preview_mode: PreviewMode::Source,
             timeline_preview: crate::timeline_preview::TimelinePreview::default(),
+            timeline_playback: crate::timeline_playback::TimelinePlayback::start(backend)?,
+            timeline_request: RequestId::new(),
+            timeline_desired: None,
+            timeline_inflight: None,
+            timeline_intent: false,
+            timeline_seeking: false,
+            timeline_waiting: false,
             clip_lookup: HashMap::new(),
             closed: false,
         };
@@ -101,7 +115,13 @@ impl Session {
         if self.closed {
             return Err(SessionError::Invalid("The session is shut down."));
         }
-        let invalidate = !matches!(command, Command::GetSnapshot | Command::SaveProject { .. });
+        let invalidate = !matches!(
+            command,
+            Command::GetSnapshot
+                | Command::SaveProject { .. }
+                | Command::SelectMedia { .. }
+                | Command::Select { .. }
+        );
         let request_id = RequestId::new();
         let envelope = CommandEnvelope {
             request_id,
@@ -287,7 +307,34 @@ impl Session {
         self.media.cancel_import();
     }
 
+    fn preserve_timeline_position(&mut self) -> Result<(), SessionError> {
+        if self.timeline_playback.active() {
+            self.timeline_preview
+                .set_position(
+                    self.timeline_playback.position(),
+                    self.timeline_playback.timebase(),
+                )
+                .map_err(|e| EngineError::new(ErrorCode::InvalidInput, e.to_string()))?;
+        }
+        Ok(())
+    }
     fn invalidate_timeline(&mut self) {
+        if let Err(e) = self.preserve_timeline_position() {
+            self.status = StatusView {
+                text: e.to_string(),
+                error: true,
+            };
+        }
+        self.timeline_request = RequestId::new();
+        self.timeline_desired = None;
+        self.timeline_waiting = false;
+        self.timeline_intent = false;
+        if let Err(e) = self.timeline_playback.cancel() {
+            self.status = StatusView {
+                text: e.to_string(),
+                error: true,
+            };
+        }
         if self.preview_mode == PreviewMode::Timeline {
             if let Err(error) = self.timeline_preview.invalidate(&mut self.media) {
                 self.status = StatusView {
@@ -312,8 +359,17 @@ impl Session {
             .show_source(mode == PreviewMode::Source, &mut self.status)?;
         self.preview_mode = mode;
         if mode == PreviewMode::Timeline {
-            self.invalidate_timeline();
+            if !self.timeline_playback.active() {
+                self.invalidate_timeline();
+            } else {
+                self.timeline_playback
+                    .restore_frame_generation(&mut self.media);
+            }
         } else {
+            self.pause_timeline()?;
+            self.timeline_request = RequestId::new();
+            self.timeline_desired = None;
+            self.timeline_waiting = false;
             self.timeline_preview.cancel(&mut self.media)?;
         }
         self.dirty = true;
@@ -330,7 +386,16 @@ impl Session {
             ));
         }
         self.set_preview_mode(PreviewMode::Timeline)?;
-        self.timeline_preview.queue(position, &mut self.media)?;
+        if self.timeline_playback.active() || self.timeline_waiting {
+            let playing = if self.timeline_waiting {
+                self.timeline_intent
+            } else {
+                self.timeline_playback.view.desired_playing
+            };
+            self.queue_timeline_transport(position, playing, true)?;
+        } else {
+            self.timeline_preview.queue(position, &mut self.media)?;
+        }
         self.dirty = true;
         Ok(())
     }
@@ -347,6 +412,12 @@ impl Session {
         self.seek_timeline(input)
     }
     pub fn cancel_timeline_preview(&mut self) -> Result<(), SessionError> {
+        self.preserve_timeline_position()?;
+        self.timeline_playback.cancel()?;
+        self.timeline_request = RequestId::new();
+        self.timeline_desired = None;
+        self.timeline_waiting = false;
+        self.timeline_intent = false;
         self.timeline_preview.cancel(&mut self.media)?;
         self.dirty = true;
         Ok(())
@@ -398,6 +469,79 @@ impl Session {
         self.dirty = true;
         Ok(())
     }
+    fn queue_timeline_transport(
+        &mut self,
+        position: TimelineSeek,
+        playing: bool,
+        seeking: bool,
+    ) -> Result<(), SessionError> {
+        self.preserve_timeline_position()?;
+        self.timeline_preview.cancel(&mut self.media)?;
+        self.timeline_playback.cancel()?;
+        self.timeline_request = RequestId::new();
+        self.timeline_desired = Some(position);
+        self.timeline_intent = playing;
+        self.timeline_seeking = seeking;
+        self.timeline_waiting = true;
+        self.dirty = true;
+        Ok(())
+    }
+    pub fn play_timeline(&mut self) -> Result<(), SessionError> {
+        if self.preview_mode != PreviewMode::Timeline || self.current_project().is_none() {
+            return Err(SessionError::Invalid(
+                "Select Timeline before timeline playback.",
+            ));
+        }
+        if self.timeline_waiting {
+            self.timeline_intent = true;
+            self.dirty = true;
+            return Ok(());
+        }
+        if self.timeline_playback.active()
+            && !matches!(self.timeline_playback.view.state, "ended" | "failed")
+        {
+            self.timeline_playback.resume(std::time::Instant::now());
+            self.timeline_intent = true;
+            self.dirty = true;
+            return Ok(());
+        }
+        let position = if self.timeline_playback.view.state == "ended" {
+            TimelineTime::ZERO
+        } else if self.timeline_playback.active() {
+            self.timeline_playback.position()
+        } else {
+            TimelineTime(self.timeline_preview.view.position_ticks)
+        };
+        self.queue_timeline_transport(TimelineSeek::Ticks(position), true, false)
+    }
+    pub fn pause_timeline(&mut self) -> Result<(), SessionError> {
+        self.timeline_intent = false;
+        self.timeline_playback
+            .pause(std::time::Instant::now())
+            .map_err(|_| SessionError::Invalid("Timeline clock overflow."))?;
+        self.dirty = true;
+        Ok(())
+    }
+    pub fn stop_timeline(&mut self) -> Result<(), SessionError> {
+        self.timeline_playback.stop()?;
+        self.timeline_preview
+            .set_position(
+                TimelineTime::ZERO,
+                self.requests
+                    .snapshot
+                    .as_ref()
+                    .map_or(Timebase::DEFAULT_TIMELINE, |s| s.timebase),
+            )
+            .map_err(|e| EngineError::new(ErrorCode::InvalidInput, e.to_string()))?;
+        self.timeline_request = RequestId::new();
+        self.timeline_desired = None;
+        self.timeline_waiting = false;
+        self.timeline_intent = false;
+        self.timeline_preview
+            .queue(TimelineSeek::Ticks(TimelineTime::ZERO), &mut self.media)?;
+        self.dirty = true;
+        Ok(())
+    }
     pub fn pause(&mut self) {
         self.media.pause();
         self.dirty = true;
@@ -413,7 +557,13 @@ impl Session {
     pub fn copy_allowed(&self, generation: u64) -> bool {
         match self.preview_mode {
             PreviewMode::Source => self.media.copy_allowed(generation),
-            PreviewMode::Timeline => self.timeline_preview.copy_allowed(generation),
+            PreviewMode::Timeline => {
+                if self.timeline_playback.active() {
+                    self.timeline_playback.copy_allowed(generation)
+                } else {
+                    self.timeline_preview.copy_allowed(generation)
+                }
+            }
         }
     }
     pub fn source_ready(&self) -> bool {
@@ -424,7 +574,13 @@ impl Session {
     pub fn frame_copied(&mut self, generation: u64) -> Result<(), SessionError> {
         match self.preview_mode {
             PreviewMode::Source => self.media.frame_copied(generation)?,
-            PreviewMode::Timeline => self.timeline_preview.copied(generation),
+            PreviewMode::Timeline => {
+                if self.timeline_playback.active() {
+                    self.timeline_playback.copied(generation);
+                } else {
+                    self.timeline_preview.copied(generation);
+                }
+            }
         }
         self.dirty = true;
         Ok(())
@@ -458,13 +614,59 @@ impl Session {
         }
         for event in events {
             self.dirty = true;
-            self.apply(event);
+            match event {
+                HostEvent::Engine(event) => self.apply(*event),
+                HostEvent::TimelinePlan { request_id, result } => {
+                    if self.timeline_inflight == Some(request_id) {
+                        self.timeline_inflight = None;
+                    }
+                    if request_id == self.timeline_request
+                        && self.preview_mode == PreviewMode::Timeline
+                    {
+                        self.timeline_waiting = false;
+                        match result {
+                            Ok(plan)
+                                if self.requests.snapshot.as_ref().is_some_and(|s| {
+                                    s.id == plan.project
+                                        && s.evaluation_generation == plan.generation
+                                }) =>
+                            {
+                                if let Err(e) = self.timeline_playback.begin(
+                                    plan,
+                                    self.timeline_intent,
+                                    self.timeline_seeking,
+                                    std::time::Instant::now(),
+                                ) {
+                                    self.status = StatusView {
+                                        text: e.to_string(),
+                                        error: true,
+                                    };
+                                }
+                            }
+                            Ok(_) => {
+                                self.timeline_intent = false;
+                            }
+                            Err(e) => {
+                                self.timeline_intent = false;
+                                self.timeline_playback.rejected(e.to_string());
+                                self.status = StatusView {
+                                    text: e.to_string(),
+                                    error: true,
+                                };
+                            }
+                        }
+                    }
+                }
+            }
         }
         let current = self.current_project();
         let (registration, changed) = self.media.poll(current, &mut self.status);
         self.dirty |= changed;
         if let Some(outcome) = self.media.take_timeline() {
-            if self.preview_mode == PreviewMode::Timeline {
+            if self.preview_mode == PreviewMode::Timeline
+                && !self.timeline_playback.active()
+                && !self.timeline_waiting
+            {
                 self.timeline_preview.decoded(outcome, &mut self.media);
             }
             self.dirty = true;
@@ -534,6 +736,8 @@ impl Session {
             self.dirty = true;
         }
         if self.preview_mode == PreviewMode::Timeline
+            && !self.timeline_playback.active()
+            && !self.timeline_waiting
             && self.engine_ready
             && let Some(project) = self.current_project()
             && let Some(query) = self.timeline_preview.next_query(project)
@@ -550,6 +754,41 @@ impl Session {
                 }
             }
         }
+        if self.preview_mode == PreviewMode::Timeline && self.engine_ready {
+            if self.timeline_playback.active()
+                && !self.requests.snapshot.as_ref().is_some_and(|s| {
+                    self.timeline_playback
+                        .valid_scope(s.id, s.evaluation_generation)
+                })
+            {
+                self.invalidate_timeline();
+            }
+            if self.timeline_inflight.is_none()
+                && let Some(position) = self.timeline_desired
+                && let Some(project) = self.current_project()
+            {
+                let request_id = self.timeline_request;
+                match self.bridge.submit(CommandEnvelope {
+                    request_id,
+                    project_id: Some(project),
+                    command: Command::PrepareTimelinePlayback { position },
+                }) {
+                    Ok(()) => {
+                        self.timeline_desired = None;
+                        self.timeline_inflight = Some(request_id);
+                    }
+                    Err(e) => {
+                        self.status = StatusView {
+                            text: e.to_string(),
+                            error: true,
+                        };
+                    }
+                }
+            }
+            self.dirty |= self
+                .timeline_playback
+                .poll(std::time::Instant::now(), &mut self.media);
+        }
         self.dirty
     }
 
@@ -564,7 +803,9 @@ impl Session {
                 self.timeline_preview.evaluated(
                     request_id,
                     result,
-                    self.preview_mode == PreviewMode::Timeline,
+                    self.preview_mode == PreviewMode::Timeline
+                        && !self.timeline_playback.active()
+                        && !self.timeline_waiting,
                     scope,
                     &mut self.media,
                 );
@@ -800,6 +1041,24 @@ impl Session {
                 }
             }
         };
+        let mut timeline_preview = if self.timeline_playback.active() {
+            self.timeline_playback.preview()
+        } else {
+            self.timeline_preview.view.clone()
+        };
+        let mut timeline_playback = self.timeline_playback.view.clone();
+        if self.timeline_waiting {
+            timeline_playback.state = if self.timeline_seeking {
+                "seeking"
+            } else {
+                "starting"
+            };
+            timeline_playback.desired_playing = self.timeline_intent;
+            timeline_playback.epoch = Some(self.timeline_request.to_string());
+            timeline_preview.state = timeline_playback.state;
+            timeline_preview.busy = true;
+            timeline_preview.detail = "Preparing the exact timeline transport request…".into();
+        }
         SessionView {
             revision: self.revision,
             engine_ready: self.engine_ready,
@@ -846,7 +1105,8 @@ impl Session {
             timeline_generation: self.timeline_generation,
             history: snapshot.map(|s| s.history.clone()).unwrap_or_default(),
             preview_mode: self.preview_mode,
-            timeline_preview: self.timeline_preview.view.clone(),
+            timeline_preview,
+            timeline_playback,
         }
     }
 
@@ -884,7 +1144,13 @@ impl Session {
     pub fn frame(&self) -> Option<&PresentedFrame> {
         match self.preview_mode {
             PreviewMode::Source => self.media.frame(),
-            PreviewMode::Timeline => self.timeline_preview.frame.as_ref(),
+            PreviewMode::Timeline => {
+                if self.timeline_playback.active() {
+                    self.timeline_playback.frame.as_ref()
+                } else {
+                    self.timeline_preview.frame.as_ref()
+                }
+            }
         }
     }
 
@@ -894,9 +1160,11 @@ impl Session {
             return Ok(());
         }
         self.closed = true;
+        let timeline = self.timeline_playback.shutdown();
         let media = self.media.shutdown();
         let bridge = self.bridge.shutdown();
         media?;
+        timeline?;
         bridge?;
         Ok(())
     }

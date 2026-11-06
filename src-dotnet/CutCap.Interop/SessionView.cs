@@ -23,7 +23,15 @@ public sealed record SessionView(
     ulong TimelineGeneration = 0,
     HistoryStatus? History = null,
     PreviewMode PreviewMode = PreviewMode.Source,
-    TimelinePreviewView? TimelinePreview = null);
+    TimelinePreviewView? TimelinePreview = null,
+    TimelinePlaybackView? TimelinePlayback = null);
+
+/// <summary>Project-tick clock and copied frame identity; no clip semantics or pixels in managed state.</summary>
+public sealed record TimelinePlaybackView(
+    PlaybackState State, bool DesiredPlaying, string? Epoch, long RequestedTicks, string RequestedText, long ClockTicks, long ClockMs, string ClockText,
+    long? OfferedTicks, long? CopiedTicks, SourceTimestamp? OfferedPts, SourceTimestamp? CopiedPts, string? CopiedClipId,
+    ulong Decoded, ulong Offered, ulong Copied, ulong Dropped, ulong BufferStalls, ulong Handoffs, ulong DecoderStarts,
+    int Buffered, uint? ProcessId, uint? PreparedProcessId, string? Error, ulong? RequestToReadyUs);
 
 [JsonConverter(typeof(JsonStringEnumConverter<PreviewMode>))]
 public enum PreviewMode { Source, Timeline }

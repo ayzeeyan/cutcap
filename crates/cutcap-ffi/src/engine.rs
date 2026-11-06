@@ -4,6 +4,7 @@ use crate::persistence::{Document, FileJob, FileOutput, SavedSource};
 use cutcap_contracts::*;
 use cutcap_core::{Clip, Project, ProjectError, TimelineIndex, Track, map_clip_source};
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
 #[derive(Default)]
 pub struct Engine {
@@ -20,7 +21,7 @@ pub struct Engine {
     /// Highest document revision ever issued in this session (revisions are unique).
     next_revision: u64,
     evaluation_generation: RequestId,
-    evaluation_index: Option<TimelineIndex>,
+    evaluation_index: Option<Arc<TimelineIndex>>,
     timeline_position: TimelineTime,
 }
 
@@ -78,6 +79,15 @@ impl Engine {
     }
 
     fn execute(&mut self, envelope: CommandEnvelope) -> Result<ProjectSnapshot, EngineError> {
+        let old_monitor = self
+            .evaluation_index
+            .as_ref()
+            .and_then(|i| i.monitor(self.selection))
+            .map(|t| t.id);
+        let affects_evaluation = !matches!(
+            envelope.command,
+            Command::GetSnapshot | Command::SelectMedia { .. } | Command::Select { .. }
+        );
         if self.file_job.as_ref().is_some_and(|job| !job.saving) {
             return Err(EngineError::new(
                 ErrorCode::Busy,
@@ -380,8 +390,37 @@ impl Engine {
                 }
             }
         }
-        self.evaluation_generation = RequestId::new();
+        let monitor = self
+            .evaluation_index
+            .as_ref()
+            .and_then(|i| i.monitor(self.selection))
+            .map(|t| t.id);
+        if affects_evaluation || old_monitor != monitor {
+            self.evaluation_generation = RequestId::new();
+        }
         self.snapshot()
+    }
+
+    pub fn playback_plan(
+        &mut self,
+        scope: Option<ProjectId>,
+        input: TimelineSeek,
+    ) -> Result<crate::timeline_plan::TimelinePlan, EngineError> {
+        let evaluation = self.evaluate(scope, input, None)?;
+        let index = self.evaluation_index.as_ref().ok_or_else(|| {
+            EngineError::new(ErrorCode::Internal, "Timeline index is unavailable.")
+        })?;
+        Ok(crate::timeline_plan::TimelinePlan {
+            project: evaluation.project_id,
+            generation: evaluation.generation,
+            timebase: evaluation.timebase,
+            track: evaluation.track,
+            extent: evaluation.extent,
+            position: evaluation.position,
+            index: index.clone(),
+            media: self.media_details.clone(),
+            availability: self.availability.clone(),
+        })
     }
 
     /// Constant-size response and O(log clips-on-track) lookup after index build.
@@ -434,7 +473,7 @@ impl Engine {
         .map_err(|e| invalid(e.to_string()))?;
         let index = self
             .evaluation_index
-            .get_or_insert_with(|| TimelineIndex::new(project));
+            .get_or_insert_with(|| Arc::new(TimelineIndex::new(project)));
         let track = match explicit_track {
             Some(id) => Some(
                 index

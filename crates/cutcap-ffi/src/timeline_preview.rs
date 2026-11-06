@@ -106,6 +106,30 @@ impl Default for TimelinePreview {
     }
 }
 impl TimelinePreview {
+    pub fn set_position(
+        &mut self,
+        position: TimelineTime,
+        timebase: Timebase,
+    ) -> Result<(), TimeError> {
+        let clock = Timebase::new(1, 1000).expect("constant");
+        let source = SourceTime {
+            ticks: position.0,
+            timebase,
+        };
+        let floor = source.rescale(clock, Rounding::Floor)?.ticks;
+        let ceil = source.rescale(clock, Rounding::Ceil)?.ticks;
+        self.last_input = TimelineSeek::Ticks(position);
+        self.view.timebase = timebase;
+        self.view.position_ticks = position.0;
+        self.view.position_ms = floor;
+        self.view.position_text = view::precise_duration(floor);
+        self.view.position_input = if floor == ceil {
+            self.view.position_text.clone()
+        } else {
+            format!("{} ticks", position.0)
+        };
+        Ok(())
+    }
     pub fn invalidate(&mut self, media: &mut MediaHost) -> Result<(), MediaError> {
         self.queue(self.last_input, media)
     }
@@ -368,7 +392,7 @@ impl TimelinePreview {
                     frame.actual.timebase.denominator()
                 );
                 self.view.detail = format!(
-                    "{} · video only · one monitored track · timeline playback unavailable",
+                    "{} · video only · one monitored track",
                     self.view.source_name
                 );
                 self.view.decode_us = Some(frame.decode_us);

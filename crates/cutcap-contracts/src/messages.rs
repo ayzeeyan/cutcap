@@ -8,7 +8,7 @@ use crate::{
     VerifiedMedia,
 };
 
-pub const CONTRACT_VERSION: u32 = 5;
+pub const CONTRACT_VERSION: u32 = 6;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TrackKind {
@@ -45,6 +45,10 @@ pub enum Command {
     EvaluateTimeline {
         position: crate::TimelineSeek,
         track_id: Option<TrackId>,
+    },
+    /// Private host response carries a shared read-only core index, never pixels.
+    PrepareTimelinePlayback {
+        position: crate::TimelineSeek,
     },
     AddTrack {
         kind: TrackKind,

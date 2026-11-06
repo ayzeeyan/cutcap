@@ -55,6 +55,29 @@ impl Controlled {
 }
 
 impl MediaBackend for Controlled {
+    fn stream_interval(
+        &self,
+        request: &DecodeRequest,
+        minimum: SourceTime,
+        cancel: &Cancellation,
+        emit: &mut (dyn FnMut(DecodedFrame) -> Result<(), MediaError> + Send),
+    ) -> Result<(), MediaError> {
+        let mut positioned = request.clone();
+        positioned.position.ticks = request
+            .position
+            .ticks
+            .div_euclid(100)
+            .saturating_mul(100)
+            .max(minimum.ticks);
+        for index in 0..30 {
+            let mut next = positioned.clone();
+            next.position.ticks += index * 100;
+            let mut frame = self.decode(&next, cancel)?;
+            frame.requested = request.position;
+            emit(frame)?;
+        }
+        Ok(())
+    }
     fn stream(
         &self,
         request: &DecodeRequest,

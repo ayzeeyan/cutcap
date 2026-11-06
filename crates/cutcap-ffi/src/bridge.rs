@@ -5,24 +5,32 @@ use std::{
     time::Duration,
 };
 
-use cutcap_contracts::{CommandEnvelope, EngineError, EngineEvent, ErrorCode};
+use cutcap_contracts::{Command, CommandEnvelope, EngineError, EngineEvent, ErrorCode, RequestId};
 
 use crate::engine::Engine;
 
 pub const QUEUE_CAPACITY: usize = 32;
 pub const EVENTS_PER_TICK: usize = 8;
 
+pub enum HostEvent {
+    Engine(Box<EngineEvent>),
+    TimelinePlan {
+        request_id: RequestId,
+        result: Result<crate::timeline_plan::TimelinePlan, EngineError>,
+    },
+}
+
 /// UI-thread owner. Channel endpoints and the worker have one explicit lifecycle.
 pub struct EngineBridge {
     commands: RefCell<Option<SyncSender<CommandEnvelope>>>,
-    events: RefCell<Option<Receiver<EngineEvent>>>,
+    events: RefCell<Option<Receiver<HostEvent>>>,
     worker: RefCell<Option<JoinHandle<()>>>,
     disconnected: Cell<bool>,
 }
 
 impl EngineBridge {
     pub fn start() -> Result<Self, std::io::Error> {
-        let (commands, requests) = mpsc::sync_channel(QUEUE_CAPACITY);
+        let (commands, requests) = mpsc::sync_channel::<CommandEnvelope>(QUEUE_CAPACITY);
         let (results, events) = mpsc::sync_channel(QUEUE_CAPACITY);
         let worker = thread::Builder::new()
             .name("cutcap-command-owner".into())
@@ -40,7 +48,17 @@ impl EngineBridge {
                     };
                     match command {
                         Ok(command) => {
-                            if results.send(engine.handle(command)).is_err() {
+                            let event = if let Command::PrepareTimelinePlayback { position } =
+                                command.command
+                            {
+                                HostEvent::TimelinePlan {
+                                    request_id: command.request_id,
+                                    result: engine.playback_plan(command.project_id, position),
+                                }
+                            } else {
+                                HostEvent::Engine(Box::new(engine.handle(command)))
+                            };
+                            if results.send(event).is_err() {
                                 break;
                             }
                         }
@@ -48,7 +66,7 @@ impl EngineBridge {
                         Err(mpsc::RecvTimeoutError::Timeout) => {}
                     }
                     if let Some(event) = engine.poll_file()
-                        && results.send(event).is_err()
+                        && results.send(HostEvent::Engine(Box::new(event))).is_err()
                     {
                         break;
                     }
@@ -75,7 +93,7 @@ impl EngineBridge {
         }
     }
 
-    pub fn drain(&self, mut receive: impl FnMut(EngineEvent)) -> Result<(), EngineError> {
+    pub fn drain(&self, mut receive: impl FnMut(HostEvent)) -> Result<(), EngineError> {
         let events = self.events.borrow();
         let receiver = events.as_ref().ok_or_else(disconnected_error)?;
         for _ in 0..EVENTS_PER_TICK {
@@ -143,7 +161,9 @@ mod tests {
             .unwrap()
             .recv_timeout(Duration::from_secs(2))
             .unwrap();
-        assert!(matches!(event, EngineEvent::Completed { request_id: id, .. } if id == request_id));
+        assert!(
+            matches!(event, HostEvent::Engine(event) if matches!(*event, EngineEvent::Completed { request_id: id, .. } if id == request_id))
+        );
         bridge.shutdown().unwrap();
         assert!(
             bridge

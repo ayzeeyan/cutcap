@@ -32,8 +32,8 @@ use std::{
 /// or view JSON field the frontend depends on.
 /// ABI 4 (Phase 3B): clip insert/remove/select, undo/redo, the separately
 /// fetched timeline document and the view's `timeline_generation`/`history`.
-/// ABI 5 adds independent monitor modes, exact timeline seeks and monitor DTOs.
-pub const ABI_VERSION: u32 = 5;
+/// ABI 6 adds independent continuous timeline transport and diagnostics.
+pub const ABI_VERSION: u32 = 6;
 
 pub const CUTCAP_OK: i32 = 0;
 pub const CUTCAP_INVALID_ARGUMENT: i32 = 1;
@@ -602,6 +602,19 @@ pub unsafe extern "C" fn cutcap_session_seek_timeline_text(
 #[unsafe(no_mangle)]
 pub extern "C" fn cutcap_session_cancel_timeline_preview(handle: u64) -> i32 {
     guard(|| with_session(handle, |s| Ok(s.cancel_timeline_preview()?)))
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn cutcap_session_play_timeline(handle: u64) -> i32 {
+    guard(|| with_session(handle, |s| Ok(s.play_timeline()?)))
+}
+#[unsafe(no_mangle)]
+pub extern "C" fn cutcap_session_pause_timeline(handle: u64) -> i32 {
+    guard(|| with_session(handle, |s| Ok(s.pause_timeline()?)))
+}
+#[unsafe(no_mangle)]
+pub extern "C" fn cutcap_session_stop_timeline(handle: u64) -> i32 {
+    guard(|| with_session(handle, |s| Ok(s.stop_timeline()?)))
 }
 
 #[unsafe(no_mangle)]

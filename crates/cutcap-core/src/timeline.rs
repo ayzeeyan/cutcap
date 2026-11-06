@@ -57,6 +57,11 @@ impl TimelineIndex {
             .and_then(|(_, clips)| clips.last())
             .map_or(Ok(TimelineTime::ZERO), Clip::end)
     }
+    /// First clip starting strictly after position (also works inside a gap).
+    pub fn next(&self, track: TrackId, position: TimelineTime) -> Option<&Clip> {
+        let (_, clips) = self.tracks.get(&track)?;
+        clips.get(clips.partition_point(|c| c.start <= position))
+    }
     pub fn active(
         &self,
         project: ProjectId,
@@ -135,6 +140,36 @@ pub fn map_clip_source(
     })
 }
 
+/// Actual source PTS -> first project tick at which it may be presented.
+/// Round the rational difference once; never infer time from a frame rate.
+pub fn frame_timeline_time(
+    clip: &Clip,
+    actual: SourceTime,
+    project_clock: Timebase,
+) -> Result<TimelineTime, EvaluationError> {
+    let bounds = map_clip_source(clip, clip.start, project_clock, actual.timebase)?;
+    if !bounds.accepts(actual)? {
+        return Err(EvaluationError::OutsideClip);
+    }
+    let offset = sum_parts_ceil(
+        i128::from(actual.ticks),
+        actual.timebase,
+        -i128::from(clip.source_in.ticks),
+        clip.source_in.timebase,
+        project_clock,
+    )?;
+    let position = TimelineTime(
+        clip.start
+            .0
+            .checked_add(offset)
+            .ok_or(TimeError::Overflow)?,
+    );
+    if position >= clip.end()? {
+        return Err(EvaluationError::OutsideClip);
+    }
+    Ok(position)
+}
+
 /// Sum rational times before rounding. Splitting quotient/remainder avoids the
 /// much larger numerator of a naive common-denominator source+timeline product.
 fn sum_rescale_ceil(
@@ -143,8 +178,27 @@ fn sum_rescale_ceil(
     offset_clock: Timebase,
     target: Timebase,
 ) -> Result<SourceTime, TimeError> {
-    fn parts(ticks: i64, from: Timebase, to: Timebase) -> Result<(i128, i128, i128), TimeError> {
-        let n = i128::from(ticks)
+    Ok(SourceTime {
+        ticks: sum_parts_ceil(
+            i128::from(source.ticks),
+            source.timebase,
+            i128::from(offset),
+            offset_clock,
+            target,
+        )?,
+        timebase: target,
+    })
+}
+
+fn sum_parts_ceil(
+    first: i128,
+    first_clock: Timebase,
+    second: i128,
+    second_clock: Timebase,
+    target: Timebase,
+) -> Result<i64, TimeError> {
+    fn parts(ticks: i128, from: Timebase, to: Timebase) -> Result<(i128, i128, i128), TimeError> {
+        let n = ticks
             .checked_mul(i128::from(from.numerator()))
             .and_then(|n| n.checked_mul(i128::from(to.denominator())))
             .ok_or(TimeError::Overflow)?;
@@ -157,8 +211,8 @@ fn sum_rescale_ceil(
         }
         a
     }
-    let (a, ar, ad) = parts(source.ticks, source.timebase, target)?;
-    let (b, br, bd) = parts(offset, offset_clock, target)?;
+    let (a, ar, ad) = parts(first, first_clock, target)?;
+    let (b, br, bd) = parts(second, second_clock, target)?;
     let g = gcd(ad, bd);
     let common = (ad / g).checked_mul(bd).ok_or(TimeError::Overflow)?;
     let remainder = ar
@@ -170,8 +224,5 @@ fn sum_rescale_ceil(
         .and_then(|n| n.checked_add(remainder / common))
         .and_then(|n| n.checked_add(i128::from(remainder % common != 0)))
         .ok_or(TimeError::Overflow)?;
-    Ok(SourceTime {
-        ticks: i64::try_from(ticks).map_err(|_| TimeError::Overflow)?,
-        timebase: target,
-    })
+    i64::try_from(ticks).map_err(|_| TimeError::Overflow)
 }

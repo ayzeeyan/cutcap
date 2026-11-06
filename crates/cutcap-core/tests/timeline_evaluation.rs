@@ -49,6 +49,10 @@ fn half_open_cuts_gaps_and_empty_regions_are_exact() {
         p.insert_clip(c.clone()).unwrap();
     }
     let index = TimelineIndex::new(&p);
+    assert_eq!(index.next(track, TimelineTime(99)).unwrap().id, a.id);
+    assert_eq!(index.next(track, TimelineTime(100)).unwrap().id, b.id);
+    assert_eq!(index.next(track, TimelineTime(400)).unwrap().id, c.id);
+    assert!(index.next(track, TimelineTime(600)).is_none());
     let at = |t| {
         index
             .active(p.id(), track, TimelineTime(t))
@@ -78,6 +82,53 @@ fn half_open_cuts_gaps_and_empty_regions_are_exact() {
         index.active(p.id(), track, TimelineTime(-1)),
         Err(EvaluationError::NegativePosition)
     ));
+}
+
+#[test]
+fn inverse_pts_mapping_uses_actual_intervals_and_single_rational_rounding() {
+    let (_, track, _, media) = fixture();
+    let mut c = clip(track, media, 100, 2000);
+    c.source_in = SourceTime {
+        ticks: -1,
+        timebase: Timebase::new(1, 3).unwrap(),
+    };
+    let project = Timebase::new(1, 1000).unwrap();
+    let pts = |ticks| SourceTime {
+        ticks,
+        timebase: Timebase::new(1, 1000).unwrap(),
+    };
+    // -333ms is the first eligible original source tick. Exact difference is 1/3ms.
+    assert_eq!(
+        frame_timeline_time(&c, pts(-333), project).unwrap(),
+        TimelineTime(101)
+    );
+    assert_eq!(
+        frame_timeline_time(&c, pts(200), project).unwrap(),
+        TimelineTime(634)
+    );
+    assert_eq!(
+        frame_timeline_time(&c, pts(700), project).unwrap(),
+        TimelineTime(1134)
+    );
+    assert!(frame_timeline_time(&c, pts(-334), project).is_err());
+    assert!(frame_timeline_time(&c, pts(1667), project).is_err());
+    // Exact cut never belongs to the outgoing frame, including a short fractional clip.
+    c.duration = TimelineDuration::new(1).unwrap();
+    assert!(frame_timeline_time(&c, pts(-333), project).is_err());
+    c.source_in = SourceTime {
+        ticks: i64::MIN,
+        timebase: project,
+    };
+    c.duration = TimelineDuration::new(100).unwrap();
+    assert_eq!(
+        frame_timeline_time(&c, pts(i64::MIN), project).unwrap(),
+        TimelineTime(100)
+    );
+    c.source_in = SourceTime {
+        ticks: i64::MAX,
+        timebase: Timebase::new(u32::MAX, 1).unwrap(),
+    };
+    assert!(frame_timeline_time(&c, pts(i64::MAX), project).is_err());
 }
 #[test]
 fn monitoring_uses_selected_video_clip_track_or_first_video() {

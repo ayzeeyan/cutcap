@@ -196,6 +196,10 @@ public sealed class EngineSession : IDisposable
 
     /// <summary>Accepts source playback/resume; inspect Playback state for readiness.</summary>
     public void Play() => Check(NativeMethods.Play(Handle));
+    public void PlayTimeline() => Check(NativeMethods.PlayTimeline(Handle));
+    public void PauseTimeline() => Check(NativeMethods.PauseTimeline(Handle));
+    public void ResumeTimeline() => PlayTimeline();
+    public void StopTimeline() => Check(NativeMethods.StopTimeline(Handle));
     public void Resume() => Play();
     public void Pause() => Check(NativeMethods.Pause(Handle));
     public void Stop() => Check(NativeMethods.Stop(Handle));

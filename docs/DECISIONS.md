@@ -1,5 +1,34 @@
 # Architecture decisions
 
+## ADR 022 — Independent timeline interval transport and ABI 6 (Phase 3D)
+
+Keep schema/envelope 1. Share an immutable owner-built core index through a
+private host event so timeline polling performs binary active/next lookup without
+UI model construction, C# evaluation or per-frame project serialization. The
+source and timeline clocks/epochs/positions remain independent. ABI/contract 6
+add explicit timeline transport controls and its consumed diagnostics, preserving
+the 24-byte frame-copy layout and single WriteableBitmap.
+
+Reuse the existing persistent PAM/indexed-PTS decoder with an interval mode:
+retain at most the last eligible preroll frame <= request, then actual successors.
+Still/source seek ceiling semantics stay unchanged. Inverse source deadlines ceil
+one rational difference; wall-clock advancement floors to project ticks. Neither
+uses nominal FPS. Two bounded timeline worker slots prepare the next clip within
+two seconds of entry, including gaps; source paused preroll remains separately
+bounded. This uses existing subprocess custody/licensing, with no new dependency
+or codec implementation. Native libraries and seamless same-source decoder reuse
+remain possible behind this boundary, but require a separate measured change.
+
+At cuts clear outgoing permissions immediately. If incoming preroll is late,
+freeze at that exact boundary, truthfully Buffering; do not run clock on an old
+image. Gaps are blank clock intervals; source EOF holds the last eligible frame
+through clip end; monitored extent controls Ended and replay. Structural edits,
+relink and replacement stop/re-evaluate; no unsafe speculative continuation.
+No scheduler/vsync deadline, GPU path, audio or compositing change is made.
+
+Evidence and limits: PHASE_3D_TIMELINE_PLAYBACK_REPORT.md. FrameView callbacks
+measure application DrawImage generations only, never physical scanout.
+
 ## ADR 021 — Indexed single-track timeline evaluation and ABI 5 (Phase 3C)
 
 Core keeps a derived per-video-track sorted index rebuilt after geometry edits/Open, not on seeks. Owner evaluation uses binary lookup on `[start,end)` and returns a small result, with a transient generation UUID separate from undoable saved revisions. No ProjectSnapshot/clip serialization occurs per seek. Selected-clip view lookup is cached too, removing the remaining per-view clip scan. Indexes, monitor mode/position and preview results remain outside project schema/envelope 1.

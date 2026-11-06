@@ -1,6 +1,13 @@
 # Claude onboarding
 
-Phase 3C current handoff: read docs/PHASE_3C_TIMELINE_PREVIEW_CONTRACT.md and docs/PHASE_3C_TIMELINE_PREVIEW_REPORT.md with ABI/contract 5. Preserve Rust-only clip evaluation, generation invalidation, independent Source/Timeline positions and disabled Timeline Play. Project schema/envelope remain 1.
+Phase 3D current handoff: ABI/contract 6 support real independent timeline
+Play/Pause/Stop across single-video-track cuts and gaps. Read
+docs/PHASE_3D_TIMELINE_PLAYBACK_CONTRACT.md and the Phase 3D report. Keep positions,
+clock, interval selection, stale gates and source endpoints Rust-owned. The
+viewer now routes controls by mode; frames remain outside MVVM and clip documents
+are never fetched per frame. No audio/compositing or schema change.
+
+Phase 3C historical handoff: docs/PHASE_3C_TIMELINE_PREVIEW_CONTRACT.md and docs/PHASE_3C_TIMELINE_PREVIEW_REPORT.md describe ABI 5 still preview. Its exact evaluator remains in use; Phase 3D enables continuous Timeline Play under the new contract above. Project schema/envelope remain 1.
 
 Read [AGENTS.md](AGENTS.md) first; it is the single engineering constitution. Then read [ARCHITECTURE](docs/ARCHITECTURE.md), [NATIVE_ABI](docs/NATIVE_ABI.md), [ENGINE_UI_CONTRACT](docs/ENGINE_UI_CONTRACT.md), [DECISIONS](docs/DECISIONS.md), [MODEL_RESPONSIBILITIES](docs/MODEL_RESPONSIBILITIES.md), [PROJECT_FORMAT](docs/PROJECT_FORMAT.md) and the latest [Phase 3A report](docs/PHASE_3A_PROJECT_PERSISTENCE_REPORT.md). The migration and Phase 2/2B reports remain historical evidence.
 

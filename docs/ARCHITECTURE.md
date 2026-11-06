@@ -1,6 +1,37 @@
 # CutCap architecture — Avalonia frontend over the Rust engine
 
-Phase 3C current addition: **ABI/contract 5**, exact single-video-track timeline preview. `core/timeline.rs` owns the sorted lookup index and rational source mapping; `ffi/engine.rs` answers small correlated evaluations without ProjectSnapshot clones; `ffi/timeline_preview.rs` owns one latest evaluation/decode/frame and presentation state. `ffi/media.rs` routes timeline work through the existing isolated decoder, pausing and retaining source transport independently. One session-wide frame counter and the original Avalonia FrameView/bitmap serve both modes. See PHASE_3C_TIMELINE_PREVIEW_CONTRACT.md. No timeline Play, audio or multi-track composition.
+Phase 3D current addition: **ABI/contract 6**, continuous video-only timeline
+transport. `ffi/timeline_plan.rs` carries an owner-built immutable shared core
+index plus bounded verified-source descriptors; `ffi/timeline_playback.rs` owns
+an exact project clock, two persistent decoder slots (active/next), clip handoff,
+gap/EOF/buffering and frame-copy identity. Structural edits stop/re-evaluate;
+source-only selection and saves preserve the timeline epoch. No project schema
+change, frontend evaluator, per-frame process launch, timeline document rebuild,
+GPU rewrite, audio or multi-track composition. The Phase 3C still evaluator below
+remains the stopped seek fallback. PHASE_3D_TIMELINE_PLAYBACK_CONTRACT.md is the
+binding transport authority; the reports are executed evidence.
+
+Continuous decoding adds an interval policy to the existing media adapter, not
+a second codec. It coalesces actual preroll PTS to one covering frame and streams
+successors through the existing nonce/index/timebase/size-validated PAM protocol.
+Two timeline queues each hold three frames and scheduler lookahead two; the source
+transport keeps its own existing bounds. The next clip is prepared within two
+timeline seconds of entry. A missing/failed prepared source affects transport
+only at its entry. Late cuts clear the outgoing image and freeze at the exact
+cut; gaps advance blank without decoding them. EOF holds an eligible frame to
+the exclusive clip end. Ended uses actual monitored-track extent.
+
+Memory bounds include producer/pipe-reader in-flight frames as well as queues.
+At most two timeline persistent children coexist with one paused source child;
+an isolated child can transiently remain while cancellation/reaping completes,
+and the single probe is independent. Each child retains its 1 GiB Windows job
+cap. Each RGBA buffer is <=3,686,400 bytes; no new frontend image cache exists.
+The maximum full-resolution native pixel working set is conservatively under
+100 MiB across queued/lookahead/reader/cached/isolated buffers, excluding decoder
+processes, allocation overhead and the reused managed bitmap. Measured host and
+child memory, rather than this structural ceiling, is in the Phase 3D report.
+
+The retained Phase 3C still path uses `core/timeline.rs` for sorted lookup and rational mapping, `ffi/engine.rs` for small correlated evaluations and `ffi/timeline_preview.rs` for latest evaluation/decode/frame ownership. `ffi/media.rs` routes stopped timeline seeks through the isolated decoder. One session-wide generation and Avalonia FrameView serve both modes. Continuous timeline playback now uses the Phase 3D transport above; audio and multi-track composition remain unavailable.
 
 Since the Avalonia migration (docs/AVALONIA_MIGRATION_REPORT.md) the frontend is C#/.NET 10 + Avalonia 12; Rust keeps editing semantics, media processing, project state and time arithmetic. Phase 2B integrated production source transport. Phase 3A adds revisioned `.cutcap` persistence/relinking and startup preroll stabilization through ABI 3. Phase 3B adds Rust-owned clip insertion/removal/selection and bounded undo/redo through ABI 4 (ADR 020). The Slint frontend is retired; its last version is commit a3de692 on `claude/phase-2a-ui`.
 
@@ -9,7 +40,7 @@ Since the Avalonia migration (docs/AVALONIA_MIGRATION_REPORT.md) the frontend is
 ```mermaid
 flowchart LR
   Desktop[CutCap.Desktop: Avalonia views / view models / frame presentation] --> Interop[CutCap.Interop: P/Invoke, SafeHandle, view DTOs]
-  Interop -- C ABI v5, cutcap_engine.dll --> Ffi[cutcap-ffi: session host / view mapping / ABI]
+  Interop -- C ABI v6, cutcap_engine.dll --> Ffi[cutcap-ffi: session host / view mapping / ABI]
   Ffi --> Core[cutcap-core: validated project]
   Ffi --> Media[cutcap-media: replaceable media adapter]
   Ffi --> Contracts[cutcap-contracts: IDs / exact time / DTOs]
@@ -22,10 +53,11 @@ Core remains independent of GUI, codecs, GPU, filesystem and threading. Contract
 | Module | Responsibility |
 |---|---|
 | contracts/ids.rs, time.rs | Distinct non-nil UUID identities; exact source/project clocks; checked floor/ceil rescaling |
-| contracts/media.rs, messages.rs, document.rs, timeline.rs | Validated metadata, commands, snapshots, source identity and document status; contract version 5 |
+| contracts/media.rs, messages.rs, document.rs, timeline.rs | Validated metadata, commands, snapshots, source identity and document status; contract version 6 |
 | core/project.rs | Schema 1 validated project graph and atomic mutations |
 | core/timeline.rs | Per-video-track sorted clip index, half-open lookup, single-rounding exact source mapping and endpoint validation |
 | ffi/timeline_preview.rs | Latest transient seek/evaluation, model/request generation gates, blank/unavailable/no-frame states and bounded frame ownership |
+| ffi/timeline_plan.rs, timeline_playback.rs | Shared owner index, exact timeline clock, active/next persistent decode, cuts/gaps, copied identity and bounded diagnostics |
 | media/backend.rs, probe.rs | MediaBackend contract, FFmpeg policy and bounded metadata parsing |
 | media/process.rs, cancel.rs | Owned child processes, bounded pipe capture, timeout, cancellation and reaping |
 | media/frame.rs, latest.rs | Validated opaque RGBA8; bounded latest-request/result mailbox |
@@ -46,7 +78,7 @@ Core remains independent of GUI, codecs, GPU, filesystem and threading. Contract
 
 ## Lifecycle and data flow
 
-App creates EngineHost, the main window and its view models, then starts the session: cutcap_session_create verifies ABI 5, starts command/isolated/persistent workers and queues NewProject (two real empty tracks). A 16 ms UI timer (and, while source playback is active, a `TopLevel.RequestAnimationFrame` callback once per compositor frame) drains at most eight reliable events, polls media work and selects at most one offered frame from bounded lookahead. Decode, filesystem/process I/O and waits stay off pump. Frame copying records delivery, not scanout. See PHASE_2_PLAYBACK_CONTRACT.md for transport and PROJECT_FORMAT.md for file operations. The window initially fits the current display's logical work area; user resize/maximize then retains normal Windows behavior.
+App creates EngineHost, the main window and its view models, then starts the session: cutcap_session_create verifies ABI 6, starts command/isolated/source/timeline workers and queues NewProject (two real empty tracks). A 16 ms UI timer (and, while the visible transport is active, a `TopLevel.RequestAnimationFrame` callback once per compositor frame) drains at most eight reliable events, polls media work and selects at most one offered frame from bounded lookahead. Decode, filesystem/process I/O and waits stay off pump. Frame copying records delivery, not scanout. See the Phase 2/3D contracts and PROJECT_FORMAT.md. The window initially fits the current display's logical work area; resizing/maximizing retains normal Windows behavior.
 
 Import opens Avalonia's native asynchronous picker (`StorageProvider`). The chosen path crosses the ABI as UTF-16. One probe thread canonicalizes/validates the file and invokes FFprobe while capturing its full source fingerprint under a Windows read-sharing lock. The owner validates and commits RegisterMedia; only its successful snapshot adds a library entry and starts preview. Reopened/relinked sources reuse this single worker, compare saved expectations and remain unavailable until verified.
 
