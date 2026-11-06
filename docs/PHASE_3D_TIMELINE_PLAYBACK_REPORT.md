@@ -282,5 +282,17 @@ consider proxies or measured decoder reuse before native-library/GPU changes.
 
 ## Git evidence
 
-Implementation commit hashes and acknowledged origin push are appended after
-the verified feature commits are created. No force push or main merge is used.
+Verified implementation commits:
+
+- `91159d1e1f1707352dadc2bd191b8166206fc61a` —
+  `feat(engine): add bounded video-only timeline transport`.
+- `336f04286a5d561eede072310994c9543a1f6a74` —
+  `feat(desktop): enable timeline transport with Windows validation evidence`.
+
+`git push -u origin codex/phase-3d-timeline-playback` exited 0. Origin acknowledged
+the new branch and upstream tracking; `git ls-remote` confirmed implementation
+HEAD `336f04286a5d561eede072310994c9543a1f6a74`. This evidence update is a subsequent
+documentation commit, so its final remote HEAD is reported in the handoff after
+the final push. No force push or main merge was used.
+
+[Feature branch](https://github.com/ayzeeyan/cutcap/tree/codex/phase-3d-timeline-playback).
