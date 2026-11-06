@@ -1118,3 +1118,7 @@ mod editing_tests;
 #[cfg(test)]
 #[path = "evaluation_measurements.rs"]
 mod evaluation_measurements;
+
+#[cfg(test)]
+#[path = "clip_edit_tests.rs"]
+mod clip_edit_tests;

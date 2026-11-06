@@ -7,6 +7,7 @@ param(
   [string]$Out = '.artifacts/timeline/draw',
   [string]$Exe)
 $ErrorActionPreference = 'Stop'
+if (-not ('Dpi.Window' -as [type])) { Add-Type -Namespace Dpi -Name Window -MemberDefinition '[DllImport("user32.dll")] static extern uint GetDpiForWindow(IntPtr h); public static double Scale(IntPtr h) { return GetDpiForWindow(h) / 96.0; }' }
 . "$PSScriptRoot\ui.ps1"
 . "$PSScriptRoot\find.ps1"
 $repo = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
@@ -35,12 +36,13 @@ Add-Type -AssemblyName System.Windows.Forms
 [System.Windows.Forms.SendKeys]::SendWait('%n'); Start-Sleep -Milliseconds 200; Assert-CutCapForeground
 [System.Windows.Forms.SendKeys]::SendWait("^a$($Project -replace '([+^%~(){}\[\]])', '{$1}'){ENTER}")
 $watch = [Diagnostics.Stopwatch]::StartNew()
-for ($i = 0; $i -lt 40; $i++) {
-  if (@(All-Elements $h | Where-Object { $_.Current.Name -eq 'Continue without saving' -and (Visible $_) }).Count) { Click-Named $h 'Continue without saving'; break }
-  if ((Lanes $h) -match '5000 clips') { break }
+# The untitled start-up project is dirty, so Open asks first; the prompt can
+# arrive several seconds after the file is chosen while UIA is slow.
+while ((Lanes $h) -notmatch '5000 clips') {
+  if (@(All-Elements $h | Where-Object { $_.Current.Name -eq 'Continue without saving' -and (Visible $_) }).Count) { Click-Named $h 'Continue without saving' }
+  if ($watch.ElapsedMilliseconds -gt 60000) { throw "large project not shown: $(Lanes $h)" }
   Start-Sleep -Milliseconds 250
 }
-while ((Lanes $h) -notmatch '5000 clips') { if ($watch.ElapsedMilliseconds -gt 30000) { throw "large project not shown: $(Lanes $h)" }; Start-Sleep -Milliseconds 200 }
 "opened: $(Lanes $h) after $($watch.ElapsedMilliseconds) ms (includes UIA polling)"
 Start-Sleep -Milliseconds 1500
 Save-Client $h "$Out\large-100.jpg"
@@ -70,6 +72,24 @@ for ($i = 0; $i -lt 40; $i++) {
   Start-Sleep -Milliseconds 40
 }
 Start-Sleep -Milliseconds 800
+# Phase 3E: a clip drag (ghost preview, snapping and overlap lookups per move),
+# released on top of a neighbour so it is rejected locally and nothing is edited.
+Click-Named $h 'Reset zoom'; Start-Sleep -Milliseconds 400
+$s = [Dpi.Window]::Scale($h)
+$lanes = (Find-Element $h 'Track lanes').Current.BoundingRectangle
+$from = @{ X = [int]($lanes.X + (12 + 4.5 * 20) * $s); Y = [int]($lanes.Y + 25 * $s) }
+Assert-CutCapForeground
+[void][Native2]::SetCursorPos($from.X, $from.Y); Start-Sleep -Milliseconds 100
+[Native2]::mouse_event(2, 0, 0, 0, [IntPtr]::Zero); Start-Sleep -Milliseconds 100
+$moveWatch = [Diagnostics.Stopwatch]::StartNew()
+for ($i = 1; $i -le 90; $i++) {
+  Assert-CutCapForeground
+  [void][Native2]::SetCursorPos($from.X + [int]($i * 4 * $s), $from.Y); Start-Sleep -Milliseconds 16
+}
+"drag: 90 pointer moves in $($moveWatch.ElapsedMilliseconds) ms (incl. 16 ms sleeps)"
+Send-Key $h 'ESC'; Start-Sleep -Milliseconds 200
+[Native2]::mouse_event(4, 0, 0, 0, [IntPtr]::Zero); Start-Sleep -Milliseconds 800
+"after cancelled drag: $(Lanes $h)"
 [void]$p.CloseMainWindow(); [void]$p.WaitForExit(10000)
 "exited=$($p.HasExited)"
 Get-Content "$Out\trace.txt"

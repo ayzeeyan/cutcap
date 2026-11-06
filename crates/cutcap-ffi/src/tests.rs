@@ -705,3 +705,5 @@ fn abi_frame_copy_validates_buffers_generation_and_stride() {
 
 #[path = "timeline_tests.rs"]
 mod timeline;
+#[path = "timeline_edit_session_tests.rs"]
+mod timeline_edit_session;
