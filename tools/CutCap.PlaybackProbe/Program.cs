@@ -11,6 +11,12 @@ internal static class Program
     [STAThread]
     public static int Main(string[] args)
     {
+        if (args.FirstOrDefault() == "--timeline") return TimelineProbe.Run(args.Skip(1).ToArray());
+        if (args.FirstOrDefault() == "--timeline-min")
+        {
+            Environment.SetEnvironmentVariable("CUTCAP_PROBE_MIN_LAYOUT", "1");
+            return TimelineProbe.Run(args.Skip(1).ToArray());
+        }
         if (args.FirstOrDefault() == "--ui") return UiProbe.Run(args.Skip(1).ToArray());
         if (args.FirstOrDefault() == "--ui-min")
         {

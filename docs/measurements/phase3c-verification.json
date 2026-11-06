@@ -1,0 +1,72 @@
+{
+  "date": "2026-11-06",
+  "baselineVerifiedWithRemote": true,
+  "baselineRustPassed": 86,
+  "baselineDotnetPassed": 68,
+  "checks": [
+    {
+      "command": "cargo fmt --all -- --check",
+      "exitCode": 0,
+      "seconds": 0.42
+    },
+    {
+      "command": "cargo clippy --workspace --all-targets -- -D warnings",
+      "exitCode": 0,
+      "seconds": 1.37
+    },
+    {
+      "command": "cargo test --workspace",
+      "exitCode": 0,
+      "seconds": 8.07
+    },
+    {
+      "command": "cargo build --workspace",
+      "exitCode": 0,
+      "seconds": 0.27
+    },
+    {
+      "command": "cargo build --release",
+      "exitCode": 0,
+      "seconds": 6.98
+    },
+    {
+      "command": "dotnet build CutCap.slnx -c Debug -nologo",
+      "exitCode": 0,
+      "seconds": 7.57
+    },
+    {
+      "command": "dotnet test CutCap.slnx -c Debug -nologo --no-build",
+      "exitCode": 0,
+      "seconds": 21.26
+    },
+    {
+      "command": "dotnet build CutCap.slnx -c Release -nologo",
+      "exitCode": 0,
+      "seconds": 4.49
+    },
+    {
+      "command": "dotnet publish apps/CutCap.Desktop/CutCap.Desktop.csproj -c Release -r win-x64 --self-contained true -o artifacts/publish/win-x64 -nologo",
+      "exitCode": 0,
+      "seconds": 3.03
+    }
+  ],
+  "rustPassed": 96,
+  "rustDefaultIgnored": 13,
+  "dotnetDesktopPassed": 37,
+  "dotnetInteropPassed": 37,
+  "externalFfmpegPassed": 7,
+  "additionalChecks": {
+    "allFeaturesClippy": 0,
+    "allFeaturesTests": 0,
+    "dx12Probe": 0,
+    "releaseIndexMeasurement": 0,
+    "nativeTimelineMeasurement": 0,
+    "minimumNativeInspection": 0
+  },
+  "unverified": [
+    "remote CI",
+    "other monitors/DPI",
+    "screen readers",
+    "negative-start media decoding (negative rational arithmetic is tested)"
+  ]
+}

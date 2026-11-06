@@ -1,0 +1,150 @@
+{
+  "date": "2026-11-06",
+  "baseline": "eca2b0e68194fd65bd96197d1be3f24812bd2235",
+  "method": "Release existing Avalonia App/EngineHost/FrameView; distinct DrawImage callbacks, not physical scanout. Synthetic 320x180 FFV1 4fps red/blue 3-second files, 150% scaling, Core Ultra 7 255H/integrated Intel/16 GiB. Sequential normal run without concurrent builds. Per-seek isolated FFmpeg processes; generation-tagged callbacks. Last recorded CPU timeline draw, not compositor raster. OS process-name memory sampling has observer overhead.",
+  "native": {
+    "2-clips": {
+      "samples": 36,
+      "seekToRenderMs": {
+        "min": 114.9239,
+        "median": 125.32509999999999,
+        "p95": 141.9698,
+        "max": 144.1216
+      },
+      "ownerEvaluationUs": {
+        "min": 5,
+        "median": 8.0,
+        "p95": 19,
+        "max": 20
+      },
+      "decodeUs": {
+        "min": 77381,
+        "median": 86357.0,
+        "p95": 98717,
+        "max": 102566
+      },
+      "lastTimelineDrawUs": {
+        "min": 91.4,
+        "median": 402.65,
+        "p95": 654.8,
+        "max": 759
+      },
+      "viewBytes": {
+        "min": 4041,
+        "median": 4050.0,
+        "p95": 4057,
+        "max": 4057
+      },
+      "timelineRereadsDuringSeeks": 0,
+      "distinctDecodeProcesses": 36,
+      "hostPrivateFirstLastBytes": [
+        195428352,
+        209166336
+      ],
+      "hostWorkingFirstLastBytes": [
+        282869760,
+        312655872
+      ]
+    },
+    "5000-clips": {
+      "samples": 30,
+      "seekToRenderMs": {
+        "min": 108.311,
+        "median": 126.28905,
+        "p95": 146.043,
+        "max": 168.2165
+      },
+      "ownerEvaluationUs": {
+        "min": 5,
+        "median": 9.0,
+        "p95": 40,
+        "max": 46
+      },
+      "decodeUs": {
+        "min": 75386,
+        "median": 90886.5,
+        "p95": 108458,
+        "max": 131226
+      },
+      "lastTimelineDrawUs": {
+        "min": 718.1,
+        "median": 1013.25,
+        "p95": 1208.6,
+        "max": 2016.9
+      },
+      "viewBytes": {
+        "min": 3957,
+        "median": 3979.0,
+        "p95": 3980,
+        "max": 3981
+      },
+      "timelineRereadsDuringSeeks": 0,
+      "distinctDecodeProcesses": 30,
+      "hostPrivateFirstLastBytes": [
+        223551488,
+        225181696
+      ],
+      "hostWorkingFirstLastBytes": [
+        326516736,
+        327458816
+      ]
+    }
+  },
+  "index": [
+    {
+      "clips": 2,
+      "evaluation_max_ns": 3100,
+      "evaluation_p50_ns": 300,
+      "evaluation_p95_ns": 400,
+      "index_and_first_evaluation_us": 34,
+      "response_bytes": 1222,
+      "samples": 2000
+    },
+    {
+      "clips": 5000,
+      "evaluation_max_ns": 6600,
+      "evaluation_p50_ns": 300,
+      "evaluation_p95_ns": 400,
+      "index_and_first_evaluation_us": 393,
+      "response_bytes": 1233,
+      "samples": 2000
+    },
+    {
+      "clips": 50000,
+      "evaluation_max_ns": 2600,
+      "evaluation_p50_ns": 300,
+      "evaluation_p95_ns": 400,
+      "index_and_first_evaluation_us": 3730,
+      "response_bytes": 1234,
+      "samples": 2000
+    }
+  ],
+  "resources": {
+    "peakViewBytes": 4057,
+    "largeTimelineBytes": 1673914,
+    "peakHostWorkingSetBytes": 341028864,
+    "peakHostPrivateBytes": 236572672,
+    "peakObservedFfmpegWorkingSetBytes": 23101440,
+    "maxDiagnosticDispatcherGapMs": 67.0888,
+    "seconds": 12.0808499
+  },
+  "rapidSeek": {
+    "requests": 16,
+    "readyLatencyMs": 128.6111,
+    "EvaluationUs": 7,
+    "DecodeUs": 75223,
+    "Actual": {
+      "Ticks": 250,
+      "Timebase": {
+        "Numerator": 1,
+        "Denominator": 1000
+      }
+    }
+  },
+  "closeDuringDecode": {
+    "state": "loading",
+    "activeChildrenObserved": 1,
+    "processExitCode": 0,
+    "childrenRemainingAfterShutdown": 0
+  }
+}
