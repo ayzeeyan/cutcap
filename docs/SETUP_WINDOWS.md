@@ -1,5 +1,46 @@
 # Windows 11 x64 setup
 
+## Timeline playback (Phase 3D)
+
+ABI/contract 6 add independent Timeline Play/Pause/Stop to the existing editor.
+Select Timeline and monitor a video track. Leaving either mode pauses it. Stopped
+seeks use ceiling frames; continuous seeks use actual-PTS intervals. Structural
+edits stop/re-evaluate. No audio/compositing/export or FFmpeg distribution change.
+Read PHASE_3D_TIMELINE_PLAYBACK_CONTRACT.md and the Phase 3D report.
+
+For opt-in Release measurements on an otherwise idle desktop:
+
+```powershell
+./scripts/generate-playback-fixtures.ps1
+dotnet build tools/CutCap.PlaybackProbe -c Release
+./tools/CutCap.PlaybackProbe/bin/Release/net10.0/win-x64/CutCap.PlaybackProbe.exe --timeline-play .artifacts/playback/sources .artifacts/phase3d/timeline-performance.json
+python scripts/summarize-timeline-playback.py .artifacts/phase3d/timeline-performance.json .artifacts/phase3d/summary.json
+# Use your disposable two-source, >=12s-per-source QA project for cleanup timing:
+./tools/CutCap.PlaybackProbe/bin/Release/net10.0/win-x64/CutCap.PlaybackProbe.exe --timeline-cleanup .artifacts/phase3d/native-two-source.cutcap .artifacts/phase3d/cleanup.json
+```
+
+Create the output directory first. The playback driver opens the original App,
+EngineHost and FrameView; it owns only generated disposable projects. The cleanup
+driver uses the real native ABI and reports cancellation→frame-copy and disposal,
+not rendering. Do not run builds/tests/other FFmpeg alongside pacing measurements.
+JSON/logs remain local; publish only reviewed, sanitized measurement artifacts.
+
+## Timeline preview (Phase 3C)
+
+Switch Player → Timeline, then click the ruler or enter a time. `2160000 ticks` addresses an exact project position; numeric/timecode inputs use milliseconds. The viewer monitors the selected video track (selected clip's track or first video track as fallback). Gaps clear the picture. Timeline Play is intentionally disabled; switching away from Source pauses its transport.
+
+Native diagnostics reuse the existing editor, not a separate demo:
+
+```powershell
+# In a disposable directory containing media/A red.mkv and media/B blue.mkv:
+tools/CutCap.PlaybackProbe/bin/Release/net10.0/win-x64/CutCap.PlaybackProbe.exe --timeline .artifacts/phase3c .artifacts/phase3c/measurement.json
+# Same editor at minimum geometry; holds the final real still for visual QA.
+# Close that diagnostic window to finish/write its report:
+tools/CutCap.PlaybackProbe/bin/Release/net10.0/win-x64/CutCap.PlaybackProbe.exe --timeline-min .artifacts/phase3c .artifacts/phase3c/minimum.json
+```
+
+The two synthetic sources can be generated with the separately installed FFmpeg: `-f lavfi -i color=c=red:s=320x180:r=4:d=3 -c:v ffv1` and the equivalent blue source. Use `-n` and disposable output paths; never overwrite user media. The driver builds a 5,000-clip fixture from a real saved project on a background task. Draw callbacks measure rendering/recording, not physical scanout; run benchmarks without concurrent builds/other media apps.
+
 ## Build requirements
 
 - Git for Windows.

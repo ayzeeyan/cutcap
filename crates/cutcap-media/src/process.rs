@@ -273,17 +273,19 @@ mod tests {
             ),
             Err(MediaError::Io { .. })
         ));
-        assert!(matches!(
-            run(
-                helper("fail"),
-                "test",
-                &Cancellation::default(),
-                Duration::from_secs(2),
-                1024,
-                1024
-            ),
-            Err(MediaError::Process { code: Some(17), .. })
-        ));
+        let failed = run(
+            helper("fail"),
+            "test",
+            &Cancellation::default(),
+            Duration::from_secs(2),
+            1024,
+            1024,
+        );
+        assert!(
+            matches!(failed, Err(MediaError::Process { code: Some(17), .. })),
+            "unexpected child failure error: {:?}",
+            failed.as_ref().err()
+        );
         assert!(matches!(
             run(
                 helper("flood"),

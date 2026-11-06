@@ -138,11 +138,29 @@ pub(crate) fn run(
     cancel: &Cancellation,
     emit: &mut (dyn FnMut(DecodedFrame) -> Result<(), MediaError> + Send),
 ) -> Result<(), MediaError> {
+    run_policy(backend, request, None, cancel, emit)
+}
+
+pub(crate) fn run_policy(
+    backend: &FfmpegBackend,
+    request: &DecodeRequest,
+    minimum: Option<SourceTime>,
+    cancel: &Cancellation,
+    emit: &mut (dyn FnMut(DecodedFrame) -> Result<(), MediaError> + Send),
+) -> Result<(), MediaError> {
     if cancel.is_cancelled() {
         return Err(MediaError::Cancelled);
     }
     let meta = &request.media.metadata;
     meta.validate().map_err(|e| invalid(&e.to_string()))?;
+    let lower = minimum.unwrap_or(request.position);
+    if lower.timebase != meta.timebase
+        || lower.ticks > request.position.ticks
+        || lower.ticks < meta.start_pts
+        || lower.ticks.unsigned_abs() > 1_u64 << 52
+    {
+        return Err(invalid("invalid interval source bound"));
+    }
     let delta = request
         .position
         .ticks
@@ -211,7 +229,7 @@ pub(crate) fn run(
         "-vf",
         &format!(
             "select=gte(pts\\,{}),scale={}:{}:flags=bilinear,setsar=1,format=rgb24,format=rgba",
-            request.position.ticks, dims.0, dims.1
+            lower.ticks, dims.0, dims.1
         ),
         "-fps_mode",
         "passthrough",
@@ -271,6 +289,8 @@ pub(crate) fn run(
                     let mut index = 0_u64;
                     let mut previous = None;
                     let mut last = Instant::now();
+                    let mut preroll = None;
+                    let mut entered = minimum.is_none();
                     while let Some((image, bytes)) = image(&mut reader, dims)? {
                         touch();
                         let record = loop {
@@ -286,7 +306,7 @@ pub(crate) fn run(
                         if record.index != index
                             || record.size != bytes
                             || record.pts.timebase != meta.timebase
-                            || record.pts.ticks < request.position.ticks
+                            || record.pts.ticks < lower.ticks
                             || previous.is_some_and(|pts| record.pts.ticks <= pts)
                             || record.pts.ticks.unsigned_abs() > 1_u64 << 52
                         {
@@ -306,12 +326,33 @@ pub(crate) fn run(
                             decode_us: last.elapsed().as_micros().min(u128::from(u64::MAX)) as u64,
                             process_id: pid,
                         };
+                        // Coalesce preroll with one owned frame, retaining real PTS.
+                        if !entered && frame.actual.ticks <= request.position.ticks {
+                            preroll = Some(frame);
+                            last = Instant::now();
+                            continue;
+                        }
+                        delivering_out.store(true, Ordering::Release);
+                        let result = (|| {
+                            if !entered {
+                                entered = true;
+                                if let Some(previous) = preroll.take() {
+                                    emit(previous)?;
+                                }
+                            }
+                            emit(frame)
+                        })();
+                        touch();
+                        delivering_out.store(false, Ordering::Release);
+                        result?;
+                        last = Instant::now();
+                    }
+                    if let Some(frame) = preroll.take() {
                         delivering_out.store(true, Ordering::Release);
                         let result = emit(frame);
                         touch();
                         delivering_out.store(false, Ordering::Release);
                         result?;
-                        last = Instant::now();
                     }
                     loop {
                         match rx.recv_timeout(Duration::from_millis(20)) {

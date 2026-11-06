@@ -1,6 +1,90 @@
-# CutCap native engine ABI, version 4
+# CutCap native engine ABI, version 7
 
-## Phase 3B additions (current authority)
+## Phase 3E additions (current authority)
+
+Rust `ABI_VERSION`, managed `NativeMethods.AbiVersion` and `CONTRACT_VERSION`
+are **7** (ADR 023). Project envelope/core schema remain 1. Every ABI 6 export,
+status number, frame layout and handle rule is unchanged; the bump is required
+because the frontend consumes new view fields and calls new exports, and it is
+the guard that stops a stale ABI-6 DLL from failing on the first edit.
+
+| New export | Semantics |
+|---|---|
+| `cutcap_session_place_clip(u64, u8* media, usize, u8* track, usize, i64 position, u32 unit)` | Enqueue PlaceClip: the whole Ready video source at `position` (drag-and-drop). |
+| `cutcap_session_move_clip(u64, u8* clip, usize, u8* track, usize, i64 position, u32 unit, u32 anchor)` | Enqueue MoveClip: the clip's `anchor` edge (0 start, 1 end) lands at `position` on `track`. |
+| `cutcap_session_trim_clip(u64, u8* clip, usize, u32 edge, i64 position, u32 unit)` | Enqueue TrimClip of the start (0) or end (1) boundary. |
+| `cutcap_session_split_clip(u64, u8* clip, usize, i64 position, u32 unit)` | Enqueue SplitClip at an explicit position. |
+| `cutcap_session_split_clip_at_playhead(u64, u8* clip, usize)` | Split at the Rust-owned timeline playhead (transport clock while playing, else the still-preview position). |
+
+`unit` is 0 for exact project ticks and 1 for whole milliseconds (floored to
+ticks by the owner); any other unit/edge/anchor, malformed or nil UUIDs and
+null-with-length pointers return `INVALID_ARGUMENT`. All exports mean
+acceptance only; engine rejections (overlap, audio track, source range, edge,
+grid) arrive as view status and change nothing. Every accepted edit is one
+history entry and, like ABI 6 structural edits, invalidates the timeline epoch:
+playback stops, the playhead is kept, nothing auto-resumes.
+
+View additions: clip rows add `end_ms`, `start_ticks`, `end_ticks`,
+`min_start_ticks`/`min_start_ms` (earliest start a start trim can reach inside
+the source, on its tick grid) and `max_end_ticks`/`max_end_ms` (latest end an
+end trim can reach; null when the source end is unknown). The session view adds
+`editing { split_enabled, split_detail, notice }`, computed by Rust from the
+selected clip and the playhead each view; `notice` repeats the last edit's
+source-tick alignment note. The wrapper adds PlaceClip/MoveClip/TrimClip/
+SplitClip/SplitClipAtPlayhead with a `TimelinePosition` (ticks or ms) and
+`ClipEdge`. Tests: `crates/cutcap-ffi/src/timeline_edit_session_tests.rs`,
+`clip_edit_tests.rs`; `tests/CutCap.Interop.Tests/TimelineAdvancedEditingTests.cs`.
+
+## Phase 3D additions (ABI 6, retained)
+
+Rust ABI_VERSION, managed NativeMethods.AbiVersion and CONTRACT_VERSION are **6**.
+Project envelope/core schema remain 1. All prior exports/status numbers and the
+24-byte FrameInfo layout are retained. Added nonblocking exports (u64 session):
+`cutcap_session_play_timeline`, `cutcap_session_pause_timeline`,
+`cutcap_session_stop_timeline`. Managed PlayTimeline/ResumeTimeline/PauseTimeline/
+StopTimeline mirror these. Play requires Timeline mode and a ready project; empty
+tracks reach Ended at zero. Existing source Play/Stop keep Source-only meaning.
+
+`timeline_playback` is a new small consumed view: state, desired_playing, epoch,
+stable requested_ticks/text, clock_ticks/ms/text, offered_ticks/PTS, copied_ticks/
+PTS/clip identity, decoded/offered/copied/dropped/stall/handoff/decoder-start
+counters, buffered scheduler frames, last observed active/prepared process IDs,
+error and request_to_ready_us. Copied ticks describe the offered frame's exact
+mapped timeline deadline, not the advancing clock or physical display. Process
+IDs are diagnostics and can name already reaped children. Counts include decoded
+preroll/lookahead; they are not physical presented FPS.
+
+`timeline_preview` continues supplying track/clip/media, extent, status and the
+Rust clock position during continuous playback. Stopped seeks retain ABI 5 ceiling
+semantics; active playback seeks use actual PTS intervals. Seek acceptance does
+not prove readiness. Failed owner plan requests surface Failed asynchronously.
+The source and timeline positions never copy into one another. Leaving either
+mode pauses it. Restored cached images receive a fresh shared frame generation.
+
+The owner returns a private immutable Arc<TimelineIndex> plan, not a serialized
+clip vector, through the same bounded reliable bridge. One desired plan and one
+in-flight query coalesce rapid seeks; two persistent workers bound active/next
+clip decoding. No per-frame owner commands, project snapshots or timeline JSON.
+See PHASE_3D_TIMELINE_PLAYBACK_CONTRACT.md for the full clock, VFR, half-open cut,
+gap, handoff, cancellation and structural-mutation policy.
+
+## Phase 3C additions (ABI 5, retained)
+
+ABI_VERSION / NativeMethods.AbiVersion and CONTRACT_VERSION were **5** for Phase 3C. Format/core schema stay 1. Every ABI 4 export, numeric status and the 24-byte FrameInfo layout remains intact. New controls return acceptance only; no evaluation, file/process I/O or waits occur in the ABI call.
+
+| Export | Meaning |
+|---|---|
+| set_preview_mode(u64, u32) | 0 Source, 1 Timeline; other values INVALID_ARGUMENT. Source pauses on leaving, retains its epoch/position/preroll, and does not auto-resume. |
+| seek_timeline(u64, i64 ticks) | Exact nonnegative project ticks; switches to Timeline. |
+| seek_timeline_ms(u64, i64 ms) | UI milliseconds, floor-rescaled in the owner to project ticks. |
+| seek_timeline_text(u64, u8*, usize) | Existing source-style millisecond/timecode grammar or exact integer followed by `ticks`. |
+| cancel_timeline_preview(u64) | Cancel ephemeral evaluation/decode, clear timeline image; no project mutation. |
+
+All export names have the `cutcap_session_` prefix. New consumed view fields are `preview_mode` and `timeline_preview` (position ticks/timebase, display/input text, extent, monitored track, state/detail, active clip/media, exact requested/actual PTS, model generation and timing/copy diagnostics). `view.frame` always describes the visible mode only. Generations use one native counter across both modes and are renewed when a cached source image is restored; incompatible old copies are stale. Pixels still bypass JSON and MVVM. One frontend bitmap is reused.
+
+Timeline seek goes through a bounded latest desired slot and at most one reliable owner evaluation. TimelineEvaluated returns a small correlated result, not a ProjectSnapshot; it never changes `timeline_generation` or rebuilds the separately fetched clip document. Source transport APIs retain Source-only meaning and Play/Stop reject while Timeline is monitored. Timeline Play uses the separate Phase 3D controls above. EngineSession exposes SetPreviewMode, SeekTimeline, SeekTimelineMilliseconds, SeekTimelineText and CancelTimelinePreview. See PHASE_3C_TIMELINE_PREVIEW_CONTRACT.md for exact half-open intervals, rational rounding, endpoint rejection and generation invalidation.
+
+## Phase 3B additions (ABI 4, retained)
 
 Rust `ABI_VERSION` and C# `NativeMethods.AbiVersion` are 4; CONTRACT_VERSION is 4 (ADR 020). The bump is required by AGENTS.md for new consumed view fields, and it is the guard that stops a stale ABI-3 DLL from passing the version check and failing on the first clip command. Every ABI 3 export, status number, frame layout and handle rule is unchanged.
 

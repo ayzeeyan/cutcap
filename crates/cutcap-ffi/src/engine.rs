@@ -1,9 +1,10 @@
 //! The lightweight command owner. Future media jobs must not run in this loop.
-use crate::history::{Edit, EditKind, History, bump};
+use crate::history::{Edit, History, bump};
 use crate::persistence::{Document, FileJob, FileOutput, SavedSource};
 use cutcap_contracts::*;
-use cutcap_core::{Clip, Project, ProjectError, Track};
+use cutcap_core::{Clip, Project, ProjectError, TimelineIndex, Track, map_clip_source};
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
 #[derive(Default)]
 pub struct Engine {
@@ -19,6 +20,11 @@ pub struct Engine {
     history: History,
     /// Highest document revision ever issued in this session (revisions are unique).
     next_revision: u64,
+    evaluation_generation: RequestId,
+    /// Adjustment made by the last successful edit, for the status line.
+    edit_notice: Option<String>,
+    evaluation_index: Option<Arc<TimelineIndex>>,
+    timeline_position: TimelineTime,
 }
 
 impl Engine {
@@ -27,6 +33,27 @@ impl Engine {
     }
     pub fn handle(&mut self, envelope: CommandEnvelope) -> EngineEvent {
         let request_id = envelope.request_id;
+        if let Command::EvaluateTimeline { position, track_id } = envelope.command {
+            return EngineEvent::TimelineEvaluated {
+                request_id,
+                result: self
+                    .evaluate(envelope.project_id, position, track_id)
+                    .map(Box::new),
+            };
+        }
+        let geometry = matches!(
+            envelope.command,
+            Command::NewProject { .. }
+                | Command::AddTrack { .. }
+                | Command::InsertClip { .. }
+                | Command::RemoveClip { .. }
+                | Command::PlaceClip { .. }
+                | Command::MoveClip { .. }
+                | Command::TrimClip { .. }
+                | Command::SplitClip { .. }
+                | Command::Undo
+                | Command::Redo
+        );
         let verifying = matches!(envelope.command, Command::VerifyMedia { .. });
         let result = self.begin_file(&envelope);
         if let Ok(true) = result {
@@ -36,20 +63,37 @@ impl Engine {
             };
         }
         match result.and_then(|_| self.execute(envelope)) {
-            Ok(snapshot) => EngineEvent::Completed {
-                request_id,
-                snapshot,
-            },
-            Err(error) if verifying => EngineEvent::FileFailed {
-                request_id,
-                error,
-                snapshot: self.snapshot().ok(),
-            },
+            Ok(snapshot) => {
+                if geometry {
+                    self.evaluation_index = None;
+                }
+                EngineEvent::Completed {
+                    request_id,
+                    snapshot,
+                }
+            }
+            Err(error) if verifying => {
+                self.evaluation_generation = RequestId::new();
+                EngineEvent::FileFailed {
+                    request_id,
+                    error,
+                    snapshot: self.snapshot().ok(),
+                }
+            }
             Err(error) => EngineEvent::Failed { request_id, error },
         }
     }
 
     fn execute(&mut self, envelope: CommandEnvelope) -> Result<ProjectSnapshot, EngineError> {
+        let old_monitor = self
+            .evaluation_index
+            .as_ref()
+            .and_then(|i| i.monitor(self.selection))
+            .map(|t| t.id);
+        let affects_evaluation = !matches!(
+            envelope.command,
+            Command::GetSnapshot | Command::SelectMedia { .. } | Command::Select { .. }
+        );
         if self.file_job.as_ref().is_some_and(|job| !job.saving) {
             return Err(EngineError::new(
                 ErrorCode::Busy,
@@ -81,6 +125,8 @@ impl Engine {
             self.sources.clear();
             self.availability.clear();
             self.history.clear();
+            self.edit_notice = None;
+            self.timeline_position = TimelineTime::ZERO;
             let mut revision = 0;
             bump(&mut self.next_revision, &mut revision);
             self.document = DocumentStatus {
@@ -100,6 +146,7 @@ impl Engine {
                     "This action belongs to a previous project. Try again.",
                 ));
             }
+            let mut notice = None;
             match envelope.command {
                 Command::GetSnapshot => {}
                 Command::RegisterMedia { media, fingerprint } => {
@@ -272,37 +319,63 @@ impl Engine {
                     let clip = append_clip(project, summary, track_id)?;
                     let index = project.clips().len();
                     let label = format!("add {}", crate::view::file_name(summary));
-                    project.insert_clip(clip.clone()).map_err(domain_error)?;
+                    let id = clip.id;
+                    let change = project
+                        .replace_clips(&[], &[(index, clip)])
+                        .map_err(domain_error)?;
                     let before = self.document.revision;
                     let after = bump(&mut self.next_revision, &mut self.document.revision);
-                    self.selection = SelectionState::Clip(clip.id);
+                    self.selection = SelectionState::Clip(id);
                     self.history.record(Edit {
-                        kind: EditKind::Insert,
-                        index,
-                        clip,
+                        change,
                         before,
                         after,
                         label,
                     });
                 }
                 Command::RemoveClip { clip_id } => {
-                    let (index, clip) = project.remove_clip(clip_id).map_err(domain_error)?;
-                    let label = self.media_details.get(&clip.media_id).map_or_else(
-                        || "remove clip".to_owned(),
-                        |m| format!("remove {}", crate::view::file_name(m)),
-                    );
+                    let change = project
+                        .replace_clips(&[clip_id], &[])
+                        .map_err(domain_error)?;
+                    let label = change
+                        .removed
+                        .first()
+                        .and_then(|(_, clip)| self.media_details.get(&clip.media_id))
+                        .map_or_else(
+                            || "remove clip".to_owned(),
+                            |m| format!("remove {}", crate::view::file_name(m)),
+                        );
                     let before = self.document.revision;
                     let after = bump(&mut self.next_revision, &mut self.document.revision);
                     if self.selection == SelectionState::Clip(clip_id) {
                         self.selection = SelectionState::None;
                     }
                     self.history.record(Edit {
-                        kind: EditKind::Remove,
-                        index,
-                        clip,
+                        change,
                         before,
                         after,
                         label,
+                    });
+                }
+                command @ (Command::PlaceClip { .. }
+                | Command::MoveClip { .. }
+                | Command::TrimClip { .. }
+                | Command::SplitClip { .. }) => {
+                    let outcome = crate::edits::apply(
+                        project,
+                        command,
+                        &self.media_details,
+                        &self.availability,
+                    )?;
+                    let before = self.document.revision;
+                    let after = bump(&mut self.next_revision, &mut self.document.revision);
+                    self.selection = outcome.selection;
+                    notice = outcome.notice;
+                    self.history.record(Edit {
+                        change: outcome.change,
+                        before,
+                        after,
+                        label: outcome.label,
                     });
                 }
                 Command::Undo | Command::Redo => {
@@ -350,8 +423,168 @@ impl Engine {
                     ));
                 }
             }
+            self.edit_notice = notice;
+        }
+        let monitor = self
+            .evaluation_index
+            .as_ref()
+            .and_then(|i| i.monitor(self.selection))
+            .map(|t| t.id);
+        if affects_evaluation || old_monitor != monitor {
+            self.evaluation_generation = RequestId::new();
         }
         self.snapshot()
+    }
+
+    pub fn playback_plan(
+        &mut self,
+        scope: Option<ProjectId>,
+        input: TimelineSeek,
+    ) -> Result<crate::timeline_plan::TimelinePlan, EngineError> {
+        let evaluation = self.evaluate(scope, input, None)?;
+        let index = self.evaluation_index.as_ref().ok_or_else(|| {
+            EngineError::new(ErrorCode::Internal, "Timeline index is unavailable.")
+        })?;
+        Ok(crate::timeline_plan::TimelinePlan {
+            project: evaluation.project_id,
+            generation: evaluation.generation,
+            timebase: evaluation.timebase,
+            track: evaluation.track,
+            extent: evaluation.extent,
+            position: evaluation.position,
+            index: index.clone(),
+            media: self.media_details.clone(),
+            availability: self.availability.clone(),
+        })
+    }
+
+    /// Constant-size response and O(log clips-on-track) lookup after index build.
+    fn evaluate(
+        &mut self,
+        scope: Option<ProjectId>,
+        input: TimelineSeek,
+        explicit_track: Option<TrackId>,
+    ) -> Result<TimelineEvaluation, EngineError> {
+        let started = std::time::Instant::now();
+        let invalid = |error: String| EngineError::new(ErrorCode::InvalidInput, error);
+        let project = self
+            .project
+            .as_ref()
+            .ok_or_else(|| EngineError::new(ErrorCode::NotFound, "No project is open."))?;
+        if scope != Some(project.id()) {
+            return Err(EngineError::new(
+                ErrorCode::StaleProject,
+                "Timeline request belongs to another project.",
+            ));
+        }
+        if self.file_job.as_ref().is_some_and(|job| !job.saving) {
+            return Err(EngineError::new(
+                ErrorCode::Busy,
+                "Project opening is in progress.",
+            ));
+        }
+        let position = match input {
+            TimelineSeek::Ticks(value) => value,
+            TimelineSeek::Milliseconds(ms) => TimelineTime(
+                SourceTime {
+                    ticks: ms,
+                    timebase: Timebase::new(1, 1000).expect("constant"),
+                }
+                .rescale(project.timebase(), Rounding::Floor)
+                .map_err(|e| invalid(e.to_string()))?
+                .ticks,
+            ),
+        };
+        if position.0 < 0 {
+            return Err(invalid("Timeline position must be nonnegative.".into()));
+        }
+        // The view uses signed integer milliseconds for coordinates/readouts.
+        // Reject an unrepresentable display position before changing owner state.
+        SourceTime {
+            ticks: position.0,
+            timebase: project.timebase(),
+        }
+        .rescale(Timebase::new(1, 1000).expect("constant"), Rounding::Floor)
+        .map_err(|e| invalid(e.to_string()))?;
+        let index = self
+            .evaluation_index
+            .get_or_insert_with(|| Arc::new(TimelineIndex::new(project)));
+        let track = match explicit_track {
+            Some(id) => Some(
+                index
+                    .track(id)
+                    .ok_or_else(|| invalid("Monitor a video track.".into()))?,
+            ),
+            None => index.monitor(self.selection),
+        };
+        let extent = track
+            .map_or(Ok(TimelineTime::ZERO), |t| index.end(t.id))
+            .map_err(|e| invalid(e.to_string()))?;
+        let clip = track
+            .map_or(Ok(None), |t| index.active(project.id(), t.id, position))
+            .map_err(|e| invalid(e.to_string()))?;
+        let target = if let Some(clip) = clip {
+            let summary = ClipSummary {
+                id: clip.id,
+                media_id: clip.media_id,
+                track_id: clip.track_id,
+                start: clip.start,
+                duration: clip.duration,
+                source_in: clip.source_in,
+            };
+            let state = self.availability.get(&clip.media_id);
+            if !state.is_some_and(|s| s.state == Availability::Ready) {
+                TimelineTarget::Unavailable {
+                    clip: summary,
+                    path: state.map(|s| s.path.clone()).unwrap_or_default(),
+                    availability: state.map_or(Availability::Unavailable, |s| s.state),
+                    detail: state.map_or_else(
+                        || "Source has not been verified.".into(),
+                        |s| s.detail.clone(),
+                    ),
+                }
+            } else if let Some(media) = self.media_details.get(&clip.media_id) {
+                let mapping =
+                    map_clip_source(clip, position, project.timebase(), media.metadata.timebase)
+                        .map_err(|e| invalid(e.to_string()))?;
+                if mapping.requested.ticks >= mapping.end_exclusive.ticks {
+                    TimelineTarget::NoFrame {
+                        clip: summary,
+                        media: Box::new(media.clone()),
+                        requested: mapping.requested,
+                        end_exclusive: mapping.end_exclusive,
+                        detail: "No source tick remains inside this clip after ceiling conversion."
+                            .into(),
+                    }
+                } else {
+                    TimelineTarget::Frame {
+                        clip: summary,
+                        media: Box::new(media.clone()),
+                        requested: mapping.requested,
+                        end_exclusive: mapping.end_exclusive,
+                    }
+                }
+            } else {
+                return Err(invalid("Verified source metadata is missing.".into()));
+            }
+        } else {
+            TimelineTarget::Blank
+        };
+        self.timeline_position = position;
+        Ok(TimelineEvaluation {
+            project_id: project.id(),
+            generation: self.evaluation_generation,
+            document_revision: self.document.revision,
+            position,
+            timebase: project.timebase(),
+            track: track.map(|t| MonitoredTrack {
+                id: t.id,
+                name: t.name.clone(),
+            }),
+            extent,
+            target,
+            evaluation_us: started.elapsed().as_micros().min(u128::from(u64::MAX)) as u64,
+        })
     }
 
     fn snapshot(&self) -> Result<ProjectSnapshot, EngineError> {
@@ -365,6 +598,7 @@ impl Engine {
         }
         Ok(ProjectSnapshot {
             id: project.id(),
+            evaluation_generation: self.evaluation_generation,
             name: project.name().into(),
             timebase: project.timebase(),
             tracks: project
@@ -399,6 +633,7 @@ impl Engine {
                 })
                 .collect(),
             history: self.history.status(),
+            edit_notice: self.edit_notice.clone(),
             media_state: project
                 .media()
                 .iter()
@@ -496,8 +731,12 @@ impl Engine {
             }
             Ok(FileOutput::Opened(doc, path)) => {
                 self.project = Some(doc.project);
+                self.evaluation_generation = RequestId::new();
+                self.evaluation_index = None;
+                self.timeline_position = TimelineTime::ZERO;
                 self.selection = SelectionState::None;
                 self.history.clear();
+                self.edit_notice = None;
                 self.source_media = None;
                 self.media_details.clear();
                 self.availability.clear();
@@ -875,3 +1114,11 @@ mod tests {
 #[cfg(test)]
 #[path = "editing_tests.rs"]
 mod editing_tests;
+
+#[cfg(test)]
+#[path = "evaluation_measurements.rs"]
+mod evaluation_measurements;
+
+#[cfg(test)]
+#[path = "clip_edit_tests.rs"]
+mod clip_edit_tests;

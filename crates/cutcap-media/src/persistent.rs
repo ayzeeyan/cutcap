@@ -8,7 +8,7 @@ use std::{
 pub const PLAYBACK_QUEUE_FRAMES: usize = 3;
 struct State {
     desired: Option<PreviewTicket>,
-    pending: Option<DecodeRequest>,
+    pending: Option<(DecodeRequest, Option<cutcap_contracts::SourceTime>)>,
     active: Option<Cancellation>,
     frames: VecDeque<DecodedFrame>,
     terminal: Option<Result<(), MediaError>>,
@@ -49,7 +49,7 @@ impl PersistentDecoder {
             .name("cutcap-continuous-decoder".into())
             .spawn(move || {
                 loop {
-                    let (request, cancel) = {
+                    let ((request, minimum), cancel) = {
                         let Ok(state) = shared.state.lock() else {
                             return;
                         };
@@ -70,7 +70,7 @@ impl PersistentDecoder {
                         (request, token)
                     };
                     let ticket = request.ticket;
-                    let result = backend.stream(&request, &cancel, &mut |frame| {
+                    let mut emit = |frame: DecodedFrame| {
                         if frame.ticket != ticket {
                             return Err(MediaError::Invalid(
                                 "continuous frame identity mismatch".into(),
@@ -95,7 +95,13 @@ impl PersistentDecoder {
                         state.pid = Some(frame.process_id);
                         state.frames.push_back(frame);
                         Ok(())
-                    });
+                    };
+                    let result = match minimum {
+                        Some(minimum) => {
+                            backend.stream_interval(&request, minimum, &cancel, &mut emit)
+                        }
+                        None => backend.stream(&request, &cancel, &mut emit),
+                    };
                     let Ok(mut state) = shared.state.lock() else {
                         return;
                     };
@@ -111,6 +117,20 @@ impl PersistentDecoder {
         })
     }
     pub fn request(&self, request: DecodeRequest) -> Result<(), MediaError> {
+        self.request_policy(request, None)
+    }
+    pub fn request_interval(
+        &self,
+        request: DecodeRequest,
+        minimum: cutcap_contracts::SourceTime,
+    ) -> Result<(), MediaError> {
+        self.request_policy(request, Some(minimum))
+    }
+    fn request_policy(
+        &self,
+        request: DecodeRequest,
+        minimum: Option<cutcap_contracts::SourceTime>,
+    ) -> Result<(), MediaError> {
         let mut state = self.mailbox.state.lock().map_err(|_| MediaError::Worker)?;
         if state.stopped || self.worker.as_ref().is_none_or(JoinHandle::is_finished) {
             return Err(MediaError::Worker);
@@ -119,7 +139,7 @@ impl PersistentDecoder {
             token.cancel();
         }
         state.desired = Some(request.ticket);
-        state.pending = Some(request);
+        state.pending = Some((request, minimum));
         state.frames.clear();
         state.terminal = None;
         state.decoded = 0;

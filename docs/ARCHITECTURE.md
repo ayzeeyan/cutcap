@@ -1,5 +1,51 @@
 # CutCap architecture — Avalonia frontend over the Rust engine
 
+Phase 3E current addition: **ABI/contract 7**, exact clip editing. Core
+`edit.rs` holds the source-tick grid arithmetic, trim limits, split alignment
+and the atomic `Project::replace_clips` transaction (`ClipChange` with exact
+indices). `ffi/edits.rs` turns PlaceClip/MoveClip/TrimClip/SplitClip into one
+validated transaction and one `history.rs` entry. The session adds
+split-at-playhead (the Rust-owned position) and an `editing` view. In Avalonia,
+`TimelineGestures` (pure) computes move/trim/place previews,
+`TimelineSnapper` holds clip edges sorted once per clip-list change for binary
+search, and `TimelineGeometry` adds binary-searched overlap/neighbour lookup;
+`TimelineLanes` runs one pointer gesture at a time, draws a ghost and snap
+guide, autoscrolls at viewport edges, accepts library drops, and sends exactly
+one edit on release (Escape cancels). No C# code computes project time.
+
+Phase 3D current addition: **ABI/contract 6**, continuous video-only timeline
+transport. `ffi/timeline_plan.rs` carries an owner-built immutable shared core
+index plus bounded verified-source descriptors; `ffi/timeline_playback.rs` owns
+an exact project clock, two persistent decoder slots (active/next), clip handoff,
+gap/EOF/buffering and frame-copy identity. Structural edits stop/re-evaluate;
+source-only selection and saves preserve the timeline epoch. No project schema
+change, frontend evaluator, per-frame process launch, timeline document rebuild,
+GPU rewrite, audio or multi-track composition. The Phase 3C still evaluator below
+remains the stopped seek fallback. PHASE_3D_TIMELINE_PLAYBACK_CONTRACT.md is the
+binding transport authority; the reports are executed evidence.
+
+Continuous decoding adds an interval policy to the existing media adapter, not
+a second codec. It coalesces actual preroll PTS to one covering frame and streams
+successors through the existing nonce/index/timebase/size-validated PAM protocol.
+Two timeline queues each hold three frames and scheduler lookahead two; the source
+transport keeps its own existing bounds. The next clip is prepared within two
+timeline seconds of entry. A missing/failed prepared source affects transport
+only at its entry. Late cuts clear the outgoing image and freeze at the exact
+cut; gaps advance blank without decoding them. EOF holds an eligible frame to
+the exclusive clip end. Ended uses actual monitored-track extent.
+
+Memory bounds include producer/pipe-reader in-flight frames as well as queues.
+At most two timeline persistent children coexist with one paused source child;
+an isolated child can transiently remain while cancellation/reaping completes,
+and the single probe is independent. Each child retains its 1 GiB Windows job
+cap. Each RGBA buffer is <=3,686,400 bytes; no new frontend image cache exists.
+The maximum full-resolution native pixel working set is conservatively under
+100 MiB across queued/lookahead/reader/cached/isolated buffers, excluding decoder
+processes, allocation overhead and the reused managed bitmap. Measured host and
+child memory, rather than this structural ceiling, is in the Phase 3D report.
+
+The retained Phase 3C still path uses `core/timeline.rs` for sorted lookup and rational mapping, `ffi/engine.rs` for small correlated evaluations and `ffi/timeline_preview.rs` for latest evaluation/decode/frame ownership. `ffi/media.rs` routes stopped timeline seeks through the isolated decoder. One session-wide generation and Avalonia FrameView serve both modes. Continuous timeline playback now uses the Phase 3D transport above; audio and multi-track composition remain unavailable.
+
 Since the Avalonia migration (docs/AVALONIA_MIGRATION_REPORT.md) the frontend is C#/.NET 10 + Avalonia 12; Rust keeps editing semantics, media processing, project state and time arithmetic. Phase 2B integrated production source transport. Phase 3A adds revisioned `.cutcap` persistence/relinking and startup preroll stabilization through ABI 3. Phase 3B adds Rust-owned clip insertion/removal/selection and bounded undo/redo through ABI 4 (ADR 020). The Slint frontend is retired; its last version is commit a3de692 on `claude/phase-2a-ui`.
 
 ## Workspace and ownership
@@ -7,7 +53,7 @@ Since the Avalonia migration (docs/AVALONIA_MIGRATION_REPORT.md) the frontend is
 ```mermaid
 flowchart LR
   Desktop[CutCap.Desktop: Avalonia views / view models / frame presentation] --> Interop[CutCap.Interop: P/Invoke, SafeHandle, view DTOs]
-  Interop -- C ABI v3, cutcap_engine.dll --> Ffi[cutcap-ffi: session host / view mapping / ABI]
+  Interop -- C ABI v6, cutcap_engine.dll --> Ffi[cutcap-ffi: session host / view mapping / ABI]
   Ffi --> Core[cutcap-core: validated project]
   Ffi --> Media[cutcap-media: replaceable media adapter]
   Ffi --> Contracts[cutcap-contracts: IDs / exact time / DTOs]
@@ -20,8 +66,11 @@ Core remains independent of GUI, codecs, GPU, filesystem and threading. Contract
 | Module | Responsibility |
 |---|---|
 | contracts/ids.rs, time.rs | Distinct non-nil UUID identities; exact source/project clocks; checked floor/ceil rescaling |
-| contracts/media.rs, messages.rs, document.rs | Validated metadata, commands, snapshots, source identity and document status; contract version 3 |
+| contracts/media.rs, messages.rs, document.rs, timeline.rs | Validated metadata, commands, snapshots, source identity and document status; contract version 6 |
 | core/project.rs | Schema 1 validated project graph and atomic mutations |
+| core/timeline.rs | Per-video-track sorted clip index, half-open lookup, single-rounding exact source mapping and endpoint validation |
+| ffi/timeline_preview.rs | Latest transient seek/evaluation, model/request generation gates, blank/unavailable/no-frame states and bounded frame ownership |
+| ffi/timeline_plan.rs, timeline_playback.rs | Shared owner index, exact timeline clock, active/next persistent decode, cuts/gaps, copied identity and bounded diagnostics |
 | media/backend.rs, probe.rs | MediaBackend contract, FFmpeg policy and bounded metadata parsing |
 | media/process.rs, cancel.rs | Owned child processes, bounded pipe capture, timeout, cancellation and reaping |
 | media/frame.rs, latest.rs | Validated opaque RGBA8; bounded latest-request/result mailbox |
@@ -42,11 +91,11 @@ Core remains independent of GUI, codecs, GPU, filesystem and threading. Contract
 
 ## Lifecycle and data flow
 
-App creates EngineHost, the main window and its view models, then starts the session: cutcap_session_create verifies ABI 4, starts command/isolated/persistent workers and queues NewProject (two real empty tracks). A 16 ms UI timer (and, while source playback is active, a `TopLevel.RequestAnimationFrame` callback once per compositor frame) drains at most eight reliable events, polls media work and selects at most one offered frame from bounded lookahead. Decode, filesystem/process I/O and waits stay off pump. Frame copying records delivery, not scanout. See PHASE_2_PLAYBACK_CONTRACT.md for transport and PROJECT_FORMAT.md for file operations. The window initially fits the current display's logical work area; user resize/maximize then retains normal Windows behavior.
+App creates EngineHost, the main window and its view models, then starts the session: cutcap_session_create verifies ABI 6, starts command/isolated/source/timeline workers and queues NewProject (two real empty tracks). A 16 ms UI timer (and, while the visible transport is active, a `TopLevel.RequestAnimationFrame` callback once per compositor frame) drains at most eight reliable events, polls media work and selects at most one offered frame from bounded lookahead. Decode, filesystem/process I/O and waits stay off pump. Frame copying records delivery, not scanout. See the Phase 2/3D contracts and PROJECT_FORMAT.md. The window initially fits the current display's logical work area; resizing/maximizing retains normal Windows behavior.
 
 Import opens Avalonia's native asynchronous picker (`StorageProvider`). The chosen path crosses the ABI as UTF-16. One probe thread canonicalizes/validates the file and invokes FFprobe while capturing its full source fingerprint under a Windows read-sharing lock. The owner validates and commits RegisterMedia; only its successful snapshot adds a library entry and starts preview. Reopened/relinked sources reuse this single worker, compare saved expectations and remain unavailable until verified.
 
-Source selection is independent of timeline Track/Clip selection. Relative whole milliseconds are converted in Rust with checked rational ceil rescaling into source ticks, then added to start PTS. The timeline playhead stays at zero. Every request carries `PreviewTicket { project_id, media_id, request_id }`. One active decode, one replaceable pending request and one replaceable outcome bound the backlog; the decoder and the session's presentation gate independently reject stale successes and errors.
+Source selection is independent of timeline Track/Clip selection. Relative whole milliseconds are converted in Rust with checked rational ceil rescaling into source ticks, then added to start PTS. Source commands do not move the timeline playhead; only Rust timeline evaluation updates it. Every request carries `PreviewTicket { project_id, media_id, request_id }`. One active decode, one replaceable pending request and one replaceable outcome bound the backlog; the decoder and the session's presentation gate independently reject stale successes and errors.
 
 Frame presentation: the session keeps the latest validated RGBA8 frame with a generation number. `FrameView` asks for the frame info and has the engine copy the pixels once, row by row, straight into a reused `WriteableBitmap` (RGBA8888, opaque, no conversion), then invalidates itself. Frames never pass through view-model property notifications. One full-frame copy per presentation; Avalonia's compositor may upload/copy further. No zero-copy claim.
 
@@ -77,6 +126,7 @@ FFmpeg auto-orients quarter-turn matrices. DAR/SAR and rotation determine a squa
 | Project request/result queues | 32 each; non-blocking submit and ≤8 events per 16 ms pump |
 | Imports | One probe/picker, ≤128 registered metadata assets |
 | Persistence | One captured file task; project bytes ≤16 MiB, structural preflight; one retained verification result; 1 MiB source-hash scratch buffer |
+| Timeline preview | One desired seek + one in-flight owner query, existing latest decoder, one <=3,686,400-byte timeline image; cached source image may coexist, one frontend bitmap |
 | Decode | One active, one pending, one completed outcome |
 | Preview | ≤1280×720 RGBA8; ≤3,686,400 bytes/frame; exact stride/length/alpha |
 | Input | Local nonempty regular file ≤32 GiB; path text ≤32,768 bytes |
@@ -90,12 +140,12 @@ The previous session frame, an incoming decoded frame and the frontend bitmap ca
 
 ## UI and next rendering decision
 
-The Avalonia shell (DESIGN.md) has a custom title bar over Avalonia-drawn Windows caption buttons, an asset workspace with category tabs, a source player, a context inspector and a full-width timeline. Panels use grid splitters and minimum constraints (window minimum 960×600). Container queries adapt labels. Unsupported systems (Audio/Text/Stickers/Effects/Transitions/Filters/Adjustment, clip inspector tabs, Timeline preview, Undo/Redo, Split/Delete, Export, track visibility/mute/lock) remain honest/disabled. The Project menu and native async pickers provide persistence and source relink; the existing charcoal/cyan workspace is preserved.
+The Avalonia shell (DESIGN.md) has a custom title bar, native caption buttons, an asset workspace, Source/Timeline monitor, inspector and full-width timeline. Panels use splitters/minimum constraints; container queries adapt labels. Append/remove/select/undo/redo and exact single-video-track timeline seeking are enabled. Audio/Text/Stickers/Effects/Transitions/Filters/Adjustment, clip inspector settings, Split, Export, continuous Timeline Play and track visibility/mute/lock remain honest/disabled. Native pickers provide persistence/relink; charcoal/cyan styling is preserved.
 
 The timeline ruler and lanes are custom-drawn controls that draw only the viewport; `TimelineScale` keeps time ↔ pixel conversion independent of rendering and is unit-tested. Track headers are a list with keyboard selection through the engine. Clips are drawn by the lanes control itself (no control per clip): `TimelineGeometry` keeps per-track clip lists sorted by start, so the visible clips of the scroll viewport are found by binary search and pointer hits are resolved the same way. Clip rows come from the separately fetched timeline document (fetched only when `timeline_generation` changes), carry floored display milliseconds and Rust-formatted strings, and are never edited in C#. Missing/changed sources draw with a coral dashed outline and a "Missing ·" prefix.
 
 ## Clip editing and history (Phase 3B)
 
-The command owner is the only editor. InsertClip appends the whole Ready video source to the end of a video track; RemoveClip removes one clip and leaves the media asset and file untouched; clip Select is transient. `history.rs` keeps at most 200 exact edits (clip value, index, before/after revisions). Undo/redo restore identity, timing, source mapping and order; the saved revision is restored only when no other mutation intervened, and revisions are unique per session so a returned revision always names the same state. Failed edits and selection never enter history; New/Open reset it. Timeline position, clip-local time (`t - start`), source offset (`source_in`) and source PTS are distinct exact quantities; mapping a timeline instant to a source instant is `source_in + rescale(t - start)` and is not yet used by any playback path.
+The command owner is the only editor. InsertClip appends the whole Ready source; RemoveClip leaves media untouched; selection is transient. `history.rs` keeps 200 exact edits with identity/order/revision restoration. Failed edits and selection never enter history; New/Open reset it. The Phase 3C evaluator uses the same exact Clip values and invalidates independently of undoable saved revisions. Source mapping and endpoint policy are in PHASE_3C_TIMELINE_PREVIEW_CONTRACT.md. Continuous timeline playback is the next milestone.
 
 wgpu 30.0.1 remains an optional DX12 diagnostic. The CPU frame path is measured (docs/measurements, AVALONIA_MIGRATION_REPORT.md). GPU interop with Avalonia's compositor is deliberately not attempted until playback measurements show the CPU path is the bottleneck; any experiment must keep the CPU fallback.

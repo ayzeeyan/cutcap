@@ -27,6 +27,10 @@ pub struct SessionView {
     /// playback frame, while the clip list changes only on commands.
     pub timeline_generation: u64,
     pub history: HistoryStatus,
+    pub editing: EditingView,
+    pub preview_mode: PreviewMode,
+    pub timeline_preview: crate::timeline_preview::TimelinePreviewView,
+    pub timeline_playback: crate::timeline_playback::TimelinePlaybackView,
 }
 
 /// The clip list, serialized separately from [`SessionView`] and fetched by the
@@ -55,6 +59,28 @@ pub struct ClipView {
     /// Ready, missing, changed, checking or unavailable source.
     pub availability: &'static str,
     pub selected: bool,
+    /// Floor of the exact end (not start_ms + duration_ms, which can be 1 ms short).
+    pub end_ms: i64,
+    /// Exact project ticks, for snapping to and committing exact boundaries.
+    pub start_ticks: i64,
+    pub end_ticks: i64,
+    /// Earliest start a start trim may reach within the source (on the source
+    /// tick grid), and the latest end an end trim may reach (`None`: unknown,
+    /// no extension). Neighbouring clips are not considered here.
+    pub min_start_ticks: i64,
+    pub min_start_ms: i64,
+    pub max_end_ticks: Option<i64>,
+    pub max_end_ms: Option<i64>,
+}
+
+/// Editing affordances that depend on Rust-owned time (the playhead).
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct EditingView {
+    pub split_enabled: bool,
+    /// Why Split is unavailable, or what it will do.
+    pub split_detail: String,
+    /// The last edit's source-tick alignment note, if any.
+    pub notice: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -325,6 +351,20 @@ pub fn clip_views(snapshot: &ProjectSnapshot) -> Vec<ClipView> {
             let start_ms = timeline_ms(start, tb);
             let duration_ms = timeline_ms(duration, tb);
             let end_ms = timeline_ms(start.saturating_add(duration), tb);
+            let core = cutcap_core::Clip {
+                id: clip.id,
+                media_id: clip.media_id,
+                track_id: clip.track_id,
+                start: clip.start,
+                duration: clip.duration,
+                source_in: clip.source_in,
+            };
+            let media = snapshot.media.iter().find(|m| m.id == clip.media_id);
+            let (min_start, max_end) = cutcap_core::edit::trim_limits(
+                &core,
+                tb,
+                crate::edits::source_range(media, &core, tb),
+            );
             ClipView {
                 id: clip.id.to_string(),
                 track_id: clip.track_id.to_string(),
@@ -346,6 +386,13 @@ pub fn clip_views(snapshot: &ProjectSnapshot) -> Vec<ClipView> {
                     .find(|state| state.id == clip.media_id)
                     .map_or("unavailable", |state| availability_name(state.state)),
                 selected: snapshot.selection == SelectionState::Clip(clip.id),
+                end_ms,
+                start_ticks: start,
+                end_ticks: start.saturating_add(duration),
+                min_start_ticks: min_start.0,
+                min_start_ms: timeline_ms(min_start.0, tb),
+                max_end_ticks: max_end.map(|t| t.0),
+                max_end_ms: max_end.map(|t| timeline_ms(t.0, tb)),
             }
         })
         .collect()

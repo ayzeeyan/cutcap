@@ -20,6 +20,9 @@ use std::{
 
 const PROBE: &[u8] = br#"{"streams":[{"index":0,"codec_type":"video","codec_name":"ffv1","width":320,"height":180,"time_base":"1/1000","start_pts":0,"duration_ts":3000}],"format":{"format_name":"matroska"}}"#;
 
+#[path = "timeline_preview_tests.rs"]
+mod timeline_preview;
+
 thread_local! {
     // Controlled media still exercises real source ownership/fingerprinting.
     // Each test thread cleans up its own disposable files, including Unicode.
@@ -52,6 +55,29 @@ impl Controlled {
 }
 
 impl MediaBackend for Controlled {
+    fn stream_interval(
+        &self,
+        request: &DecodeRequest,
+        minimum: SourceTime,
+        cancel: &Cancellation,
+        emit: &mut (dyn FnMut(DecodedFrame) -> Result<(), MediaError> + Send),
+    ) -> Result<(), MediaError> {
+        let mut positioned = request.clone();
+        positioned.position.ticks = request
+            .position
+            .ticks
+            .div_euclid(100)
+            .saturating_mul(100)
+            .max(minimum.ticks);
+        for index in 0..30 {
+            let mut next = positioned.clone();
+            next.position.ticks += index * 100;
+            let mut frame = self.decode(&next, cancel)?;
+            frame.requested = request.position;
+            emit(frame)?;
+        }
+        Ok(())
+    }
     fn stream(
         &self,
         request: &DecodeRequest,
@@ -679,3 +705,5 @@ fn abi_frame_copy_validates_buffers_generation_and_stride() {
 
 #[path = "timeline_tests.rs"]
 mod timeline;
+#[path = "timeline_edit_session_tests.rs"]
+mod timeline_edit_session;

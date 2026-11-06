@@ -21,7 +21,33 @@ public sealed record SessionView(
     PreviewMetrics Metrics,
     PlaybackView? Playback = null,
     ulong TimelineGeneration = 0,
-    HistoryStatus? History = null);
+    HistoryStatus? History = null,
+    PreviewMode PreviewMode = PreviewMode.Source,
+    TimelinePreviewView? TimelinePreview = null,
+    TimelinePlaybackView? TimelinePlayback = null,
+    EditingView? Editing = null);
+
+/// <summary>Editing affordances that depend on Rust-owned time (ABI 7).</summary>
+public sealed record EditingView(bool SplitEnabled, string SplitDetail, string? Notice = null);
+
+/// <summary>Project-tick clock and copied frame identity; no clip semantics or pixels in managed state.</summary>
+public sealed record TimelinePlaybackView(
+    PlaybackState State, bool DesiredPlaying, string? Epoch, long RequestedTicks, string RequestedText, long ClockTicks, long ClockMs, string ClockText,
+    long? OfferedTicks, long? CopiedTicks, SourceTimestamp? OfferedPts, SourceTimestamp? CopiedPts, string? CopiedClipId,
+    ulong Decoded, ulong Offered, ulong Copied, ulong Dropped, ulong BufferStalls, ulong Handoffs, ulong DecoderStarts,
+    int Buffered, uint? ProcessId, uint? PreparedProcessId, string? Error, ulong? RequestToReadyUs);
+
+[JsonConverter(typeof(JsonStringEnumConverter<PreviewMode>))]
+public enum PreviewMode { Source, Timeline }
+
+/// <summary>Transient Rust evaluation/preview, independent of source transport and the clip-list document.</summary>
+public sealed record TimelinePreviewView(
+    long PositionTicks, RationalTimebase Timebase, long PositionMs, string PositionText, string PositionInput,
+    long SeekMaxMs, long ExtentMs, long ExtentTicks, string ExtentText,
+    string? TrackId, string TrackName, string Title, string State, string Detail, bool Busy, bool HasFrame,
+    string? ClipId, string? MediaId, string SourceName, long? ClipStartTicks, long? ClipEndTicks,
+    SourceTimestamp? Requested, SourceTimestamp? Actual, string Caption, string? EvaluationGeneration,
+    ulong? EvaluationUs, ulong? DecodeUs, ulong? RequestToReadyUs, uint? ProcessId, ulong FramesCopied);
 
 /// <summary>Rust-owned clip-edit history; labels describe the next undo/redo.</summary>
 public sealed record HistoryStatus(bool CanUndo, bool CanRedo, string? Undo, string? Redo, int Depth);
@@ -36,9 +62,14 @@ public sealed record TimelineView(ulong Generation, IReadOnlyList<ClipView> Clip
 public sealed record ClipView(
     string Id, string TrackId, int TrackIndex, string MediaId, string Name,
     long StartMs, long DurationMs, string StartText, string DurationText, string EndText,
-    string Availability, bool Selected)
+    string Availability, bool Selected,
+    long StartTicks = 0, long EndTicks = 0, long MinStartTicks = 0, long MinStartMs = 0,
+    long? MaxEndTicks = null, long? MaxEndMs = null,
+    [property: JsonPropertyName("end_ms")] long? ExactEndMs = null)
 {
-    public long EndMs => StartMs + DurationMs;
+    /// <summary>Floor of the exact end; older/test rows fall back to start + duration.</summary>
+    [JsonIgnore]
+    public long EndMs => ExactEndMs ?? StartMs + DurationMs;
     public bool SourceReady => Availability == "ready";
 }
 

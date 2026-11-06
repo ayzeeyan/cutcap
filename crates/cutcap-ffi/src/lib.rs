@@ -5,12 +5,16 @@
 //! `unsafe` and the only one the frontend links against.
 pub mod abi;
 mod bridge;
+mod edits;
 mod engine;
 mod history;
 pub mod media;
 mod persistence;
 mod playback;
 pub mod session;
+mod timeline_plan;
+mod timeline_playback;
+mod timeline_preview;
 pub mod view;
 
 #[cfg(test)]

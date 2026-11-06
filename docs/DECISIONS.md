@@ -1,5 +1,75 @@
 # Architecture decisions
 
+## ADR 023 — Exact clip move/trim/split, grouped history and ABI 7 (Phase 3E)
+
+Keep schema/envelope 1: a clip's identity, track, start, duration and integer
+`source_in` already describe every result of a move, trim or split. The one
+representability limit is that `source_in` is an integer number of stream
+ticks while edits are expressed in project ticks. Rather than adding a
+fractional in-point (a schema migration) or rounding per frame, edits that move
+`source_in` (start trim, split) are aligned to the exact grid on which the
+offset is a whole number of stream ticks: `source_step = den(project_tick /
+stream_tick)`, e.g. 375 project ticks (0.52 ms) for 1/15360 s, 720 (1 ms) for
+1/1000 s, 8 for 1/90000 s. Splits round to the nearest grid point; start trims
+round up toward the retained part so they never overlap a preceding clip or
+move before a snap target. The adjustment is at most one stream tick, reported
+in `edit_notice`, and never accumulates: the retained frames keep exactly the
+mapping they had (tested over twenty consecutive off-grid splits, VFR, nonzero
+and negative start PTS, three stream clocks, with real FFmpeg frames).
+
+Edits are atomic core transactions (`Project::replace_clips`, all-or-nothing
+with exact rollback) recorded as `ClipChange` values, which generalizes the
+Phase 3B insert/remove history without changing its revision semantics. A
+gesture is one transaction because the frontend previews locally and commits
+once on release; the authoritative project never mutates per pointer move.
+Structural edits reuse the Phase 3D invalidation path (new evaluation
+generation → transport cancelled, playhead kept, no auto-resume).
+
+ABI/contract 7 add five exports and consumed clip/editing fields. The frontend
+never derives project time: it compares and selects exact tick values the view
+supplies (clip edges, trim limits, playhead) and otherwise commits whole
+milliseconds. Library drag-and-drop uses an in-process data format carrying
+only the media identity, name, duration and readiness.
+
+## ADR 022 — Independent timeline interval transport and ABI 6 (Phase 3D)
+
+Keep schema/envelope 1. Share an immutable owner-built core index through a
+private host event so timeline polling performs binary active/next lookup without
+UI model construction, C# evaluation or per-frame project serialization. The
+source and timeline clocks/epochs/positions remain independent. ABI/contract 6
+add explicit timeline transport controls and its consumed diagnostics, preserving
+the 24-byte frame-copy layout and single WriteableBitmap.
+
+Reuse the existing persistent PAM/indexed-PTS decoder with an interval mode:
+retain at most the last eligible preroll frame <= request, then actual successors.
+Still/source seek ceiling semantics stay unchanged. Inverse source deadlines ceil
+one rational difference; wall-clock advancement floors to project ticks. Neither
+uses nominal FPS. Two bounded timeline worker slots prepare the next clip within
+two seconds of entry, including gaps; source paused preroll remains separately
+bounded. This uses existing subprocess custody/licensing, with no new dependency
+or codec implementation. Native libraries and seamless same-source decoder reuse
+remain possible behind this boundary, but require a separate measured change.
+
+At cuts clear outgoing permissions immediately. If incoming preroll is late,
+freeze at that exact boundary, truthfully Buffering; do not run clock on an old
+image. Gaps are blank clock intervals; source EOF holds the last eligible frame
+through clip end; monitored extent controls Ended and replay. Structural edits,
+relink and replacement stop/re-evaluate; no unsafe speculative continuation.
+No scheduler/vsync deadline, GPU path, audio or compositing change is made.
+
+Evidence and limits: PHASE_3D_TIMELINE_PLAYBACK_REPORT.md. FrameView callbacks
+measure application DrawImage generations only, never physical scanout.
+
+## ADR 021 — Indexed single-track timeline evaluation and ABI 5 (Phase 3C)
+
+Core keeps a derived per-video-track sorted index rebuilt after geometry edits/Open, not on seeks. Owner evaluation uses binary lookup on `[start,end)` and returns a small result, with a transient generation UUID separate from undoable saved revisions. No ProjectSnapshot/clip serialization occurs per seek. Selected-clip view lookup is cached too, removing the remaining per-view clip scan. Indexes, monitor mode/position and preview results remain outside project schema/envelope 1.
+
+Map source_in plus clip-local time as exact rationals before one ceiling conversion to original stream ticks. Exclusively bound the clip's source endpoint and require exact rescaling of decoded PTS to the stream clock. A ceiling frame beyond that endpoint is NoFrame, not another clip or a decoder error; gaps are Blank and do not launch decoding. This intentionally preserves Phase 1's ceiling policy, including its sparse-VFR/short-clip no-frame cases.
+
+Reuse the one isolated latest decoder for timeline and source still frames, with one desired owner evaluation and one in-flight query. Leaving Source pauses its persistent transport and retains position/epoch/preroll; returning restores the cached source frame under a renewed shared generation, without auto-play. A bounded native source image and timeline image may coexist; no second frontend bitmap exists. Pending mutations, source availability/relink, track changes, mode switches and project adoption invalidate request/model generations independently. Current-epoch real frames alone can be copied.
+
+ABI/contract 5 add mode/exact-tick/millisecond/text/cancel controls and consumed monitor DTOs; signatures/status/frame layout from ABI 4 remain intact. Ruler/slider coordinates are presentation inputs; Rust rescales and owns the resulting timeline position. C# never locates an active clip or maps its source PTS. Continuous timeline Play stays disabled. This is a video-only monitored-track slice, not compositing or a new media architecture.
+
 ## ADR 020 — Rust-owned clip editing, bounded undo/redo and ABI 4 (Phase 3B)
 
 The command owner gains InsertClip { media_id, track_id } next to the existing RemoveClip, Select, Undo and Redo commands. Insertion is an explicit append-to-end policy: the whole verified, Ready video source is placed on a video track starting where that track's last clip ends; duration is the source's reported `duration_ticks` rescaled (floor) from the stream clock to the project clock, source_in is the stream's start PTS. Sources without a known positive duration, shorter than one project tick, not Ready, of the wrong kind, on a missing track, or whose end would overflow are rejected before mutation. Core validates overlap/kinds/limits as before; it only gains exact index restoration, removal returning the former index, and the append point. No new dependency, no schema change: `.cutcap` format 1/core schema 1 already persist clips.

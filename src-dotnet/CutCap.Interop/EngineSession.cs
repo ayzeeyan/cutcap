@@ -6,6 +6,25 @@ using System.Text.Json;
 
 namespace CutCap.Interop;
 
+/// <summary>Which clip boundary a move anchor or trim names (ABI 7).</summary>
+public enum ClipEdge : uint
+{
+    Start = 0,
+    End = 1,
+}
+
+/// <summary>
+/// A timeline position for an edit: exact project ticks (from the view, for
+/// snapped boundaries) or whole milliseconds, which Rust floors to ticks.
+/// The frontend never converts between them.
+/// </summary>
+public readonly record struct TimelinePosition(long Value, bool IsTicks)
+{
+    public static TimelinePosition Ticks(long ticks) => new(ticks, true);
+    public static TimelinePosition Milliseconds(long milliseconds) => new(milliseconds, false);
+    internal uint Unit => IsTicks ? 0u : 1u;
+}
+
 public enum TrackKind : uint
 {
     Video = 0,
@@ -52,6 +71,10 @@ public sealed class EngineSession : IDisposable
 
     /// <summary>Last immutable view read on the owning thread; diagnostics need no extra ABI polling.</summary>
     public SessionView? LastReadView { get; private set; }
+    /// <summary>Diagnostic byte counts; pixels are copied separately.</summary>
+    public int LastViewBytes { get; private set; }
+    public ulong TimelineReadCount { get; private set; }
+    public int LastTimelineBytes { get; private set; }
 
     /// <summary>Loads the engine, verifies the ABI and starts a session with an empty project.</summary>
     public static EngineSession Start()
@@ -106,10 +129,81 @@ public sealed class EngineSession : IDisposable
 
     public void CancelImport() => Check(NativeMethods.CancelImport(Handle));
 
+    public void SetPreviewMode(PreviewMode mode) => Check(NativeMethods.SetPreviewMode(Handle, (uint)mode));
+    /// <summary>Exact project ticks; evaluated in Rust. Also selects Timeline mode.</summary>
+    public void SeekTimeline(long ticks) => Check(NativeMethods.SeekTimeline(Handle, ticks));
+    public void SeekTimelineMilliseconds(long milliseconds) => Check(NativeMethods.SeekTimelineMilliseconds(Handle, milliseconds));
+    public unsafe void SeekTimelineText(string text)
+    {
+        var bytes = Encoding.UTF8.GetBytes(text);
+        fixed (byte* pointer = bytes) { Check(NativeMethods.SeekTimelineText(Handle, pointer, (nuint)bytes.Length)); }
+    }
+    public void CancelTimelinePreview() => Check(NativeMethods.CancelTimelinePreview(Handle));
+
     /// <summary>
     /// Appends a ready video source to the end of a video track. Acceptance
     /// only: the engine validates and reports rejections in the view status.
     /// </summary>
+    /// <summary>Places the whole Ready source at a position (drag-and-drop). Acceptance only.</summary>
+    public unsafe void PlaceClip(string mediaId, string trackId, TimelinePosition position)
+    {
+        var media = Ids(mediaId);
+        var track = Ids(trackId);
+        fixed (byte* m = media)
+        fixed (byte* t = track)
+        {
+            Check(NativeMethods.PlaceClip(Handle, m, (nuint)media.Length, t, (nuint)track.Length, position.Value, position.Unit));
+        }
+    }
+
+    /// <summary>Moves a clip so its <paramref name="anchor"/> edge lands at <paramref name="position"/>.</summary>
+    public unsafe void MoveClip(string clipId, string trackId, TimelinePosition position, ClipEdge anchor)
+    {
+        var clip = Ids(clipId);
+        var track = Ids(trackId);
+        fixed (byte* c = clip)
+        fixed (byte* t = track)
+        {
+            Check(NativeMethods.MoveClip(Handle, c, (nuint)clip.Length, t, (nuint)track.Length,
+                position.Value, position.Unit, (uint)anchor));
+        }
+    }
+
+    /// <summary>Moves one clip boundary within its source range.</summary>
+    public unsafe void TrimClip(string clipId, ClipEdge edge, TimelinePosition position)
+    {
+        var clip = Ids(clipId);
+        fixed (byte* c = clip)
+        {
+            Check(NativeMethods.TrimClip(Handle, c, (nuint)clip.Length, (uint)edge, position.Value, position.Unit));
+        }
+    }
+
+    public unsafe void SplitClip(string clipId, TimelinePosition position)
+    {
+        var clip = Ids(clipId);
+        fixed (byte* c = clip)
+        {
+            Check(NativeMethods.SplitClip(Handle, c, (nuint)clip.Length, position.Value, position.Unit));
+        }
+    }
+
+    /// <summary>Splits at the Rust-owned timeline playhead; stops timeline playback like any structural edit.</summary>
+    public unsafe void SplitClipAtPlayhead(string clipId)
+    {
+        var clip = Ids(clipId);
+        fixed (byte* c = clip)
+        {
+            Check(NativeMethods.SplitClipAtPlayhead(Handle, c, (nuint)clip.Length));
+        }
+    }
+
+    private static byte[] Ids(string id)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(id);
+        return Encoding.UTF8.GetBytes(id);
+    }
+
     public unsafe void InsertClip(string mediaId, string trackId)
     {
         ArgumentException.ThrowIfNullOrEmpty(mediaId);
@@ -181,6 +275,10 @@ public sealed class EngineSession : IDisposable
 
     /// <summary>Accepts source playback/resume; inspect Playback state for readiness.</summary>
     public void Play() => Check(NativeMethods.Play(Handle));
+    public void PlayTimeline() => Check(NativeMethods.PlayTimeline(Handle));
+    public void PauseTimeline() => Check(NativeMethods.PauseTimeline(Handle));
+    public void ResumeTimeline() => PlayTimeline();
+    public void StopTimeline() => Check(NativeMethods.StopTimeline(Handle));
     public void Resume() => Play();
     public void Pause() => Check(NativeMethods.Pause(Handle));
     public void Stop() => Check(NativeMethods.Stop(Handle));
@@ -217,6 +315,7 @@ public sealed class EngineSession : IDisposable
             {
                 throw new EngineException(NativeStatus.Failed, "The engine reported an invalid view length.");
             }
+            LastViewBytes = (int)length;
             LastReadView = JsonSerializer.Deserialize(_viewBuffer.AsSpan(0, (int)length), ViewJsonContext.Default.SessionView)
                 ?? throw new EngineException(NativeStatus.Failed, "The engine returned an empty view.");
             return LastReadView;
@@ -253,6 +352,8 @@ public sealed class EngineSession : IDisposable
             {
                 throw new EngineException(NativeStatus.Failed, "The engine reported an invalid timeline length.");
             }
+            LastTimelineBytes = (int)length;
+            TimelineReadCount++;
             return JsonSerializer.Deserialize(_timelineBuffer.AsSpan(0, (int)length), ViewJsonContext.Default.TimelineView)
                 ?? throw new EngineException(NativeStatus.Failed, "The engine returned an empty timeline.");
         }

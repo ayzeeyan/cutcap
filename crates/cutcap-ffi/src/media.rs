@@ -59,6 +59,10 @@ pub struct MediaHost {
     pub source: SourceView,
     pub import: ImportView,
     pub metrics: PreviewMetrics,
+    source_visible: bool,
+    source_needs_frame: bool,
+    timeline_ticket: Option<PreviewTicket>,
+    timeline_outcome: Option<DecodeOutcome>,
 }
 
 fn millis() -> Timebase {
@@ -83,6 +87,10 @@ impl MediaHost {
             source: SourceView::default(),
             import: ImportView::default(),
             metrics: PreviewMetrics::default(),
+            source_visible: true,
+            source_needs_frame: false,
+            timeline_ticket: None,
+            timeline_outcome: None,
         })
     }
 
@@ -102,6 +110,64 @@ impl MediaHost {
 
     pub fn selected_media(&self) -> Option<MediaId> {
         self.selected.as_ref().map(|(_, media)| media.id)
+    }
+
+    /// One counter for both presentation modes; no duplicate frontend cache.
+    pub(crate) fn next_generation(&mut self) -> u64 {
+        self.generation += 1;
+        self.generation
+    }
+    pub(crate) fn request_timeline(&mut self, request: DecodeRequest) -> Result<(), MediaError> {
+        self.decoder.request(request.clone())?;
+        self.timeline_ticket = Some(request.ticket);
+        self.timeline_outcome = None;
+        self.ticket = None;
+        Ok(())
+    }
+    pub(crate) fn take_timeline(&mut self) -> Option<DecodeOutcome> {
+        self.timeline_outcome.take()
+    }
+    pub(crate) fn cancel_timeline(&mut self) -> Result<(), MediaError> {
+        if self.timeline_ticket.take().is_some() {
+            self.decoder.cancel()?;
+        }
+        self.timeline_outcome = None;
+        Ok(())
+    }
+    pub(crate) fn show_source(
+        &mut self,
+        visible: bool,
+        status: &mut StatusView,
+    ) -> Result<(), MediaError> {
+        if visible == self.source_visible {
+            return Ok(());
+        }
+        self.source_visible = visible;
+        if !visible {
+            self.source_needs_frame |= self.source.busy && !self.playback.active();
+            self.pause();
+            self.decoder.cancel()?;
+            self.ticket = None;
+            self.source.busy = false;
+        } else {
+            self.cancel_timeline()?;
+            if self.source_needs_frame || self.frame.is_none() {
+                self.frame = None;
+                self.source.has_frame = false;
+                self.source_needs_frame = false;
+                self.seek(self.source.position_ms, status);
+            } else {
+                let generation = self.next_generation();
+                if let Some(frame) = &mut self.frame {
+                    frame.generation = generation;
+                    self.copy_ticket = Some(frame.ticket);
+                    if self.playback.active() {
+                        self.playback.offered(generation, frame.actual)?;
+                    }
+                }
+            }
+        }
+        Ok(())
     }
 
     pub fn import_busy(&self) -> bool {
@@ -181,6 +247,8 @@ impl MediaHost {
     }
 
     pub fn pending_selection(&mut self) {
+        self.timeline_ticket = None;
+        self.timeline_outcome = None;
         if let Err(error) = self.playback.reset() {
             tracing::error!("{error}");
         }
@@ -234,7 +302,11 @@ impl MediaHost {
         self.source.position_ms = 0;
         self.metrics.probe_us = self.probe_times.get(&media.id).copied();
         self.selected = Some((project_id, media));
-        self.seek(0, status);
+        if self.source_visible {
+            self.seek(0, status);
+        } else {
+            self.source_needs_frame = true;
+        }
     }
 
     fn request_for(&self, milliseconds: i64) -> Result<DecodeRequest, MediaError> {
@@ -505,6 +577,10 @@ impl MediaHost {
             }
         }
         match self.decoder.take() {
+            Ok(Some(outcome)) if self.timeline_ticket == Some(outcome.ticket) => {
+                self.timeline_outcome = Some(outcome);
+                changed = true;
+            }
             Ok(Some(outcome)) if self.accepts(outcome.ticket) => {
                 changed = true;
                 match outcome.result {

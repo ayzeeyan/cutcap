@@ -1,0 +1,65 @@
+{
+  "date": "2026-11-06",
+  "baseline": "43d859c4e60c05a19d9587f0f8670fe6ddc5517d",
+  "implementation_commits": [
+    "91159d1e1f1707352dadc2bd191b8166206fc61a",
+    "336f04286a5d561eede072310994c9543a1f6a74"
+  ],
+  "checks": [
+    {
+      "command": "cargo fmt --all -- --check",
+      "exitCode": 0,
+      "seconds": 0.54
+    },
+    {
+      "command": "cargo clippy --workspace --all-targets -- -D warnings",
+      "exitCode": 0,
+      "seconds": 1.48
+    },
+    {
+      "command": "cargo test --workspace",
+      "exitCode": 0,
+      "seconds": 7.89
+    },
+    {
+      "command": "cargo build --workspace",
+      "exitCode": 0,
+      "seconds": 0.44
+    },
+    {
+      "command": "cargo build --release",
+      "exitCode": 0,
+      "seconds": 6.79
+    },
+    {
+      "command": "dotnet build CutCap.slnx -c Debug -nologo",
+      "exitCode": 0,
+      "seconds": 2.06
+    },
+    {
+      "command": "dotnet test CutCap.slnx -c Debug -nologo --no-build",
+      "exitCode": 0,
+      "seconds": 31.29
+    },
+    {
+      "command": "dotnet build CutCap.slnx -c Release -nologo",
+      "exitCode": 0,
+      "seconds": 2.37
+    },
+    {
+      "command": "dotnet publish apps/CutCap.Desktop/CutCap.Desktop.csproj -c Release -r win-x64 --self-contained true -o artifacts/publish/win-x64 -nologo",
+      "exitCode": 0,
+      "seconds": 2.78
+    }
+  ],
+  "rust_tests_passed": 111,
+  "dotnet_interop_passed": 41,
+  "dotnet_desktop_passed": 38,
+  "external_ffmpeg_tests_passed": 9,
+  "all_features_clippy_exit": 0,
+  "all_features_tests_exit": 0,
+  "dx12_probe_exit": 0,
+  "native_windows_interactions": "See PHASE_3D_TIMELINE_PLAYBACK_REPORT.md and genuine screenshots",
+  "remote_ci": "not claimed",
+  "ffmpeg_redistributed": false
+}

@@ -26,6 +26,15 @@ public partial class TimelinePanel : UserControl
         };
         Lanes.LanePressed += (_, index) => (DataContext as TimelineViewModel)?.SelectIndex(index);
         Lanes.ClipPressed += (_, clip) => (DataContext as TimelineViewModel)?.SelectClip(clip);
+        Lanes.EditCommitted += (_, edit) => (DataContext as TimelineViewModel)?.Commit(edit);
+        Lanes.GestureHint += (_, hint) => (DataContext as TimelineViewModel)?.ShowGestureHint(hint);
+        Lanes.AutoScrollRequested += (_, dx) =>
+        {
+            var max = Math.Max(0, LanesScroll.Extent.Width - LanesScroll.Viewport.Width);
+            LanesScroll.Offset = new Vector(Math.Clamp(LanesScroll.Offset.X + dx, 0, max), LanesScroll.Offset.Y);
+            FollowLanes();
+        };
+        Ruler.PositionPressed += (_, milliseconds) => (DataContext as TimelineViewModel)?.SeekRuler(milliseconds);
     }
 
     private void FollowLanes()

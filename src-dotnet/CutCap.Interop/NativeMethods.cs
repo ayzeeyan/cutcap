@@ -38,7 +38,7 @@ internal static unsafe partial class NativeMethods
     private const string Library = "cutcap_engine";
 
     /// <summary>The ABI this frontend was written against.</summary>
-    public const uint AbiVersion = 4;
+    public const uint AbiVersion = 7;
     public const uint PixelRgba8Opaque = 1;
 
     [LibraryImport(Library, EntryPoint = "cutcap_abi_version")]
@@ -55,6 +55,42 @@ internal static unsafe partial class NativeMethods
 
     [LibraryImport(Library, EntryPoint = "cutcap_session_new_project")]
     public static partial NativeStatus NewProject(SessionSafeHandle session);
+
+    [LibraryImport(Library, EntryPoint = "cutcap_session_set_preview_mode")]
+    public static partial NativeStatus SetPreviewMode(SessionSafeHandle session, uint mode);
+    [LibraryImport(Library, EntryPoint = "cutcap_session_seek_timeline")]
+    public static partial NativeStatus SeekTimeline(SessionSafeHandle session, long ticks);
+    [LibraryImport(Library, EntryPoint = "cutcap_session_seek_timeline_ms")]
+    public static partial NativeStatus SeekTimelineMilliseconds(SessionSafeHandle session, long milliseconds);
+    [LibraryImport(Library, EntryPoint = "cutcap_session_place_clip")]
+    public static partial NativeStatus PlaceClip(SessionSafeHandle session, byte* media, nuint mediaLength,
+        byte* track, nuint trackLength, long position, uint unit);
+
+    [LibraryImport(Library, EntryPoint = "cutcap_session_move_clip")]
+    public static partial NativeStatus MoveClip(SessionSafeHandle session, byte* clip, nuint clipLength,
+        byte* track, nuint trackLength, long position, uint unit, uint anchor);
+
+    [LibraryImport(Library, EntryPoint = "cutcap_session_trim_clip")]
+    public static partial NativeStatus TrimClip(SessionSafeHandle session, byte* clip, nuint clipLength,
+        uint edge, long position, uint unit);
+
+    [LibraryImport(Library, EntryPoint = "cutcap_session_split_clip")]
+    public static partial NativeStatus SplitClip(SessionSafeHandle session, byte* clip, nuint clipLength,
+        long position, uint unit);
+
+    [LibraryImport(Library, EntryPoint = "cutcap_session_split_clip_at_playhead")]
+    public static partial NativeStatus SplitClipAtPlayhead(SessionSafeHandle session, byte* clip, nuint clipLength);
+
+    [LibraryImport(Library, EntryPoint = "cutcap_session_seek_timeline_text")]
+    public static partial NativeStatus SeekTimelineText(SessionSafeHandle session, byte* text, nuint length);
+    [LibraryImport(Library, EntryPoint = "cutcap_session_cancel_timeline_preview")]
+    public static partial NativeStatus CancelTimelinePreview(SessionSafeHandle session);
+    [LibraryImport(Library, EntryPoint = "cutcap_session_play_timeline")]
+    public static partial NativeStatus PlayTimeline(SessionSafeHandle session);
+    [LibraryImport(Library, EntryPoint = "cutcap_session_pause_timeline")]
+    public static partial NativeStatus PauseTimeline(SessionSafeHandle session);
+    [LibraryImport(Library, EntryPoint = "cutcap_session_stop_timeline")]
+    public static partial NativeStatus StopTimeline(SessionSafeHandle session);
 
     [LibraryImport(Library, EntryPoint = "cutcap_session_save_project")]
     public static partial NativeStatus SaveProject(SessionSafeHandle session);

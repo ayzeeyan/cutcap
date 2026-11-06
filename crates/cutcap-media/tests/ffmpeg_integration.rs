@@ -6,6 +6,130 @@ static SERIAL: Mutex<()> = Mutex::new(());
 
 #[test]
 #[ignore = "requires external FFmpeg/FFprobe"]
+fn interval_preroll_preserves_covering_real_pts_vfr_offsets_and_bframes() {
+    let _guard = SERIAL.lock().unwrap();
+    for (name, target, lower) in [
+        ("colors-vfr.mkv", 201, 0),
+        ("colors-vfr.mkv", 1499, 200),
+        ("offset.mkv", 6251, 5500),
+        ("long-gop-bframes.mp4", 37531, 0),
+    ] {
+        let media = media(name);
+        let oracle = std::process::Command::new(
+            std::env::var_os("CUTCAP_FFPROBE").unwrap_or_else(|| "ffprobe.exe".into()),
+        )
+        .args([
+            "-v",
+            "error",
+            "-select_streams",
+            "v:0",
+            "-show_frames",
+            "-show_entries",
+            "frame=pts",
+            "-of",
+            "json",
+        ])
+        .arg(&media.path)
+        .output()
+        .unwrap();
+        assert!(oracle.status.success());
+        let json: serde_json::Value = serde_json::from_slice(&oracle.stdout).unwrap();
+        let eligible: Vec<i64> = json["frames"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|f| f["pts"].as_i64().unwrap())
+            .filter(|pts| *pts >= lower)
+            .collect();
+        let first = eligible.iter().rposition(|pts| *pts <= target).unwrap_or(0);
+        let clock = media.metadata.timebase;
+        let request = DecodeRequest {
+            ticket: PreviewTicket {
+                project_id: ProjectId::new(),
+                media_id: media.id,
+                request_id: RequestId::new(),
+            },
+            media,
+            position: SourceTime {
+                ticks: target,
+                timebase: clock,
+            },
+        };
+        let mut actual = Vec::new();
+        let mut pid = None;
+        FfmpegBackend::default()
+            .stream_interval(
+                &request,
+                SourceTime {
+                    ticks: lower,
+                    timebase: clock,
+                },
+                &Cancellation::default(),
+                &mut |f| {
+                    if let Some(pid) = pid {
+                        assert_eq!(pid, f.process_id);
+                    } else {
+                        pid = Some(f.process_id);
+                    }
+                    actual.push(f.actual.ticks);
+                    Ok(())
+                },
+            )
+            .unwrap();
+        assert_eq!(actual, eligible[first..], "{name}");
+    }
+}
+
+#[test]
+#[ignore = "requires external FFmpeg/FFprobe"]
+fn persistent_interval_cancellation_reaps_the_owned_child_and_rejects_bad_bounds() {
+    let _guard = SERIAL.lock().unwrap();
+    let media = media("long-gop-bframes.mp4");
+    let clock = media.metadata.timebase;
+    let request = DecodeRequest {
+        ticket: PreviewTicket {
+            project_id: ProjectId::new(),
+            media_id: media.id,
+            request_id: RequestId::new(),
+        },
+        position: media.metadata.start(),
+        media,
+    };
+    let token = Cancellation::default();
+    let mut pid = None;
+    let result =
+        FfmpegBackend::default().stream_interval(&request, request.position, &token, &mut |f| {
+            pid = Some(f.process_id);
+            token.cancel();
+            Err(MediaError::Cancelled)
+        });
+    assert!(matches!(result, Err(MediaError::Cancelled)));
+    assert!(pid.is_some());
+    #[cfg(windows)]
+    {
+        let output = std::process::Command::new("tasklist.exe")
+            .args(["/FI", &format!("PID eq {}", pid.unwrap()), "/NH"])
+            .output()
+            .unwrap();
+        assert!(!String::from_utf8_lossy(&output.stdout).contains("ffmpeg"));
+    }
+    assert!(
+        FfmpegBackend::default()
+            .stream_interval(
+                &request,
+                SourceTime {
+                    ticks: request.position.ticks + 1,
+                    timebase: clock
+                },
+                &Cancellation::default(),
+                &mut |_| Ok(())
+            )
+            .is_err()
+    );
+}
+
+#[test]
+#[ignore = "requires external FFmpeg/FFprobe"]
 fn persistent_long_gop_bframes_match_independent_frame_pts_and_seek() {
     let _guard = SERIAL.lock().unwrap();
     let media = media("long-gop-bframes.mp4");

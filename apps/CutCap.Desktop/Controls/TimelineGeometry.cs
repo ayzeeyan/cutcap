@@ -77,6 +77,40 @@ public sealed class TimelineGeometry
         return null;
     }
 
+    /// <summary>
+    /// Whether [startMs, endMs) on a track intersects any clip other than
+    /// <paramref name="except"/>. Binary search: cost follows the overlap, not the track.
+    /// </summary>
+    public bool Overlaps(int track, double startMs, double endMs, string? except)
+    {
+        var lane = Lane(track);
+        for (var i = LowerBound(lane, startMs); i < lane.Count && lane[i].StartMs < endMs; i++)
+        {
+            if (lane[i].Id != except && lane[i].EndMs > startMs) return true;
+        }
+        return false;
+    }
+
+    /// <summary>The nearest clip on the track ending at or before <paramref name="ms"/> (excluding one clip).</summary>
+    public ClipView? Previous(int track, double ms, string? except)
+    {
+        var lane = Lane(track);
+        var i = LowerBound(lane, ms) - 1;
+        while (i >= 0 && (lane[i].Id == except || lane[i].EndMs > ms)) i--;
+        return i >= 0 ? lane[i] : null;
+    }
+
+    /// <summary>The nearest clip on the track starting at or after <paramref name="ms"/> (excluding one clip).</summary>
+    public ClipView? Next(int track, double ms, string? except)
+    {
+        var lane = Lane(track);
+        for (var i = LowerBound(lane, ms); i < lane.Count; i++)
+        {
+            if (lane[i].Id != except && lane[i].StartMs >= ms) return lane[i];
+        }
+        return null;
+    }
+
     /// <summary>First index whose end is after <paramref name="ms"/>.</summary>
     private static int LowerBound(IReadOnlyList<ClipView> lane, double ms)
     {

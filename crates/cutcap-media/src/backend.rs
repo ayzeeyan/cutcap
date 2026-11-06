@@ -42,6 +42,19 @@ pub trait MediaBackend: Send + Sync + 'static {
             "continuous decoding is unavailable for this backend".into(),
         ))
     }
+    /// Continuous interval mode: retain the last eligible real PTS <= target,
+    /// then successors. `minimum` is the clip's inclusive source bound.
+    fn stream_interval(
+        &self,
+        _request: &DecodeRequest,
+        _minimum: SourceTime,
+        _cancellation: &Cancellation,
+        _emit: &mut (dyn FnMut(DecodedFrame) -> Result<(), MediaError> + Send),
+    ) -> Result<(), MediaError> {
+        Err(MediaError::Unsupported(
+            "interval decoding is unavailable for this backend".into(),
+        ))
+    }
 }
 
 pub struct ProbeResult {
@@ -120,6 +133,15 @@ pub(crate) fn input_limits(command: &mut Command) {
 }
 
 impl MediaBackend for FfmpegBackend {
+    fn stream_interval(
+        &self,
+        request: &DecodeRequest,
+        minimum: SourceTime,
+        cancel: &Cancellation,
+        emit: &mut (dyn FnMut(DecodedFrame) -> Result<(), MediaError> + Send),
+    ) -> Result<(), MediaError> {
+        crate::stream::run_policy(self, request, Some(minimum), cancel, emit)
+    }
     fn stream(
         &self,
         request: &DecodeRequest,

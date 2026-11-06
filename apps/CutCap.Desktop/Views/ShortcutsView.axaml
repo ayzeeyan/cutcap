@@ -33,6 +33,9 @@
     <Grid Classes="row" ColumnDefinitions="*,Auto"><TextBlock Text="Save / Save As" /><Border Classes="key"><TextBlock Text="Ctrl+S / Ctrl+Shift+S" /></Border></Grid>
     <Grid Classes="row" ColumnDefinitions="*,Auto"><TextBlock Text="Undo / Redo a timeline edit" /><Border Classes="key"><TextBlock Text="Ctrl+Z / Ctrl+Y" /></Border></Grid>
     <Grid Classes="row" ColumnDefinitions="*,Auto"><TextBlock Text="Remove the selected clip" /><Border Classes="key"><TextBlock Text="Delete" /></Border></Grid>
+    <Grid Classes="row" ColumnDefinitions="*,Auto"><TextBlock Text="Split the selected clip at the playhead" /><Border Classes="key"><TextBlock Text="Ctrl+B" /></Border></Grid>
+    <Grid Classes="row" ColumnDefinitions="*,Auto"><TextBlock Text="Move · trim a clip (drag body · edges)" /><Border Classes="key"><TextBlock Text="Drag" /></Border></Grid>
+    <Grid Classes="row" ColumnDefinitions="*,Auto"><TextBlock Text="Drag without snapping · cancel a drag" /><Border Classes="key"><TextBlock Text="Shift · Esc" /></Border></Grid>
     <Grid Classes="row" ColumnDefinitions="*,Auto"><TextBlock Text="Clear selection" /><Border Classes="key"><TextBlock Text="Ctrl+Shift+A" /></Border></Grid>
     <Grid Classes="row" ColumnDefinitions="*,Auto"><TextBlock Text="Reset layout and zoom" /><Border Classes="key"><TextBlock Text="Ctrl+0" /></Border></Grid>
     <Grid Classes="row" ColumnDefinitions="*,Auto"><TextBlock Text="Zoom the timeline" /><Border Classes="key"><TextBlock Text="Ctrl+Plus / Minus" /></Border></Grid>

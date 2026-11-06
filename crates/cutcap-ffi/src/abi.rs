@@ -14,7 +14,9 @@
 #![allow(unsafe_code)]
 
 use crate::session::{Session, SessionError};
-use cutcap_contracts::{ClipId, MediaId, TrackId, TrackKind};
+use cutcap_contracts::{
+    ClipEdge, ClipId, MediaId, PreviewMode, TimelineSeek, TimelineTime, TrackId, TrackKind,
+};
 use std::{
     cell::RefCell,
     collections::BTreeMap,
@@ -30,7 +32,10 @@ use std::{
 /// or view JSON field the frontend depends on.
 /// ABI 4 (Phase 3B): clip insert/remove/select, undo/redo, the separately
 /// fetched timeline document and the view's `timeline_generation`/`history`.
-pub const ABI_VERSION: u32 = 4;
+/// ABI 6 adds independent continuous timeline transport and diagnostics.
+/// ABI 7 (Phase 3E): place, move, trim and split clip exports; clip rows add
+/// exact ticks and trim limits; the view adds `editing`.
+pub const ABI_VERSION: u32 = 7;
 
 pub const CUTCAP_OK: i32 = 0;
 pub const CUTCAP_INVALID_ARGUMENT: i32 = 1;
@@ -405,6 +410,146 @@ pub unsafe extern "C" fn cutcap_session_select_clip(
     })
 }
 
+/// Position units for the Phase 3E edit exports: 0 = exact project ticks,
+/// 1 = whole milliseconds (floored to project ticks by the owner).
+fn seek(value: i64, unit: u32) -> Result<TimelineSeek, Fail> {
+    match unit {
+        0 => Ok(TimelineSeek::Ticks(TimelineTime(value))),
+        1 => Ok(TimelineSeek::Milliseconds(value)),
+        _ => Err(Fail::argument("Unknown position unit.")),
+    }
+}
+
+fn edge(value: u32) -> Result<ClipEdge, Fail> {
+    match value {
+        0 => Ok(ClipEdge::Start),
+        1 => Ok(ClipEdge::End),
+        _ => Err(Fail::argument("Unknown clip edge.")),
+    }
+}
+
+/// # Safety
+/// `ptr` must be valid for reads of `len` bytes.
+unsafe fn track_id(ptr: *const u8, len: usize) -> Result<TrackId, Fail> {
+    // SAFETY: forwarded caller contract.
+    let text = unsafe { input_str(ptr, len) }?;
+    TrackId::try_from(parse_uuid(text)?).map_err(|_| Fail::argument("Invalid track identifier."))
+}
+
+/// Phase 3E (ABI 7): places the whole Ready video source at a timeline
+/// position (drag-and-drop). Rejections (overlap, audio track, not ready)
+/// arrive as view status; nothing changes.
+///
+/// # Safety
+/// `media`/`track` must be valid for reads of their lengths.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn cutcap_session_place_clip(
+    handle: u64,
+    media: *const u8,
+    media_len: usize,
+    track: *const u8,
+    track_len: usize,
+    position: i64,
+    unit: u32,
+) -> i32 {
+    guard(|| {
+        // SAFETY: forwarded caller contract.
+        let text = unsafe { input_str(media, media_len) }?;
+        let media = MediaId::try_from(parse_uuid(text)?)
+            .map_err(|_| Fail::argument("Invalid media identifier."))?;
+        // SAFETY: forwarded caller contract.
+        let track = unsafe { track_id(track, track_len) }?;
+        let position = seek(position, unit)?;
+        with_session(handle, |s| Ok(s.place_clip(media, track, position)?))
+    })
+}
+
+/// Phase 3E (ABI 7): moves a clip so that its `anchor` edge (0 start, 1 end)
+/// lands at `position`, on `track`. One undo step.
+///
+/// # Safety
+/// `clip`/`track` must be valid for reads of their lengths.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn cutcap_session_move_clip(
+    handle: u64,
+    clip: *const u8,
+    clip_len: usize,
+    track: *const u8,
+    track_len: usize,
+    position: i64,
+    unit: u32,
+    anchor: u32,
+) -> i32 {
+    guard(|| {
+        // SAFETY: forwarded caller contract.
+        let clip = unsafe { clip_id(clip, clip_len) }?;
+        // SAFETY: forwarded caller contract.
+        let track = unsafe { track_id(track, track_len) }?;
+        let (position, anchor) = (seek(position, unit)?, edge(anchor)?);
+        with_session(handle, |s| Ok(s.move_clip(clip, track, position, anchor)?))
+    })
+}
+
+/// Phase 3E (ABI 7): moves the clip's start (0) or end (1) boundary to
+/// `position` within its source range. One undo step.
+///
+/// # Safety
+/// `clip` must be valid for reads of `clip_len` bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn cutcap_session_trim_clip(
+    handle: u64,
+    clip: *const u8,
+    clip_len: usize,
+    edge_value: u32,
+    position: i64,
+    unit: u32,
+) -> i32 {
+    guard(|| {
+        // SAFETY: forwarded caller contract.
+        let clip = unsafe { clip_id(clip, clip_len) }?;
+        let (edge, position) = (edge(edge_value)?, seek(position, unit)?);
+        with_session(handle, |s| Ok(s.trim_clip(clip, edge, position)?))
+    })
+}
+
+/// Phase 3E (ABI 7): splits a clip at an explicit interior position.
+///
+/// # Safety
+/// `clip` must be valid for reads of `clip_len` bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn cutcap_session_split_clip(
+    handle: u64,
+    clip: *const u8,
+    clip_len: usize,
+    position: i64,
+    unit: u32,
+) -> i32 {
+    guard(|| {
+        // SAFETY: forwarded caller contract.
+        let clip = unsafe { clip_id(clip, clip_len) }?;
+        let position = seek(position, unit)?;
+        with_session(handle, |s| Ok(s.split_clip(clip, position)?))
+    })
+}
+
+/// Phase 3E (ABI 7): splits a clip at the Rust-owned timeline playhead.
+/// Stops active timeline playback like every structural edit.
+///
+/// # Safety
+/// `clip` must be valid for reads of `clip_len` bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn cutcap_session_split_clip_at_playhead(
+    handle: u64,
+    clip: *const u8,
+    clip_len: usize,
+) -> i32 {
+    guard(|| {
+        // SAFETY: forwarded caller contract.
+        let clip = unsafe { clip_id(clip, clip_len) }?;
+        with_session(handle, |s| Ok(s.split_clip_at_playhead(clip)?))
+    })
+}
+
 /// Undoes the newest clip edit; "nothing to undo" arrives as a view status.
 #[unsafe(no_mangle)]
 pub extern "C" fn cutcap_session_undo(handle: u64) -> i32 {
@@ -553,6 +698,67 @@ pub extern "C" fn cutcap_session_cancel_import(handle: u64) -> i32 {
 }
 
 /// Accepts source Play/Resume; decoding and scheduling remain asynchronous.
+#[unsafe(no_mangle)]
+pub extern "C" fn cutcap_session_set_preview_mode(handle: u64, mode: u32) -> i32 {
+    guard(|| {
+        let mode = match mode {
+            0 => PreviewMode::Source,
+            1 => PreviewMode::Timeline,
+            _ => return Err(Fail::argument("Unknown preview mode.")),
+        };
+        with_session(handle, |s| Ok(s.set_preview_mode(mode)?))
+    })
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn cutcap_session_seek_timeline(handle: u64, ticks: i64) -> i32 {
+    guard(|| {
+        with_session(handle, |s| {
+            Ok(s.seek_timeline(TimelineSeek::Ticks(TimelineTime(ticks)))?)
+        })
+    })
+}
+#[unsafe(no_mangle)]
+pub extern "C" fn cutcap_session_seek_timeline_ms(handle: u64, ms: i64) -> i32 {
+    guard(|| {
+        with_session(handle, |s| {
+            Ok(s.seek_timeline(TimelineSeek::Milliseconds(ms))?)
+        })
+    })
+}
+/// Seek using source-compatible millisecond text or an exact integer `ticks` suffix.
+/// # Safety
+/// `text` must be valid for `len` bytes; input_str bounds and validates it.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn cutcap_session_seek_timeline_text(
+    handle: u64,
+    text: *const u8,
+    len: usize,
+) -> i32 {
+    guard(|| {
+        // SAFETY: forwarded readable caller contract, with bounded validated UTF-8.
+        let text = unsafe { input_str(text, len) }?;
+        with_session(handle, |s| Ok(s.seek_timeline_text(text)?))
+    })
+}
+#[unsafe(no_mangle)]
+pub extern "C" fn cutcap_session_cancel_timeline_preview(handle: u64) -> i32 {
+    guard(|| with_session(handle, |s| Ok(s.cancel_timeline_preview()?)))
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn cutcap_session_play_timeline(handle: u64) -> i32 {
+    guard(|| with_session(handle, |s| Ok(s.play_timeline()?)))
+}
+#[unsafe(no_mangle)]
+pub extern "C" fn cutcap_session_pause_timeline(handle: u64) -> i32 {
+    guard(|| with_session(handle, |s| Ok(s.pause_timeline()?)))
+}
+#[unsafe(no_mangle)]
+pub extern "C" fn cutcap_session_stop_timeline(handle: u64) -> i32 {
+    guard(|| with_session(handle, |s| Ok(s.stop_timeline()?)))
+}
+
 #[unsafe(no_mangle)]
 pub extern "C" fn cutcap_session_play(handle: u64) -> i32 {
     guard(|| with_session(handle, |s| Ok(s.play()?)))

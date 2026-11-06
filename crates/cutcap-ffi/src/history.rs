@@ -1,9 +1,12 @@
 //! Bounded clip-edit history owned by the project command owner.
 //!
-//! Each entry stores the exact clip value and its position in the project's
-//! clip order, so undo/redo restore identity, timing and order exactly. Only
-//! successful clip edits are recorded; selection, playback, probing and failed
-//! commands never are. A new edit discards the redo branch.
+//! Each entry is one complete user gesture — an insertion, removal, move,
+//! trim or split — stored as an exact [`ClipChange`]: every clip value it
+//! removed and inserted, with their positions in the project's clip order. So
+//! one undo restores identity, timing, source mapping and order exactly, and
+//! one redo reproduces the same identities. Only successful edits are
+//! recorded; selection, playback, probing and failed commands never are. A new
+//! edit discards the redo branch.
 //!
 //! Document revisions: an edit moves the document from `before` to `after`.
 //! Undo returns to `before` only if the document is still exactly at `after`
@@ -11,25 +14,17 @@
 //! Save → Insert → Undo is clean again, while Save → Insert → Add track → Undo
 //! stays dirty. Revisions are unique per session (`next` only grows), so a
 //! restored revision can never be confused with a different state.
-use cutcap_contracts::{ClipId, HistoryStatus, SelectionState};
-use cutcap_core::{Clip, Project, ProjectError};
+use cutcap_contracts::{HistoryStatus, SelectionState};
+use cutcap_core::{ClipChange, Project, ProjectError};
 use std::collections::VecDeque;
 
-/// Each entry holds one clip (a few hundred bytes), so the bound is small and fixed.
+/// Entries hold a few clip values each (a split holds three), so the bound is
+/// small and fixed regardless of project size.
 pub const MAX_HISTORY: usize = 200;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum EditKind {
-    Insert,
-    Remove,
-}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Edit {
-    pub kind: EditKind,
-    /// Position of the clip in the project's clip order when it exists.
-    pub index: usize,
-    pub clip: Clip,
+    pub change: ClipChange,
     pub before: u64,
     pub after: u64,
     pub label: String,
@@ -84,17 +79,14 @@ impl History {
         let Some(edit) = self.undo.pop_back() else {
             return Ok(None);
         };
-        let result = match edit.kind {
-            EditKind::Insert => remove(project, edit.clip.id, selection),
-            EditKind::Remove => restore(project, &edit),
-        };
-        match result {
-            Ok(selection) => {
+        match project.revert_change(&edit.change) {
+            Ok(()) => {
                 if *revision == edit.after {
                     *revision = edit.before;
                 } else {
                     bump(next, revision);
                 }
+                let selection = follow(selection, &edit.change, true);
                 self.redo.push(edit);
                 Ok(Some(selection))
             }
@@ -116,17 +108,14 @@ impl History {
         let Some(edit) = self.redo.pop() else {
             return Ok(None);
         };
-        let result = match edit.kind {
-            EditKind::Insert => restore(project, &edit),
-            EditKind::Remove => remove(project, edit.clip.id, selection),
-        };
-        match result {
-            Ok(selection) => {
+        match project.apply_change(&edit.change) {
+            Ok(()) => {
                 if *revision == edit.before {
                     *revision = edit.after;
                 } else {
                     bump(next, revision);
                 }
+                let selection = follow(selection, &edit.change, false);
                 if self.undo.len() == MAX_HISTORY {
                     self.undo.pop_front();
                 }
@@ -141,20 +130,20 @@ impl History {
     }
 }
 
-fn remove(
-    project: &mut Project,
-    id: ClipId,
-    selection: SelectionState,
-) -> Result<SelectionState, ProjectError> {
-    project.remove_clip(id)?;
-    Ok(if selection == SelectionState::Clip(id) {
-        SelectionState::None
+/// Selection after undo (`reverting`) or redo: the first clip that reappears
+/// is selected; otherwise the selection is kept unless it named a clip that
+/// just disappeared.
+fn follow(selection: SelectionState, change: &ClipChange, reverting: bool) -> SelectionState {
+    let (gone, back) = if reverting {
+        (&change.inserted, &change.removed)
     } else {
-        selection
-    })
-}
-
-fn restore(project: &mut Project, edit: &Edit) -> Result<SelectionState, ProjectError> {
-    project.insert_clip_at(edit.index, edit.clip.clone())?;
-    Ok(SelectionState::Clip(edit.clip.id))
+        (&change.removed, &change.inserted)
+    };
+    if let Some((_, clip)) = back.first() {
+        return SelectionState::Clip(clip.id);
+    }
+    match selection {
+        SelectionState::Clip(id) if gone.iter().any(|(_, c)| c.id == id) => SelectionState::None,
+        other => other,
+    }
 }
