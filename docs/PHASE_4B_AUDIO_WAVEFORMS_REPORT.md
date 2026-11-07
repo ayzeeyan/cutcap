@@ -471,11 +471,54 @@ licence has been chosen on the owner's behalf. LICENSE_REVIEW.md is updated.
 
 ## 16. Commits
 
-Recorded after the push (see the PR record commit).
+Branch `claude/phase-4b-audio-waveforms` from `origin/main` `0a2708c`:
+
+| Commit | Subject |
+|---|---|
+| `2d56dae` | feat(audio): add linked audio clips, PCM decoding and audio-master playback |
+| `5f63459` | feat(ui): draw real waveforms and linked audio clips in the timeline |
+| `1ee2737` | test(audio): verify audible output, A/V offset and drift natively |
+| `ba0ec14` | docs: report Phase 4B audio, synchronization and waveforms |
+| (this commit) | docs: record the Phase 4B pull request |
+
+**Clean-worktree checks.** Each of the first three commits was checked out in a
+clean worktree and checked with:
+- clippy `--workspace --all-targets -D warnings`;
+- `cargo test --workspace`;
+- the .NET solution build;
+- `dotnet test`.
+
+Results:
+
+| Commit | Clippy | `cargo test` | .NET build | `dotnet test` |
+|---|---|---|---|---|
+| `2d56dae` | clean | 168 passed | 0 errors | Desktop 54, Interop 52 passed |
+| `5f63459` | clean | 168 passed | 0 errors | Desktop 57, Interop 52 passed |
+| `1ee2737` | clean | 168 passed | 0 errors | Desktop 57, Interop 52 passed |
+
+The engine and interop changes share one commit: the ABI bump and the
+interop tests that pin it must travel together. The loopback tool's `[[bin]]`
+entry moved with the tool into the test commit.
+
+**Excluded from the commits:**
+- generated media, recordings (WAV/JSON) and screenshots (`.artifacts/`,
+  git-ignored);
+- build outputs and the publish folder;
+- caches.
+
+Measurement logs were copied into `docs/measurements` after checking that they
+contain no user paths.
 
 ## 17. Pull request
 
-Recorded after creation (see the PR record commit).
+- **PR:** [#5](https://github.com/ayzeeyan/cutcap/pull/5) "feat: add synchronized
+  audio playback and real timeline waveforms (Phase 4B)": base `main`, head
+  `claude/phase-4b-audio-waveforms`.
+- **State at creation:** open, not a draft, auto-merge off, head `ba0ec14`.
+- **Push:** `git push -u` without force; the remote head was verified equal to
+  the local one, and `origin/main` is an ancestor.
+- **For the owner:** left open for review. Neither `main` nor the feature branch
+  is deleted.
 
 ## 18. Next milestone
 
