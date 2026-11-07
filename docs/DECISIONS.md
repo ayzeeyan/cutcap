@@ -1,5 +1,54 @@
 # Architecture decisions
 
+## ADR 024 — Source-grid filmstrips, batched low-priority thumbnails and ABI 8 (Phase 4A)
+
+Timeline clips show real decoded frames. **Timing stays in Rust:** clip rows
+carry the exact source interval and a `source_key`; Rust maps each requested
+sample (µs) to stream ticks with ceiling rounding and selects the first decoded
+frame whose *actual* PTS is ≥ that tick, so VFR, offset and signed timestamps
+behave like the Phase 3C still preview and nominal FPS is never used. C# only
+lays out cells and draws a decoded image when its actual PTS lies inside the
+clip's `[source_in, source_end)`.
+
+**Fixed source grid.** Cells are placed on multiples of one cell's source
+duration at the current zoom, plus a leading partial cell at the in-point.
+Alternatives rejected: per-clip even spacing (every trim, split or move would
+request all-new samples and nothing would be shared between split parts), and
+per-frame sampling (unbounded work at high zoom). The grid makes scrolling,
+moves and splits cache hits; a zoom change requests a new grid.
+
+**Extraction.** One FFmpeg process per batch of ≤6 samples from one source:
+one keyframe-seeked input per sample (`-noaccurate_seek -ss t−1s`, `-copyts`),
+a `select=gte(pts,T)` branch with a `showinfo` tag for the actual PTS, and
+`trim=end_frame=1`, concatenated into raw RGBA at the thumbnail size. This
+reuses one process launch and decoder setup per batch without a persistent
+decode protocol (ADR 017 keeps free-form showinfo out of *continuous*
+playback; here each branch emits at most one frame and its tag is matched by a
+per-batch nonce, so a forged tag in metadata is ignored). The process runs at
+below-normal priority with one thread inside the existing job-object limits.
+Rejected: one process per thumbnail (launch cost dominates: ~6× the
+processes), a persistent seeking decoder (a protocol change owned by the
+media engine), and embedding FFmpeg libraries (licensing/packaging, ADR 006/008).
+
+**Scheduling and staleness.** One worker thread; demand replaces demand;
+unwanted queued samples are dropped and an in-flight batch nobody wants is
+cancelled (child killed and reaped). Playback throttles thumbnails to batches
+of 2 with 150 ms pauses. Results carry their `source_key`; announcing discards
+any whose key is no longer current, and a project change clears the service.
+Relinking changes the key, so no stale image is ever drawn for another file.
+
+**Cache.** C# keeps an LRU by pixel bytes (48 MiB default,
+`CUTCAP_THUMBNAIL_CACHE_MB` to override), keyed by (source key, sample,
+height); one `WriteableBitmap` per decoded thumbnail, disposed on eviction.
+Negative results are remembered. There is no disk cache in this phase: it
+would add invalidation, privacy (paths) and cleanup policy for a cache that
+rebuilds in seconds from a local file.
+
+**ABI 8** adds `request_thumbnails`, `next_thumbnail` and `copy_thumbnail`
+(pull-based, copy into caller memory, no callbacks) and the clip/view fields
+above. Schema/envelope stay 1: thumbnails are never persisted. Lanes grow from
+50 to 56 DIP so a 43 px strip fits beside the name band.
+
 ## ADR 023 — Exact clip move/trim/split, grouped history and ABI 7 (Phase 3E)
 
 Keep schema/envelope 1: a clip's identity, track, start, duration and integer

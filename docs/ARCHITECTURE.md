@@ -1,6 +1,21 @@
 # CutCap architecture — Avalonia frontend over the Rust engine
 
-Phase 3E current addition: **ABI/contract 7**, exact clip editing. Core
+Phase 4A current addition: **ABI/contract 8**, real video filmstrips. Media
+`thumbnail.rs` extracts a batch of ≤6 samples from one source in one
+below-normal-priority FFmpeg process (keyframe-seeked input per sample,
+`select=gte(pts,T)`, nonce-tagged `showinfo` for the actual PTS, raw RGBA at
+thumbnail size). `ffi/thumbnails.rs` is one bounded worker (demand replacement,
+dedup, cancellation of unwanted in-flight batches, playback throttling,
+≤64+6 completed results); the session maps µs samples to stream ticks (ceil),
+validates `source_key`s, drops stale results and clears on project change.
+Clip rows carry the exact source interval and key. In Avalonia,
+`FilmstripLayout` (pure) lays cells on a fixed source-time grid,
+`TimelineLanes` plans visible-first demand on a debounce and only draws cached
+bitmaps, `ThumbnailCache` is a byte-budgeted LRU (48 MiB default) and
+`EngineHost` copies ≤16 thumbnails per pump into bitmaps. Thumbnails never
+enter the Project, history or saved files.
+
+Phase 3E addition (ABI/contract 7): exact clip editing. Core
 `edit.rs` holds the source-tick grid arithmetic, trim limits, split alignment
 and the atomic `Project::replace_clips` transaction (`ClipChange` with exact
 indices). `ffi/edits.rs` turns PlaceClip/MoveClip/TrimClip/SplitClip into one

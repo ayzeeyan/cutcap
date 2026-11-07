@@ -1,0 +1,28 @@
+08:38:13.957 placed: 263 ms
+08:38:19.950 placed cell k=0 sample=0 s screen=120,134,125 ffmpeg=124,131,122 distance=5.8 match=True
+08:38:20.364 placed cell k=3 sample=11.467 s screen=84,83,95 ffmpeg=84,83,95 distance=0 match=True
+08:38:20.858 placed cell k=6 sample=22.933 s screen=117,141,96 ffmpeg=115,141,93 distance=3.6 match=True
+08:38:21.192 distinct scenes: s1-s2=49.1
+08:38:39.987 scrolled away (expected mismatch) cell k=0 sample=0 s screen=20,21,22 ffmpeg=124,131,122 distance=181.4 match=False
+08:38:42.784 after scroll back cell k=0 sample=0 s screen=120,134,125 ffmpeg=124,131,122 distance=5.8 match=True
+08:38:43.222 after scroll back cell k=3 sample=11.467 s screen=84,83,95 ffmpeg=84,83,95 distance=0 match=True
+08:38:45.758 trimmed: 281 ms
+08:38:49.664 trimmed (first grid cell after 5 s) cell k=2 sample=7.644 s screen=134,118,138 ffmpeg=135,118,139 distance=1.4 match=True
+08:38:53.657 split: 261 ms
+08:38:57.084 split left cell k=2 sample=7.644 s screen=134,118,138 ffmpeg=135,118,139 distance=1.4 match=True
+08:38:57.532 split right cell k=4 sample=15.289 s screen=84,82,95 ffmpeg=84,83,95 distance=1 match=True
+08:39:00.263 moved: 235 ms
+08:39:03.320 moved right part cell k=4 sample=15.289 s screen=84,82,95 ffmpeg=84,83,95 distance=1 match=True
+08:39:04.435 undo move: 231 ms
+08:39:05.080 redo move: 234 ms
+08:39:12.278 timeline playing: Pause timeline,Timeline,Add to timeline
+08:39:21.828 saved title='Untitled project — CutCap'
+08:39:25.511 close after save | exited=True in 670 ms code=0 leftover=0
+08:39:37.561 reopened: 220 ms
+08:39:42.576 reopened title='Untitled project — CutCap' (clean: no '*')
+08:39:43.079 reopened left cell k=2 sample=7.644 s screen=134,118,138 ffmpeg=135,118,139 distance=1.4 match=True
+08:39:44.237 close after reopen | exited=True in 663 ms code=0 leftover=0
+08:39:56.226 reopened with missing source: 200 ms
+08:40:23.920 relinked left cell k=2 sample=7.644 s screen=134,118,138 ffmpeg=135,118,139 distance=1.4 match=True
+08:40:25.838 relink saved title='Untitled project — CutCap'
+08:40:28.416 close during thumbnail decoding | exited=True in 648 ms code=0 leftover=0

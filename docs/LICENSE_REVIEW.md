@@ -1,5 +1,12 @@
 # Licensing and distribution review
 
+Phase 4A update (2026-11-07): filmstrip thumbnails are extracted by the same
+external development FFmpeg 9.0.1 executable (filters `select`, `scale`,
+`showinfo`, `trim`, `concat`, all in that build). No package, crate, DLL, codec
+or font is added; the test projects gained no dependency. Thumbnails exist only
+in memory and are never written to disk. Screenshots use generated test
+sources (testsrc2, SMPTE bars, Mandelbrot), not third-party footage.
+
 Phase 3D update (2026-11-06): continuous timeline playback reuses the same external
 development FFmpeg/FFprobe 9.0.1 executables. It adds two bounded timeline worker
 slots; no executable/DLL, codec, font, new package or license is added, linked,

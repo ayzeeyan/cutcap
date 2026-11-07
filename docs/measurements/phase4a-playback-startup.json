@@ -1,0 +1,96 @@
+{
+  "phase": "4A real video filmstrips",
+  "machine": "Windows 11 Home 10.0.26300, Intel Core Ultra 7 255H (16 cores), integrated Intel graphics, 16 GB RAM",
+  "source": "generated testsrc2 1920x1080 30 fps H.264, GOP 250 (8.33 s), 180 s",
+  "test": "tests/CutCap.Interop.Tests/ThumbnailTests.cs MeasurePlaybackStartupWhileThumbnailsDecode (explicit; real ABI 8 engine, real FFmpeg 9.0.1; Debug engine DLL)",
+  "method": "Timeline Play -> state Playing. (a) Warm session, cold start at each position (a distant seek first); each position measured idle and with a 6-sample thumbnail batch in flight, alternating which runs first. (b) First play of a fresh engine session at 5 s, idle versus busy, alternated. Per-input -threads 1 in effect. Second run of the test (the first run's warm pairs agreed within 230 ms).",
+  "rows": [
+    {
+      "position_ms": 30000,
+      "thumbnails_decoding": false,
+      "play_to_playing_ms": 2334
+    },
+    {
+      "position_ms": 30000,
+      "thumbnails_decoding": true,
+      "play_to_playing_ms": 2330
+    },
+    {
+      "position_ms": 70000,
+      "thumbnails_decoding": true,
+      "play_to_playing_ms": 1548
+    },
+    {
+      "position_ms": 70000,
+      "thumbnails_decoding": false,
+      "play_to_playing_ms": 1647
+    },
+    {
+      "position_ms": 110000,
+      "thumbnails_decoding": false,
+      "play_to_playing_ms": 849
+    },
+    {
+      "position_ms": 110000,
+      "thumbnails_decoding": true,
+      "play_to_playing_ms": 806
+    },
+    {
+      "position_ms": 150000,
+      "thumbnails_decoding": true,
+      "play_to_playing_ms": 3779
+    },
+    {
+      "position_ms": 150000,
+      "thumbnails_decoding": false,
+      "play_to_playing_ms": 3538
+    }
+  ],
+  "difference_ms_busy_minus_idle": [
+    -4,
+    -99,
+    -43,
+    241
+  ],
+  "conclusion": "No measurable start-up penalty from a concurrent thumbnail batch: warm pairs differ by -99..+241 ms with no consistent sign, and first plays of fresh sessions at 5 s take 2.18-2.34 s either way. Start-up is dominated by the decode distance from the previous keyframe (0.8-3.8 s on this GOP-250 source). Steady-state timeline playback while thumbnails decode copied 30.0 fps with 0 dropped frames (native trace).",
+  "batch_cpu_before_and_after_thread_fix": {
+    "command": "6 keyframe-seeked samples, 1080p GOP 250, 114x64 RGBA, three runs each",
+    "global_threads_only": {
+      "wall_ms": [
+        1917,
+        1786,
+        1813
+      ],
+      "cpu_ms": [
+        4969,
+        4422,
+        5375
+      ]
+    },
+    "per_input_threads_1": {
+      "wall_ms": [
+        3702,
+        3738,
+        3410
+      ],
+      "cpu_ms": [
+        4094,
+        4094,
+        3938
+      ]
+    },
+    "note": "-threads is a per-input decoder option; given once it applied to the first input only, so a batch used ~2.7 cores on average. Per input it uses ~1.1 cores (below-normal priority) at the cost of ~2x batch wall time."
+  },
+  "fresh_session_first_play_at_5000_ms": {
+    "idle": [
+      2335,
+      2235,
+      2263
+    ],
+    "thumbnails_decoding": [
+      2253,
+      2176,
+      2207
+    ]
+  }
+}

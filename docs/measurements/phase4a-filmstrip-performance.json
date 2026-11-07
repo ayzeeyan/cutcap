@@ -1,0 +1,401 @@
+{
+  "generated": "2026-11-07T08:56:38",
+  "source": "generated testsrc2 1920x1080 30 fps H.264, GOP 250, 180 s (long 1080p.mp4)",
+  "scale": "scale=1.5 window=1800x1050",
+  "note": "Times are from the scripted input (MARK) to the trace event, so they include UI input latency. draw_us is draw-call recording time on the UI thread, not GPU raster or presentation time.",
+  "phases": {
+    "place": {
+      "demands_sent": 3,
+      "first_demand_ms": 599.0,
+      "first_thumbnail_drawn_ms": 2982.0,
+      "renders_with_placeholders": 3,
+      "max_placeholders_in_one_render": 13.0,
+      "viewport_filled_ms": 8111.0,
+      "thumbnails_copied": 17.0,
+      "copy_us_per_drain": {
+        "n": 3,
+        "avg": 1163.7,
+        "p95": 2889.0,
+        "max": 2889.0
+      },
+      "lanes_render_record_us": {
+        "n": 4,
+        "avg": 1039.8,
+        "p95": 2633.0,
+        "max": 2633.0
+      },
+      "plan_us": {
+        "n": 4,
+        "avg": 1176.2,
+        "p95": 4220.0,
+        "max": 4220.0
+      },
+      "scroll_at_end": 0.0,
+      "zoom_at_end": 100.0,
+      "cache_hits_delta": 18.0,
+      "batches_at_end": 2.0,
+      "cancelled_batches_at_end": 0.0,
+      "last_batch_ms": 2634.0,
+      "resident_kib_at_end": 484.0,
+      "entries_at_end": 17.0,
+      "working_set_mib_max": 333.0
+    },
+    "zoom-in": {
+      "demands_sent": 5,
+      "first_demand_ms": 541.0,
+      "first_thumbnail_drawn_ms": 477.0,
+      "renders_with_placeholders": 4,
+      "max_placeholders_in_one_render": 12.0,
+      "viewport_filled_ms": 6001.0,
+      "thumbnails_copied": 8.0,
+      "copy_us_per_drain": {
+        "n": 2,
+        "avg": 388.5,
+        "p95": 516.0,
+        "max": 516.0
+      },
+      "lanes_render_record_us": {
+        "n": 6,
+        "avg": 320.7,
+        "p95": 582.0,
+        "max": 582.0
+      },
+      "plan_us": {
+        "n": 6,
+        "avg": 506.8,
+        "p95": 2074.0,
+        "max": 2074.0
+      },
+      "scroll_at_end": 0.0,
+      "zoom_at_end": 200.0,
+      "cache_hits_delta": 13.0,
+      "batches_at_end": 7.0,
+      "cancelled_batches_at_end": 3.0,
+      "last_batch_ms": 3009.0,
+      "resident_kib_at_end": 712.0,
+      "entries_at_end": 25.0,
+      "working_set_mib_max": 339.0
+    },
+    "zoom-reset": {
+      "demands_sent": 0,
+      "first_demand_ms": null,
+      "first_thumbnail_drawn_ms": 525.0,
+      "renders_with_placeholders": 0,
+      "max_placeholders_in_one_render": 0,
+      "viewport_filled_ms": 0,
+      "thumbnails_copied": 0.0,
+      "copy_us_per_drain": null,
+      "lanes_render_record_us": {
+        "n": 1,
+        "avg": 445.0,
+        "p95": 445.0,
+        "max": 445.0
+      },
+      "plan_us": {
+        "n": 1,
+        "avg": 118.0,
+        "p95": 118.0,
+        "max": 118.0
+      },
+      "scroll_at_end": 0.0,
+      "zoom_at_end": 100.0
+    },
+    "scroll-away": {
+      "demands_sent": 3,
+      "first_demand_ms": 2734.0,
+      "first_thumbnail_drawn_ms": 379.0,
+      "renders_with_placeholders": 53,
+      "max_placeholders_in_one_render": 15.0,
+      "viewport_filled_ms": 9889.0,
+      "thumbnails_copied": 12.0,
+      "copy_us_per_drain": {
+        "n": 2,
+        "avg": 320.5,
+        "p95": 360.0,
+        "max": 360.0
+      },
+      "lanes_render_record_us": {
+        "n": 60,
+        "avg": 520.0,
+        "p95": 747.0,
+        "max": 843.0
+      },
+      "plan_us": {
+        "n": 3,
+        "avg": 171.0,
+        "p95": 240.0,
+        "max": 240.0
+      },
+      "scroll_at_end": 2855.0,
+      "zoom_at_end": 100.0,
+      "cache_hits_delta": 6.0,
+      "batches_at_end": 9.0,
+      "cancelled_batches_at_end": 3.0,
+      "last_batch_ms": 3810.0,
+      "resident_kib_at_end": 1054.0,
+      "entries_at_end": 37.0,
+      "working_set_mib_max": 342.0
+    },
+    "scroll-back": {
+      "demands_sent": 0,
+      "first_demand_ms": null,
+      "first_thumbnail_drawn_ms": 885.0,
+      "renders_with_placeholders": 0,
+      "max_placeholders_in_one_render": 0,
+      "viewport_filled_ms": 0,
+      "thumbnails_copied": 3.0,
+      "copy_us_per_drain": {
+        "n": 1,
+        "avg": 222.0,
+        "p95": 222.0,
+        "max": 222.0
+      },
+      "lanes_render_record_us": {
+        "n": 1,
+        "avg": 412.0,
+        "p95": 412.0,
+        "max": 412.0
+      },
+      "plan_us": {
+        "n": 1,
+        "avg": 95.0,
+        "p95": 95.0,
+        "max": 95.0
+      },
+      "scroll_at_end": 2855.0,
+      "zoom_at_end": 100.0,
+      "cache_hits_delta": 0.0,
+      "batches_at_end": 10.0,
+      "cancelled_batches_at_end": 3.0,
+      "last_batch_ms": 3326.0,
+      "resident_kib_at_end": 1140.0,
+      "entries_at_end": 40.0,
+      "working_set_mib_max": 343.0
+    },
+    "zoom-out": {
+      "demands_sent": 5,
+      "first_demand_ms": 549.0,
+      "first_thumbnail_drawn_ms": 491.0,
+      "renders_with_placeholders": 4,
+      "max_placeholders_in_one_render": 8.0,
+      "viewport_filled_ms": 11403.0,
+      "thumbnails_copied": 15.0,
+      "copy_us_per_drain": {
+        "n": 4,
+        "avg": 255.2,
+        "p95": 314.0,
+        "max": 314.0
+      },
+      "lanes_render_record_us": {
+        "n": 8,
+        "avg": 326.6,
+        "p95": 550.0,
+        "max": 550.0
+      },
+      "plan_us": {
+        "n": 7,
+        "avg": 169.4,
+        "p95": 226.0,
+        "max": 226.0
+      },
+      "scroll_at_end": 1055.0,
+      "zoom_at_end": 100.0,
+      "cache_hits_delta": 52.0,
+      "batches_at_end": 15.0,
+      "cancelled_batches_at_end": 4.0,
+      "last_batch_ms": 3136.0,
+      "resident_kib_at_end": 1567.0,
+      "entries_at_end": 55.0,
+      "working_set_mib_max": 341.0
+    },
+    "play-decoding": {
+      "demands_sent": 6,
+      "first_demand_ms": 581.0,
+      "first_thumbnail_drawn_ms": 3527.0,
+      "renders_with_placeholders": 200,
+      "max_placeholders_in_one_render": 14.0,
+      "viewport_filled_ms": 8238.0,
+      "thumbnails_copied": 14.0,
+      "copy_us_per_drain": {
+        "n": 5,
+        "avg": 636.4,
+        "p95": 2226.0,
+        "max": 2226.0
+      },
+      "lanes_render_record_us": {
+        "n": 201,
+        "avg": 207.2,
+        "p95": 374.0,
+        "max": 461.0
+      },
+      "plan_us": {
+        "n": 6,
+        "avg": 123.7,
+        "p95": 204.0,
+        "max": 204.0
+      },
+      "scroll_at_end": 1055.0,
+      "zoom_at_end": 125.0,
+      "cache_hits_delta": 1924.0,
+      "batches_at_end": 20.0,
+      "cancelled_batches_at_end": 4.0,
+      "last_batch_ms": 1233.0,
+      "resident_kib_at_end": 1966.0,
+      "entries_at_end": 69.0,
+      "working_set_mib_max": 387.0,
+      "starting_until_playing_ms": 4330.0,
+      "playing_seconds_sampled": 2.0,
+      "playback_copied_fps_while_playing": 30.02,
+      "playback_dropped": 0.0,
+      "playback_stalls": 0.0,
+      "thumbnails_throttled": true
+    },
+    "pause-decoding": {
+      "demands_sent": 2,
+      "first_demand_ms": 1495.0,
+      "first_thumbnail_drawn_ms": 1437.0,
+      "renders_with_placeholders": 0,
+      "max_placeholders_in_one_render": 0,
+      "viewport_filled_ms": 0,
+      "thumbnails_copied": 6.0,
+      "copy_us_per_drain": {
+        "n": 3,
+        "avg": 206.7,
+        "p95": 250.0,
+        "max": 250.0
+      },
+      "lanes_render_record_us": {
+        "n": 4,
+        "avg": 443.2,
+        "p95": 587.0,
+        "max": 587.0
+      },
+      "plan_us": {
+        "n": 3,
+        "avg": 184.3,
+        "p95": 285.0,
+        "max": 285.0
+      },
+      "scroll_at_end": 1055.0,
+      "zoom_at_end": 125.0,
+      "cache_hits_delta": 28.0,
+      "batches_at_end": 23.0,
+      "cancelled_batches_at_end": 4.0,
+      "last_batch_ms": 1433.0,
+      "resident_kib_at_end": 2137.0,
+      "entries_at_end": 75.0,
+      "working_set_mib_max": 388.0,
+      "starting_until_playing_ms": null
+    },
+    "play-cached": {
+      "demands_sent": 0,
+      "first_demand_ms": null,
+      "first_thumbnail_drawn_ms": 928.0,
+      "renders_with_placeholders": 0,
+      "max_placeholders_in_one_render": 0,
+      "viewport_filled_ms": 0,
+      "thumbnails_copied": 0.0,
+      "copy_us_per_drain": null,
+      "lanes_render_record_us": {
+        "n": 391,
+        "avg": 261.2,
+        "p95": 402.0,
+        "max": 613.0
+      },
+      "plan_us": null,
+      "scroll_at_end": 1055.0,
+      "zoom_at_end": 125.0,
+      "starting_until_playing_ms": 998.0,
+      "playing_seconds_sampled": 5.0,
+      "playback_copied_fps_while_playing": 29.99,
+      "playback_dropped": 0.0,
+      "playback_stalls": 0.0,
+      "thumbnails_throttled": true
+    },
+    "pause-cached": {
+      "demands_sent": 0,
+      "first_demand_ms": null,
+      "first_thumbnail_drawn_ms": 1320.0,
+      "renders_with_placeholders": 0,
+      "max_placeholders_in_one_render": 0,
+      "viewport_filled_ms": 0,
+      "thumbnails_copied": 0.0,
+      "copy_us_per_drain": null,
+      "lanes_render_record_us": {
+        "n": 2,
+        "avg": 378.5,
+        "p95": 383.0,
+        "max": 383.0
+      },
+      "plan_us": {
+        "n": 2,
+        "avg": 146.5,
+        "p95": 170.0,
+        "max": 170.0
+      },
+      "scroll_at_end": 1055.0,
+      "zoom_at_end": 100.0
+    },
+    "close-decoding": {
+      "demands_sent": 1,
+      "first_demand_ms": 629.0,
+      "first_thumbnail_drawn_ms": 574.0,
+      "renders_with_placeholders": 1,
+      "max_placeholders_in_one_render": 10.0,
+      "viewport_filled_ms": null,
+      "thumbnails_copied": 0.0,
+      "copy_us_per_drain": null,
+      "lanes_render_record_us": {
+        "n": 1,
+        "avg": 600.0,
+        "p95": 600.0,
+        "max": 600.0
+      },
+      "plan_us": {
+        "n": 1,
+        "avg": 187.0,
+        "p95": 187.0,
+        "max": 187.0
+      },
+      "scroll_at_end": 1055.0,
+      "zoom_at_end": 75.0
+    }
+  },
+  "totals": {
+    "ffmpeg_batches": 23.0,
+    "cancelled_batches": 4.0,
+    "thumbnails_copied": 75.0,
+    "cache_hits": 2375.0,
+    "cache_misses": 1547.0,
+    "evictions": 0.0,
+    "resident_kib": 2137.0,
+    "entries": 75.0,
+    "working_set_mib_max": 388.0,
+    "managed_mib_max": 31.0
+  },
+  "timeline_render_trace": [
+    "timeline-render clips=1 drawn=1 avg_us=1985.0 max_us=8343.4 width_px=3852",
+    "timeline-render clips=1 drawn=1 avg_us=1559.6 max_us=2324.6 width_px=3852",
+    "timeline-render clips=1 drawn=1 avg_us=1349.0 max_us=2765.5 width_px=4752",
+    "timeline-render clips=1 drawn=1 avg_us=691.5 max_us=1051.0 width_px=4752",
+    "timeline-render clips=1 drawn=1 avg_us=703.2 max_us=1170.6 width_px=4752",
+    "timeline-render clips=1 drawn=1 avg_us=755.1 max_us=1054.8 width_px=4752",
+    "timeline-render clips=1 drawn=1 avg_us=730.1 max_us=982.0 width_px=4752",
+    "timeline-render clips=1 drawn=1 avg_us=691.6 max_us=1150.2 width_px=4752",
+    "timeline-render clips=1 drawn=1 avg_us=692.9 max_us=909.0 width_px=4752",
+    "timeline-render clips=1 drawn=1 avg_us=871.5 max_us=2716.0 width_px=4752",
+    "timeline-render clips=1 drawn=1 avg_us=897.8 max_us=1240.7 width_px=4752",
+    "timeline-render clips=1 drawn=1 avg_us=854.0 max_us=1156.0 width_px=4752",
+    "timeline-render clips=1 drawn=1 avg_us=814.7 max_us=1371.6 width_px=4752",
+    "timeline-render clips=1 drawn=1 avg_us=907.1 max_us=1511.4 width_px=4752",
+    "timeline-render clips=1 drawn=1 avg_us=843.5 max_us=1191.8 width_px=4752",
+    "timeline-render clips=1 drawn=1 avg_us=855.1 max_us=1192.2 width_px=4752",
+    "timeline-render clips=1 drawn=1 avg_us=875.8 max_us=1186.9 width_px=4752",
+    "timeline-render clips=1 drawn=1 avg_us=892.7 max_us=1285.1 width_px=4752",
+    "timeline-render clips=1 drawn=1 avg_us=895.5 max_us=1236.0 width_px=4752",
+    "timeline-render clips=1 drawn=1 avg_us=907.9 max_us=1369.2 width_px=4752",
+    "timeline-render clips=1 drawn=1 avg_us=848.9 max_us=1283.2 width_px=4752",
+    "timeline-render clips=1 drawn=1 avg_us=687.8 max_us=987.3 width_px=4752"
+  ],
+  "close": "08:55:53.809 close during thumbnail decoding | exited=True in 717 ms code=0 leftover=0"
+}
