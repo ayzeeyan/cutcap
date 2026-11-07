@@ -1,5 +1,64 @@
 # Architecture decisions
 
+## ADR 025 — Linked audio clips, schema 2, WASAPI audio-master clock, waveforms and ABI 9 (Phase 4B)
+
+**Stream identity and links (schema 2).** A clip names the stream it presents
+(`stream: video | audio{index}`); a placed source with audio becomes a linked
+pair (`link`) of one video and one audio clip with identical media, start,
+duration and `source_in`. Core validates kind and link invariants at the end of
+every `replace_clips` transaction, so no edit can leave half a pair. Rejected:
+an audio offset field per clip (a second time value to keep consistent with
+every trim/split), and implicit "audio follows video" without stored links (old
+files could not say which clips belong together). The audio member shares the
+video member's `source_in`; audio maps it to samples with **one** ceiling
+rounding (`ceil((source_in + audio_start − video_start)·rate)`), so trims and
+splits never accumulate error and the picture and sound of a cut agree on the
+same instant.
+
+**Migration.** Schema 1 → 2 happens in memory on open: every schema-1 clip is a
+video clip. A schema-1 clip on an audio track, or stream/link fields in a
+schema-1 document, are refused (`Migration`), never guessed. Opening never
+writes; a refused file is untouched; saving writes schema 2. The envelope stays
+`format_version` 1 (its shape is unchanged).
+
+**Placement policy.** Placement links the primary audio stream (default
+disposition, else lowest index) on the first audio track free for the whole
+interval, as part of the same undo step; no free track rejects the whole
+placement. Track creation stays outside history, so placement never creates a
+track.
+
+**Decoding.** One FFmpeg process per audio span (`-copyts`, keyframe seek
+0.5 s early, `aresample` to the device rate, float stereo, mux stats giving
+packet PTS = source sample index), bounded queues, cancellation that reaps the
+child. Waveform analysis is a separate native-rate, one-thread, below-normal
+pass (≤4 chunks of 262 144 frames per process, 256-frame min/max buckets).
+Rejected: linking FFmpeg libraries (ADR 006/008), decoding PCM in C#.
+
+**Output and clock.** WASAPI shared, event driven, float stereo at the mix rate
+via `wasapi 0.27.0`; a 400 ms ring with 120 ms prefill. **The audio device is
+the master clock**: the device position (`IAudioClock`, sampled after each
+write, ≤40 ms extrapolation, never past written frames) mapped through segments
+that separate real timeline frames from padding. Starvation stops the clock;
+late video never does; paused state reports the frozen position (a real
+endpoint plays its in-flight period after Stop). No device or
+`CUTCAP_AUDIO=off` → system clock with an explicit note; device failure stops
+playback with an error. Only the first audio track is monitored (no mixer yet).
+Rejected: driving audio from the video timer (would not be audio-master and
+would drift), exclusive mode (blocks other apps, needs format negotiation).
+
+**Unreported output latency.** Measured on the test machine: the endpoint mix
+carries a sample 51–69 ms after the WASAPI position says it plays
+(`GetStreamLatency` = 0). No API reports this processing delay, so it is an
+explicit setting, `CUTCAP_AUDIO_LATENCY_MS` (0–500, default 0), that holds the
+clock back. A per-device calibration UI is future work.
+
+**Waveforms (ABI 9).** A low-priority service mirrors filmstrips: demand
+replaces demand (≤128), consecutive chunks batch, unwanted batches cancel,
+playback throttles to single chunks with 200 ms pauses, results keyed by
+`audio_key` (source identity + stream) drop when stale. C# keeps a 16 MiB LRU of
+(min, max) peaks and plans visible chunks first; Render draws cached peaks only.
+Peaks never enter the Project, history or files.
+
 ## ADR 024 — Source-grid filmstrips, batched low-priority thumbnails and ABI 8 (Phase 4A)
 
 Timeline clips show real decoded frames. **Timing stays in Rust:** clip rows
