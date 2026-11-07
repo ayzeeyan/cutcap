@@ -9,9 +9,17 @@
 //! nearest grid point); the owner reports the adjustment in the snapshot's
 //! `edit_notice` when one was needed. Retained frames keep their exact
 //! mapping; no rounding accumulates across repeated edits.
+//!
+//! Linked audio (Phase 4B): a linked pair shares start, duration and the very
+//! same `source_in` value (in the video stream's clock), so the existing grid
+//! keeps both streams exact: the audio decoder maps that one rational instant
+//! to its own samples with a single rounding, exactly as video maps it to
+//! frames. Every edit of either member builds both new values and commits
+//! them in one transaction; placement adds the source's primary audio stream
+//! to the first free audio track or is rejected as a whole.
 use cutcap_contracts::*;
 use cutcap_core::edit::{check_source_range, shifted_source, source_step};
-use cutcap_core::{Clip, ClipChange, EditError, Project, SourceRange};
+use cutcap_core::{Clip, ClipChange, ClipStream, EditError, Project, SourceRange};
 use std::collections::BTreeMap;
 
 pub struct Outcome {
@@ -42,7 +50,10 @@ fn project_error(error: cutcap_core::ProjectError) -> EngineError {
     use cutcap_core::ProjectError as E;
     invalid(match error {
         E::Overlap => "Clips cannot overlap on the same track.".to_owned(),
-        E::KindMismatch => "Video clips can only be placed on a video track.".to_owned(),
+        E::KindMismatch => {
+            "Video clips go on video tracks and audio clips on audio tracks.".to_owned()
+        }
+        E::InvalidLink => "Linked video and audio must change together.".to_owned(),
         E::NegativeStart => "Clips cannot start before the beginning of the timeline.".to_owned(),
         E::MissingReference => {
             "That clip, track or source is no longer in this project.".to_owned()
@@ -75,16 +86,99 @@ pub fn resolve(project: &Project, position: TimelineSeek) -> Result<TimelineTime
 }
 
 fn video_track(project: &Project, id: TrackId) -> Result<(), EngineError> {
+    track_for(project, id, ClipStream::Video)
+}
+
+/// The track must exist and belong to the clip's stream family.
+fn track_for(project: &Project, id: TrackId, stream: ClipStream) -> Result<(), EngineError> {
     match project.tracks().iter().find(|t| t.id == id) {
         None => Err(EngineError::new(
             ErrorCode::NotFound,
             "That track no longer exists.",
         )),
-        Some(track) if track.kind != TrackKind::Video => {
-            Err(invalid("Video clips can only be placed on a video track."))
-        }
+        Some(track) if track.kind != stream.track_kind() => Err(invalid(match stream {
+            ClipStream::Video => "Video clips can only be placed on a video track.",
+            ClipStream::Audio { .. } => "Audio clips can only be placed on an audio track.",
+        })),
         Some(_) => Ok(()),
     }
+}
+
+/// A new video clip plus, when its source has a decodable audio stream, the
+/// linked audio clip on the first audio track (project order) that is free
+/// for the whole interval. No free audio track rejects the placement: the
+/// video is never added while silently dropping its audio.
+pub fn with_linked_audio(
+    project: &Project,
+    summary: &MediaSummary,
+    mut video: Clip,
+) -> Result<Vec<Clip>, EngineError> {
+    let Some(audio) = summary.metadata.primary_audio() else {
+        return Ok(vec![video]);
+    };
+    let end = video
+        .end()
+        .map_err(|_| invalid("Clip timing overflows the timeline clock."))?;
+    let free = |track: TrackId| {
+        project
+            .clips()
+            .iter()
+            .filter(|c| c.track_id == track)
+            .all(|c| c.end().is_ok_and(|e| e <= video.start) || c.start >= end)
+    };
+    let track = project
+        .tracks()
+        .iter()
+        .find(|t| t.kind == TrackKind::Audio && free(t.id))
+        .ok_or_else(|| {
+            invalid(format!(
+                "No audio track is free at this position for the audio of {}. \
+                 Add an audio track or choose another position.",
+                crate::view::file_name(summary)
+            ))
+        })?;
+    let link = Some(LinkId::new());
+    video.link = link;
+    let audio = Clip {
+        id: ClipId::new(),
+        track_id: track.id,
+        stream: ClipStream::Audio {
+            index: audio.stream_index,
+        },
+        ..video.clone()
+    };
+    Ok(vec![video, audio])
+}
+
+/// The clip and, if linked, its partner, each with its index in clip order.
+fn group(project: &Project, id: ClipId) -> Result<Vec<(usize, Clip)>, EngineError> {
+    let mut members = vec![find(project, id)?];
+    if let Some(partner) = project.linked_partner(id) {
+        members.push(find(project, partner.id)?);
+    }
+    Ok(members)
+}
+
+/// Replaces each listed clip by its new values (zero, one or two clips each)
+/// in one atomic transaction, keeping each replacement at its original place
+/// in clip order. Undo/redo use the recorded change, so the exact order of
+/// insertion only affects presentation, never correctness.
+pub fn replace_group(
+    project: &mut Project,
+    mut replacements: Vec<(usize, ClipId, Vec<Clip>)>,
+) -> Result<ClipChange, EngineError> {
+    replacements.sort_by_key(|(index, _, _)| *index);
+    let remove: Vec<ClipId> = replacements.iter().map(|(_, id, _)| *id).collect();
+    let mut insert = Vec::new();
+    let mut added = 0;
+    for (k, (index, _, clips)) in replacements.into_iter().enumerate() {
+        let base = index - k + added;
+        added += clips.len();
+        insert.extend(clips.into_iter().enumerate().map(|(m, c)| (base + m, c)));
+    }
+    project
+        .replace_clips(&remove, &insert)
+        .map_err(project_error)
 }
 
 fn find(project: &Project, id: ClipId) -> Result<(usize, Clip), EngineError> {
@@ -193,6 +287,8 @@ pub fn apply(
                 .checked_add(length)
                 .map_err(|_| invalid("Clip timing overflows the timeline clock."))?;
             let clip = Clip {
+                stream: cutcap_core::ClipStream::Video,
+                link: None,
                 id: ClipId::new(),
                 media_id,
                 track_id,
@@ -204,12 +300,22 @@ pub fn apply(
                 },
             };
             let id = clip.id;
-            let change = project
-                .replace_clips(&[], &[(project.clips().len(), clip)])
-                .map_err(project_error)?;
+            let clips = with_linked_audio(project, summary, clip)?;
+            let linked = clips.len() == 2;
+            let base = project.clips().len();
+            let insert: Vec<_> = clips
+                .into_iter()
+                .enumerate()
+                .map(|(i, c)| (base + i, c))
+                .collect();
+            let change = project.replace_clips(&[], &insert).map_err(project_error)?;
             Ok(Outcome {
                 change,
-                label: format!("add {}", crate::view::file_name(summary)),
+                label: format!(
+                    "add {}{}",
+                    crate::view::file_name(summary),
+                    if linked { " with audio" } else { "" }
+                ),
                 notice: None,
                 selection: SelectionState::Clip(id),
             })
@@ -220,8 +326,8 @@ pub fn apply(
             position,
             anchor,
         } => {
-            let (index, clip) = find(project, clip_id)?;
-            video_track(project, track_id)?;
+            let (_, clip) = find(project, clip_id)?;
+            track_for(project, track_id, clip.stream)?;
             let at = resolve(project, position)?;
             let length = ticks(clip.duration)?;
             let start =
@@ -239,14 +345,29 @@ pub fn apply(
             start
                 .checked_add(clip.duration)
                 .map_err(|_| invalid("Clip timing overflows the timeline clock."))?;
-            let moved = Clip {
-                start,
-                track_id,
-                ..clip.clone()
-            };
-            let change = project
-                .replace_clips(&[clip_id], &[(index, moved)])
-                .map_err(project_error)?;
+            // The dragged clip may change track (within its family); a linked
+            // partner keeps its own track and moves by the same time.
+            let replacements = group(project, clip_id)?
+                .into_iter()
+                .map(|(i, member)| {
+                    let track_id = if member.id == clip_id {
+                        track_id
+                    } else {
+                        member.track_id
+                    };
+                    let id = member.id;
+                    (
+                        i,
+                        id,
+                        vec![Clip {
+                            start,
+                            track_id,
+                            ..member
+                        }],
+                    )
+                })
+                .collect();
+            let change = replace_group(project, replacements)?;
             Ok(Outcome {
                 change,
                 label: format!("move {}", name(media, &clip)),
@@ -259,7 +380,7 @@ pub fn apply(
             edge,
             position,
         } => {
-            let (index, clip) = find(project, clip_id)?;
+            let (_, clip) = find(project, clip_id)?;
             let requested = resolve(project, position)?;
             let length = ticks(clip.duration)?;
             let (trimmed, applied) = match edge {
@@ -307,9 +428,24 @@ pub fn apply(
                 source_range(media.get(&clip.media_id), &clip, tb),
             )
             .map_err(edit_error)?;
-            let change = project
-                .replace_clips(&[clip_id], &[(index, trimmed)])
-                .map_err(project_error)?;
+            // Linked members share timing and source in-point: same new values.
+            let replacements = group(project, clip_id)?
+                .into_iter()
+                .map(|(i, member)| {
+                    let id = member.id;
+                    (
+                        i,
+                        id,
+                        vec![Clip {
+                            start: trimmed.start,
+                            duration: trimmed.duration,
+                            source_in: trimmed.source_in,
+                            ..member
+                        }],
+                    )
+                })
+                .collect();
+            let change = replace_group(project, replacements)?;
             Ok(Outcome {
                 change,
                 label: format!("trim {}", name(media, &clip)),
@@ -318,26 +454,37 @@ pub fn apply(
             })
         }
         Command::SplitClip { clip_id, position } => {
-            let (index, clip) = find(project, clip_id)?;
+            let (_, clip) = find(project, clip_id)?;
             let requested = resolve(project, position)?;
             let length = ticks(clip.duration)?;
             let offset = cutcap_core::edit::split_offset(&clip, requested, tb)
                 .map_err(|e| invalid(e.to_string()))?;
-            let left = Clip {
-                duration: duration(offset)?,
-                ..clip.clone()
-            };
-            let right = Clip {
-                id: ClipId::new(),
-                start: TimelineTime(clip.start.0 + offset),
-                duration: duration(length - offset)?,
-                source_in: shifted_source(clip.source_in, offset, tb).map_err(edit_error)?,
-                ..clip.clone()
-            };
-            let applied = right.start;
-            let change = project
-                .replace_clips(&[clip_id], &[(index, left), (index + 1, right)])
-                .map_err(project_error)?;
+            let right_start = TimelineTime(clip.start.0 + offset);
+            let right_source = shifted_source(clip.source_in, offset, tb).map_err(edit_error)?;
+            let (left_length, right_length) = (duration(offset)?, duration(length - offset)?);
+            // Both halves of a linked pair split at the same aligned offset; the
+            // right halves form a new pair, the left halves keep the old link.
+            let right_link = clip.link.map(|_| LinkId::new());
+            let replacements = group(project, clip_id)?
+                .into_iter()
+                .map(|(i, member)| {
+                    let left = Clip {
+                        duration: left_length,
+                        ..member.clone()
+                    };
+                    let right = Clip {
+                        id: ClipId::new(),
+                        start: right_start,
+                        duration: right_length,
+                        source_in: right_source,
+                        link: right_link,
+                        ..member.clone()
+                    };
+                    (i, member.id, vec![left, right])
+                })
+                .collect();
+            let applied = right_start;
+            let change = replace_group(project, replacements)?;
             Ok(Outcome {
                 change,
                 label: format!("split {}", name(media, &clip)),

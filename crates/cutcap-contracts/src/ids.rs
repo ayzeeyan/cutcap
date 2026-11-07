@@ -55,6 +55,8 @@ identifier!(ProjectId);
 identifier!(MediaId);
 identifier!(TrackId);
 identifier!(ClipId);
+// Groups the clips of one linked audiovisual placement (Phase 4B, schema 2).
+identifier!(LinkId);
 identifier!(RequestId);
 
 #[cfg(test)]

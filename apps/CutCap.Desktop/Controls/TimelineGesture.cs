@@ -40,9 +40,10 @@ public static class TimelineGestures
 
     private static string Text(double ms) => TimeSpan.FromMilliseconds(Math.Max(0, ms)).ToString(@"mm\:ss\.fff");
 
-    private static (bool Ok, string? TrackId, string Reason) Lane(IReadOnlyList<LaneInfo> lanes, int track) =>
-        track < 0 || track >= lanes.Count ? (false, null, "Drop on a video track")
-        : !lanes[track].IsVideo ? (false, lanes[track].Id, "Video clips go on a video track")
+    private static (bool Ok, string? TrackId, string Reason) Lane(IReadOnlyList<LaneInfo> lanes, int track, bool audio = false) =>
+        track < 0 || track >= lanes.Count ? (false, null, audio ? "Drop on an audio track" : "Drop on a video track")
+        : audio && lanes[track].IsVideo ? (false, lanes[track].Id, "Audio clips go on an audio track")
+        : !audio && !lanes[track].IsVideo ? (false, lanes[track].Id, "Video clips go on a video track")
         : (true, lanes[track].Id, "");
 
     public static GesturePreview Move(
@@ -72,7 +73,7 @@ public static class TimelineGestures
             start = Math.Round(start);
         }
         var end = start + duration;
-        var (ok, trackId, reason) = Lane(lanes, track);
+        var (ok, trackId, reason) = Lane(lanes, track, clip.IsAudio);
         if (ok && geometry.Overlaps(track, start, end, clip.Id))
         {
             (ok, reason) = (false, "Clips cannot overlap");

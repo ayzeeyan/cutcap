@@ -1,5 +1,6 @@
 //! Single-track video transport. No project mutations, I/O, waits or FPS clock.
 use crate::{
+    audio_transport::{AudioTransport, AudioView},
     media::{MediaHost, PresentedFrame},
     timeline_plan::TimelinePlan,
     timeline_preview::TimelinePreviewView,
@@ -42,6 +43,15 @@ pub struct TimelinePlaybackView {
     pub prepared_process_id: Option<u32>,
     pub error: Option<String>,
     pub request_to_ready_us: Option<u64>,
+    /// Phase 4B: "audio" when the output device clocks playback, else "system".
+    pub clock_source: &'static str,
+    /// Times video could not keep up with the audio master (audio kept playing).
+    pub video_late: u64,
+    /// Presented frame position minus the audio clock when the frame was
+    /// copied (negative: the picture trails the sound), and the largest |offset|.
+    pub av_offset_ms: Option<f64>,
+    pub av_offset_max_ms: f64,
+    pub av_samples: u64,
 }
 impl Default for TimelinePlaybackView {
     fn default() -> Self {
@@ -71,6 +81,11 @@ impl Default for TimelinePlaybackView {
             prepared_process_id: None,
             error: None,
             request_to_ready_us: None,
+            clock_source: "system",
+            video_late: 0,
+            av_offset_ms: None,
+            av_offset_max_ms: 0.0,
+            av_samples: 0,
         }
     }
 }
@@ -217,10 +232,31 @@ pub struct TimelinePlayback {
     starting: bool,
     queued: Instant,
     completed_decoded: u64,
+    /// Phase 4B audio master (None: no output device, or tests).
+    audio: Option<AudioTransport>,
+    /// Audio is clocking the current epoch.
+    audio_master: bool,
+    /// Why there is no audio master (no device, failed, disabled).
+    audio_note: Option<String>,
+    video_late_episode: bool,
 }
 impl TimelinePlayback {
+    #[cfg(test)]
     pub fn start(backend: Arc<dyn MediaBackend>) -> Result<Self, std::io::Error> {
+        Self::start_with_audio(backend, None, None)
+    }
+    /// Video transport plus an optional audio master. `note` explains a
+    /// missing master in the view (for example "No audio output device").
+    pub fn start_with_audio(
+        backend: Arc<dyn MediaBackend>,
+        audio: Option<AudioTransport>,
+        note: Option<String>,
+    ) -> Result<Self, std::io::Error> {
         Ok(Self {
+            audio,
+            audio_master: false,
+            audio_note: note,
+            video_late_episode: false,
             workers: [
                 PersistentDecoder::start(backend.clone())?,
                 PersistentDecoder::start(backend)?,
@@ -283,14 +319,75 @@ impl TimelinePlayback {
         };
         self.starting = true;
         self.queued = now;
+        self.video_late_episode = false;
+        // The audio master follows every epoch; a failed device falls back to
+        // the system clock (video only) until a new transport is opened.
+        self.audio_master = false;
+        if let Some(audio) = &mut self.audio {
+            if let Some(error) = audio.failed() {
+                self.audio_note = Some(format!("Audio output unavailable: {error}"));
+            } else {
+                audio.begin(crate::audio_transport::plan_for(&plan), self.position);
+                self.audio_master = true;
+            }
+        }
+        self.view.clock_source = if self.audio_master { "audio" } else { "system" };
         self.plan = Some(plan);
         Ok(())
     }
+
+    /// The audio master's position (frozen at `position` until the device
+    /// reports one, and while paused: a real device still plays the period in
+    /// flight when it is stopped, which must not move a paused playhead);
+    /// `None` when the system clock is in charge.
+    fn audio_position(&self, now: Instant) -> Option<TimelineTime> {
+        self.audio_master.then(|| {
+            if !self.view.desired_playing {
+                return self.position;
+            }
+            self.audio
+                .as_ref()
+                .and_then(|a| a.clock(now))
+                .unwrap_or(self.position)
+        })
+    }
+
+    pub fn audio_view(&self) -> Option<AudioView> {
+        let mut view = self
+            .audio
+            .as_ref()
+            .map(AudioTransport::view)
+            .unwrap_or_else(|| AudioView {
+                state: "unavailable",
+                clock: "system",
+                ..Default::default()
+            });
+        if !self.audio_master {
+            view.clock = "system";
+        }
+        if view.detail.is_none() {
+            view.detail = self.audio_note.clone();
+        }
+        Some(view)
+    }
+
+    fn note_video_late(&mut self) {
+        if !self.video_late_episode {
+            self.video_late_episode = true;
+            self.view.video_late += 1;
+        }
+    }
     pub fn pause(&mut self, now: Instant) -> Result<(), TimeError> {
-        self.position = self
-            .clock
-            .at(now)?
-            .min(self.plan.as_ref().map_or(self.position, |p| p.extent));
+        let at = match self.audio_position(now) {
+            Some(position) => position,
+            None => self.clock.at(now)?,
+        };
+        if self.audio_master
+            && let Some(audio) = &mut self.audio
+        {
+            audio.pause();
+        }
+        self.position = at.min(self.plan.as_ref().map_or(self.position, |p| p.extent));
         // A control between pumps cannot authorize an image past an unprocessed cut.
         if let Some(slot) = &self.active {
             let end = slot.clip.end()?;
@@ -312,6 +409,15 @@ impl TimelinePlayback {
         if self.starting {
             self.view.state = "starting";
         }
+        if !self.starting && self.view.state == "paused" && self.audio_master {
+            // The audio master resumes the device; late video catches up.
+            if let Some(audio) = &mut self.audio {
+                audio.play();
+            }
+            self.clock.resume(now);
+            self.view.state = "playing";
+            return;
+        }
         if !self.starting && self.view.state == "paused" {
             if self
                 .active
@@ -330,6 +436,10 @@ impl TimelinePlayback {
         for worker in &self.workers {
             worker.cancel()?;
         }
+        if let Some(audio) = &mut self.audio {
+            audio.cancel();
+        }
+        self.audio_master = false;
         self.plan = None;
         self.active = None;
         self.prepared = None;
@@ -446,6 +556,10 @@ impl TimelinePlayback {
         self.view.offered_pts = None;
     }
     fn fail(&mut self, message: String) {
+        if let Some(audio) = &mut self.audio {
+            audio.cancel();
+        }
+        self.audio_master = false;
         self.clock.freeze(self.position);
         self.view.state = "failed";
         self.view.desired_playing = false;
@@ -504,7 +618,19 @@ impl TimelinePlayback {
                 slot.error = Some(e.to_string());
             }
         }
-        let sampled = self.clock.at(now).map_err(time_error)?.min(plan.extent);
+        if self.audio_master
+            && let Some(error) = self.audio.as_ref().and_then(AudioTransport::failed)
+        {
+            self.audio_note = Some(format!("Audio output unavailable: {error}"));
+            return Err(MediaError::Invalid(format!(
+                "Audio output stopped ({error}). Play again to continue without sound."
+            )));
+        }
+        let sampled = match self.audio_position(now) {
+            Some(position) => position,
+            None => self.clock.at(now).map_err(time_error)?,
+        }
+        .min(plan.extent);
         // Inspect every boundary even when a delayed pump would jump over a clip.
         let boundary = if let Some(slot) = &self.active {
             Some(slot.clip.end().map_err(time_error)?)
@@ -525,6 +651,10 @@ impl TimelinePlayback {
             for worker in &self.workers {
                 worker.cancel()?;
             }
+            if let Some(audio) = &mut self.audio {
+                audio.cancel();
+            }
+            self.audio_master = false;
             return Ok(());
         }
         let clip = plan
@@ -552,9 +682,12 @@ impl TimelinePlayback {
             if let Some(error) = &slot.error {
                 return Err(MediaError::Invalid(error.clone()));
             }
-            if (!slot.ready() && (self.starting || self.frame.is_none()))
-                || (self.view.state == "buffering" && slot.pending.is_empty() && !slot.eof)
-            {
+            let blocked = (!slot.ready() && (self.starting || self.frame.is_none()))
+                || (self.view.state == "buffering" && slot.pending.is_empty() && !slot.eof);
+            if blocked && self.audio_master && !self.starting {
+                // Audio is the master: it keeps playing; the picture catches up.
+                self.note_video_late();
+            } else if blocked {
                 self.clock.freeze(target);
                 if !self.starting && self.view.desired_playing && self.view.state != "buffering" {
                     self.view.buffer_stalls += 1;
@@ -564,8 +697,21 @@ impl TimelinePlayback {
                 return Ok(());
             }
         }
+        if self.starting && self.audio_master && self.view.desired_playing {
+            // Both must be ready: the first picture and enough queued audio.
+            if !self.audio.as_ref().is_some_and(AudioTransport::ready) {
+                self.prepare_next()?;
+                return Ok(());
+            }
+        }
         if self.starting || self.view.state == "buffering" {
             self.starting = false;
+            if self.audio_master
+                && self.view.desired_playing
+                && let Some(audio) = &mut self.audio
+            {
+                audio.play();
+            }
             self.view.request_to_ready_us.get_or_insert(
                 now.saturating_duration_since(self.queued)
                     .as_micros()
@@ -600,6 +746,7 @@ impl TimelinePlayback {
                 return Err(MediaError::Invalid(error.clone()));
             }
             if let Some(timed) = chosen {
+                self.video_late_episode = false;
                 self.view.offered_ticks = Some(timed.position.0);
                 self.view.offered_pts = Some(timed.frame.actual);
                 self.view.offered += 1;
@@ -611,7 +758,13 @@ impl TimelinePlayback {
                     actual: timed.frame.actual,
                 });
             }
-            if slot.pending.is_empty() && !slot.eof && self.view.desired_playing {
+            if slot.pending.is_empty()
+                && !slot.eof
+                && self.view.desired_playing
+                && self.audio_master
+            {
+                self.note_video_late();
+            } else if slot.pending.is_empty() && !slot.eof && self.view.desired_playing {
                 self.clock.freeze(target);
                 if self.view.state != "buffering" {
                     self.view.buffer_stalls += 1;
@@ -672,11 +825,13 @@ impl TimelinePlayback {
             state: self.view.state,
             busy: matches!(self.view.state, "starting" | "seeking" | "buffering"),
             has_frame: self.frame.is_some(),
-            detail: self
-                .view
-                .error
-                .clone()
-                .unwrap_or_else(|| "Video only · one monitored track".into()),
+            detail: self.view.error.clone().unwrap_or_else(|| {
+                if self.audio_master {
+                    "Video and audio · audio clock".into()
+                } else {
+                    "Video only · one monitored track".into()
+                }
+            }),
             actual: self.frame.as_ref().map(|f| f.actual),
             process_id: self.view.process_id,
             request_to_ready_us: self.view.request_to_ready_us,
@@ -711,7 +866,13 @@ impl TimelinePlayback {
                     .get(&slot.clip.media_id)
                     .map_or_else(String::new, view::file_name);
                 if self.view.error.is_none() {
-                    v.detail = format!("{} · video only · one monitored track", v.source_name);
+                    v.detail = if self.audio_master {
+                        format!("{} · video and audio · audio clock", v.source_name)
+                    } else if let Some(note) = &self.audio_note {
+                        format!("{} · video only · {note}", v.source_name)
+                    } else {
+                        format!("{} · video only · one monitored track", v.source_name)
+                    };
                 }
             } else if self.view.state == "playing" {
                 v.state = "blank";
@@ -744,12 +905,28 @@ impl TimelinePlayback {
             self.view.copied_ticks = self.view.offered_ticks;
             self.view.copied_pts = self.view.offered_pts;
             self.view.copied_clip_id = self.frame_clip.map(|id| id.to_string());
+            // A/V offset at presentation: picture position minus audio clock.
+            if self.audio_master
+                && self.view.state == "playing"
+                && let (Some(frame_ticks), Some(audio)) =
+                    (self.view.copied_ticks, self.audio_position(Instant::now()))
+            {
+                let ticks = frame_ticks - audio.0;
+                let ms = ticks as f64 * 1000.0 * f64::from(self.clock.timebase.numerator())
+                    / f64::from(self.clock.timebase.denominator());
+                self.view.av_offset_ms = Some(ms);
+                self.view.av_offset_max_ms = self.view.av_offset_max_ms.max(ms.abs());
+                self.view.av_samples += 1;
+            }
         }
     }
     pub fn shutdown(&mut self) -> Result<(), MediaError> {
         self.cancel()?;
         for worker in &mut self.workers {
             worker.shutdown()?;
+        }
+        if let Some(mut audio) = self.audio.take() {
+            audio.shutdown();
         }
         Ok(())
     }

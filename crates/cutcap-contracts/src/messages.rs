@@ -3,12 +3,12 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    ClipId, DocumentStatus, MediaAvailability, MediaId, MediaSummary, ProjectId, RequestId,
-    SourceFingerprint, SourceTime, Timebase, TimelineDuration, TimelineTime, TrackId,
-    VerifiedMedia,
+    ClipId, ClipStream, DocumentStatus, LinkId, MediaAvailability, MediaId, MediaSummary,
+    ProjectId, RequestId, SourceFingerprint, SourceTime, Timebase, TimelineDuration, TimelineTime,
+    TrackId, VerifiedMedia,
 };
 
-pub const CONTRACT_VERSION: u32 = 8;
+pub const CONTRACT_VERSION: u32 = 9;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TrackKind {
@@ -156,6 +156,8 @@ pub struct ClipSummary {
     pub start: TimelineTime,
     pub duration: TimelineDuration,
     pub source_in: SourceTime,
+    pub stream: ClipStream,
+    pub link: Option<LinkId>,
 }
 
 /// Which boundary of a clip a move anchor or trim refers to.

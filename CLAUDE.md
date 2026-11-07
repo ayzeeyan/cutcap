@@ -1,5 +1,13 @@
 # Claude onboarding
 
+Phase 4B current handoff: ABI/contract 9, core schema 2 add real audio
+(docs/PHASE_4B_AUDIO_WAVEFORMS_REPORT.md, ADR 025). Placed sources with audio
+become linked video/audio pairs edited as one transaction; schema 1 migrates in
+memory (refusals leave files untouched). Rust decodes exact-PTS PCM, plays it
+through WASAPI and uses the device position as the timeline clock; waveforms are
+low-priority min/max peaks cached in C# and never stored. Native checks use
+scripts/native-ui/av-ui.ps1 and av-bench-ui.ps1 with the loopback recorder.
+
 Phase 4A current handoff: ABI/contract 8 add real video filmstrips
 (docs/PHASE_4A_TIMELINE_FILMSTRIPS_REPORT.md, ADR 024). Rust selects each
 thumbnail frame (first actual PTS ≥ the sample, ceiling µs→ticks) in bounded,

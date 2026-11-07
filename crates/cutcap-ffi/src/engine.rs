@@ -317,12 +317,21 @@ impl Engine {
                             )
                         })?;
                     let clip = append_clip(project, summary, track_id)?;
-                    let index = project.clips().len();
-                    let label = format!("add {}", crate::view::file_name(summary));
                     let id = clip.id;
-                    let change = project
-                        .replace_clips(&[], &[(index, clip)])
-                        .map_err(domain_error)?;
+                    // Phase 4B: the source's primary audio joins as a linked clip.
+                    let clips = crate::edits::with_linked_audio(project, summary, clip)?;
+                    let label = format!(
+                        "add {}{}",
+                        crate::view::file_name(summary),
+                        if clips.len() == 2 { " with audio" } else { "" }
+                    );
+                    let base = project.clips().len();
+                    let insert: Vec<_> = clips
+                        .into_iter()
+                        .enumerate()
+                        .map(|(i, c)| (base + i, c))
+                        .collect();
+                    let change = project.replace_clips(&[], &insert).map_err(domain_error)?;
                     let before = self.document.revision;
                     let after = bump(&mut self.next_revision, &mut self.document.revision);
                     self.selection = SelectionState::Clip(id);
@@ -334,9 +343,10 @@ impl Engine {
                     });
                 }
                 Command::RemoveClip { clip_id } => {
-                    let change = project
-                        .replace_clips(&[clip_id], &[])
-                        .map_err(domain_error)?;
+                    // A linked pair is removed as one undoable transaction.
+                    let mut members = vec![clip_id];
+                    members.extend(project.linked_partner(clip_id).map(|c| c.id));
+                    let change = project.replace_clips(&members, &[]).map_err(domain_error)?;
                     let label = change
                         .removed
                         .first()
@@ -347,7 +357,7 @@ impl Engine {
                         );
                     let before = self.document.revision;
                     let after = bump(&mut self.next_revision, &mut self.document.revision);
-                    if self.selection == SelectionState::Clip(clip_id) {
+                    if matches!(self.selection, SelectionState::Clip(id) if members.contains(&id)) {
                         self.selection = SelectionState::None;
                     }
                     self.history.record(Edit {
@@ -445,12 +455,20 @@ impl Engine {
         let index = self.evaluation_index.as_ref().ok_or_else(|| {
             EngineError::new(ErrorCode::Internal, "Timeline index is unavailable.")
         })?;
+        // Phase 4B: the transport also plays the monitored audio track, which
+        // may extend past the monitored video track.
+        let audio_end = index
+            .monitored_audio()
+            .map(|t| index.end(t.id))
+            .transpose()
+            .map_err(|e| EngineError::new(ErrorCode::InvalidInput, e.to_string()))?
+            .unwrap_or(TimelineTime::ZERO);
         Ok(crate::timeline_plan::TimelinePlan {
             project: evaluation.project_id,
             generation: evaluation.generation,
             timebase: evaluation.timebase,
             track: evaluation.track,
-            extent: evaluation.extent,
+            extent: evaluation.extent.max(audio_end),
             position: evaluation.position,
             index: index.clone(),
             media: self.media_details.clone(),
@@ -510,9 +528,11 @@ impl Engine {
             .evaluation_index
             .get_or_insert_with(|| Arc::new(TimelineIndex::new(project)));
         let track = match explicit_track {
+            // The index now holds audio tracks too; video evaluation stays video-only.
             Some(id) => Some(
                 index
                     .track(id)
+                    .filter(|t| t.kind == TrackKind::Video)
                     .ok_or_else(|| invalid("Monitor a video track.".into()))?,
             ),
             None => index.monitor(self.selection),
@@ -525,6 +545,8 @@ impl Engine {
             .map_err(|e| invalid(e.to_string()))?;
         let target = if let Some(clip) = clip {
             let summary = ClipSummary {
+                stream: clip.stream,
+                link: clip.link,
                 id: clip.id,
                 media_id: clip.media_id,
                 track_id: clip.track_id,
@@ -624,6 +646,8 @@ impl Engine {
                 .clips()
                 .iter()
                 .map(|clip| ClipSummary {
+                    stream: clip.stream,
+                    link: clip.link,
                     id: clip.id,
                     media_id: clip.media_id,
                     track_id: clip.track_id,
@@ -849,6 +873,8 @@ fn append_clip(
     let start = project.track_end(track_id).map_err(domain_error)?;
     start.checked_add(duration).map_err(|_| overflow())?;
     Ok(Clip {
+        stream: cutcap_core::ClipStream::Video,
+        link: None,
         id: ClipId::new(),
         media_id: source.id,
         track_id,
@@ -1122,3 +1148,7 @@ mod evaluation_measurements;
 #[cfg(test)]
 #[path = "clip_edit_tests.rs"]
 mod clip_edit_tests;
+
+#[cfg(test)]
+#[path = "linked_edit_tests.rs"]
+mod linked_edit_tests;

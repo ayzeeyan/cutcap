@@ -20,6 +20,8 @@ fn fixture() -> (Project, Clip) {
         })
         .unwrap();
     let clip = Clip {
+        stream: cutcap_core::ClipStream::Video,
+        link: None,
         id: ClipId::new(),
         media_id,
         track_id,
@@ -89,7 +91,7 @@ fn malformed_graphs_and_future_schemas_are_rejected_on_load() {
     let (mut project, clip) = fixture();
     project.insert_clip(clip).unwrap();
     let value = serde_json::to_value(&project).unwrap();
-    for replacement in [0, 2, 999] {
+    for replacement in [0, 3, 999] {
         let mut bad = value.clone();
         bad["schema_version"] = replacement.into();
         assert!(serde_json::from_value::<Project>(bad).is_err());
@@ -107,6 +109,186 @@ fn malformed_graphs_and_future_schemas_are_rejected_on_load() {
     let duplicate = bad["clips"][0].clone();
     bad["clips"].as_array_mut().unwrap().push(duplicate);
     assert!(serde_json::from_value::<Project>(bad).is_err());
+}
+
+/// A schema 1 document as earlier builds wrote it: no `stream`/`link` fields.
+fn schema_one(project: &Project) -> serde_json::Value {
+    let mut value = serde_json::to_value(project).unwrap();
+    value["schema_version"] = 1.into();
+    for clip in value["clips"].as_array_mut().unwrap() {
+        let clip = clip.as_object_mut().unwrap();
+        clip.remove("stream");
+        clip.remove("link");
+    }
+    value
+}
+
+#[test]
+fn schema_one_migrates_to_explicit_video_streams_with_exact_timing() {
+    let (mut project, clip) = fixture();
+    project.insert_clip(clip.clone()).unwrap();
+    assert_eq!(
+        serde_json::to_value(&project).unwrap()["schema_version"],
+        PROJECT_SCHEMA_VERSION
+    );
+    let old = schema_one(&project);
+    assert!(old["clips"][0].get("stream").is_none());
+    let migrated: Project = serde_json::from_value(old.clone()).unwrap();
+    assert_eq!(migrated.id(), project.id());
+    let loaded = &migrated.clips()[0];
+    assert_eq!(
+        loaded, &clip,
+        "identity, timing and source in-point are exact"
+    );
+    assert_eq!(loaded.stream, ClipStream::Video);
+    assert_eq!(loaded.link, None);
+    // Saving writes schema 2 with an explicit stream.
+    let saved = serde_json::to_value(&migrated).unwrap();
+    assert_eq!(saved["schema_version"], 2);
+    assert_eq!(saved["clips"][0]["stream"]["kind"], "video");
+    assert!(saved["clips"][0].get("link").is_none());
+
+    // Schema 1 cannot express stream fields or audio clips: refuse, never guess.
+    let mut forged = old.clone();
+    forged["clips"][0]["stream"] = serde_json::json!({"kind": "audio", "index": 1});
+    assert!(matches!(
+        serde_json::from_value::<Project>(forged).map(|_| ()),
+        Err(e) if e.to_string().contains("cannot be migrated")
+    ));
+    let mut audio = old;
+    let audio_track = TrackId::new();
+    audio["tracks"]
+        .as_array_mut()
+        .unwrap()
+        .push(serde_json::json!({"id": audio_track, "name": "Audio 1", "kind": "Audio"}));
+    audio["clips"][0]["track_id"] = serde_json::json!(audio_track);
+    assert!(matches!(
+        serde_json::from_value::<Project>(audio).map(|_| ()),
+        Err(e) if e.to_string().contains("stream identity")
+    ));
+}
+
+/// Video track 0, audio track 1, one audiovisual source; a linked pair at 0.
+fn linked() -> (Project, Clip, Clip) {
+    let (mut project, video) = fixture();
+    let audio_track = TrackId::new();
+    project
+        .add_track(Track {
+            id: audio_track,
+            name: "Audio 1".into(),
+            kind: TrackKind::Audio,
+        })
+        .unwrap();
+    let link = Some(LinkId::new());
+    let video = Clip { link, ..video };
+    let audio = Clip {
+        id: ClipId::new(),
+        track_id: audio_track,
+        stream: ClipStream::Audio { index: 1 },
+        ..video.clone()
+    };
+    (project, video, audio)
+}
+
+#[test]
+fn linked_pairs_are_inserted_edited_and_removed_only_as_whole_groups() {
+    let (mut project, video, audio) = linked();
+    let change = project
+        .replace_clips(&[], &[(0, video.clone()), (1, audio.clone())])
+        .unwrap();
+    project.validate().unwrap();
+    assert_eq!(project.linked_partner(video.id).unwrap().id, audio.id);
+    assert_eq!(project.linked_partner(audio.id).unwrap().id, video.id);
+
+    // Removing one member alone would orphan the other: rejected, nothing changes.
+    let before = project.clips().to_vec();
+    assert_eq!(
+        project.replace_clips(&[audio.id], &[]),
+        Err(ProjectError::InvalidLink)
+    );
+    assert_eq!(project.clips(), before.as_slice());
+    // Moving one member alone breaks the shared timing: rejected exactly.
+    let moved = Clip {
+        start: TimelineTime(1000),
+        ..video.clone()
+    };
+    assert_eq!(
+        project.replace_clips(&[video.id], &[(0, moved.clone())]),
+        Err(ProjectError::InvalidLink)
+    );
+    assert_eq!(project.clips(), before.as_slice());
+    // Moving both together is one valid transaction, exactly reversible.
+    let moved_audio = Clip {
+        start: TimelineTime(1000),
+        ..audio.clone()
+    };
+    let shift = project
+        .replace_clips(&[video.id, audio.id], &[(0, moved), (1, moved_audio)])
+        .unwrap();
+    project.revert_change(&shift).unwrap();
+    assert_eq!(project.clips(), before.as_slice());
+    project.apply_change(&shift).unwrap();
+    assert_eq!(project.clips()[0].start, TimelineTime(1000));
+    project.revert_change(&shift).unwrap();
+    // Removing the whole pair works and undoes exactly.
+    let removal = project.replace_clips(&[video.id, audio.id], &[]).unwrap();
+    assert!(project.clips().is_empty());
+    project.revert_change(&removal).unwrap();
+    assert_eq!(project.clips(), before.as_slice());
+    project.revert_change(&change).unwrap();
+    assert!(project.clips().is_empty());
+}
+
+#[test]
+fn streams_must_match_their_track_and_links_their_partner() {
+    let (mut project, video, audio) = linked();
+    // An audio stream on a video track, or video on an audio track.
+    let wrong = Clip {
+        track_id: video.track_id,
+        start: TimelineTime(5_000_000),
+        link: None,
+        ..audio.clone()
+    };
+    assert_eq!(project.insert_clip(wrong), Err(ProjectError::KindMismatch));
+    let wrong = Clip {
+        track_id: audio.track_id,
+        link: None,
+        ..video.clone()
+    };
+    assert_eq!(project.insert_clip(wrong), Err(ProjectError::KindMismatch));
+    // A lone linked clip, two video members, or a different source in-point.
+    assert_eq!(
+        project.replace_clips(&[], &[(0, video.clone())]),
+        Err(ProjectError::InvalidLink)
+    );
+    let second_video = Clip {
+        id: ClipId::new(),
+        start: TimelineTime(5_000_000),
+        ..video.clone()
+    };
+    assert_eq!(
+        project.replace_clips(&[], &[(0, video.clone()), (1, second_video)]),
+        Err(ProjectError::InvalidLink)
+    );
+    let shifted = Clip {
+        source_in: SourceTime {
+            ticks: video.source_in.ticks + 1,
+            ..video.source_in
+        },
+        ..audio.clone()
+    };
+    assert_eq!(
+        project.replace_clips(&[], &[(0, video.clone()), (1, shifted)]),
+        Err(ProjectError::InvalidLink)
+    );
+    assert!(project.clips().is_empty());
+    // A loaded document with a broken pair is rejected as a whole.
+    project
+        .replace_clips(&[], &[(0, video.clone()), (1, audio.clone())])
+        .unwrap();
+    let mut value = serde_json::to_value(&project).unwrap();
+    value["clips"][1]["start"] = 7.into();
+    assert!(serde_json::from_value::<Project>(value).is_err());
 }
 
 #[test]

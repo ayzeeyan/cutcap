@@ -4,12 +4,17 @@ use std::{
 };
 
 use cutcap_contracts::{
-    ClipId, MediaId, ProjectId, SelectionState, SourceTime, TimeError, Timebase, TimelineDuration,
-    TimelineTime, TrackId, TrackKind,
+    ClipId, LinkId, MediaId, ProjectId, SelectionState, SourceTime, TimeError, Timebase,
+    TimelineDuration, TimelineTime, TrackId, TrackKind,
 };
 use serde::{Deserialize, Serialize};
 
-pub const PROJECT_SCHEMA_VERSION: u32 = 1;
+/// Schema 2 (Phase 4B) adds an explicit stream per clip and linked
+/// audio/video pairs. Schema 1 documents are migrated on load (every schema 1
+/// clip is a video clip); nothing is written back unless the user saves.
+pub const PROJECT_SCHEMA_VERSION: u32 = 2;
+/// The oldest schema this build migrates.
+pub const OLDEST_SCHEMA_VERSION: u32 = 1;
 pub const MAX_TRACKS: usize = 128;
 pub const MAX_MEDIA: usize = 10_000;
 pub const MAX_CLIPS: usize = 100_000;
@@ -32,6 +37,8 @@ pub struct MediaAsset {
     pub kind: TrackKind,
 }
 
+pub use cutcap_contracts::ClipStream;
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Clip {
@@ -40,7 +47,16 @@ pub struct Clip {
     pub track_id: TrackId,
     pub start: TimelineTime,
     pub duration: TimelineDuration,
+    /// The source instant at `start`, in its own clock. Linked clips share the
+    /// same value, so both streams map a timeline position with one rounding.
     pub source_in: SourceTime,
+    /// Schema 1 documents have no field: every schema 1 clip is video.
+    #[serde(default)]
+    pub stream: ClipStream,
+    /// Linked audio/video pair identity: both members share start, duration,
+    /// media and `source_in`, and every edit changes them together.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub link: Option<LinkId>,
 }
 
 impl Clip {
@@ -77,8 +93,37 @@ struct ProjectData {
 impl TryFrom<ProjectData> for Project {
     type Error = ProjectError;
     fn try_from(value: ProjectData) -> Result<Self, Self::Error> {
+        let schema_version = match value.schema_version {
+            PROJECT_SCHEMA_VERSION => PROJECT_SCHEMA_VERSION,
+            1 => {
+                // Schema 1 has no stream identity: its clips are video clips on
+                // video tracks. Anything else cannot be migrated faithfully.
+                let audio: HashSet<TrackId> = value
+                    .tracks
+                    .iter()
+                    .filter(|t| t.kind == TrackKind::Audio)
+                    .map(|t| t.id)
+                    .collect();
+                if value.clips.iter().any(|c| audio.contains(&c.track_id)) {
+                    return Err(ProjectError::Migration(
+                        "a schema 1 clip on an audio track has no stream identity",
+                    ));
+                }
+                if value
+                    .clips
+                    .iter()
+                    .any(|c| c.stream != ClipStream::Video || c.link.is_some())
+                {
+                    return Err(ProjectError::Migration(
+                        "schema 1 documents cannot contain stream or link fields",
+                    ));
+                }
+                PROJECT_SCHEMA_VERSION
+            }
+            other => return Err(ProjectError::Schema(other)),
+        };
         let project = Self {
-            schema_version: value.schema_version,
+            schema_version,
             id: value.id,
             name: value.name,
             timebase: value.timebase,
@@ -197,6 +242,49 @@ impl Project {
         self.clips.iter().find(|clip| clip.id == id)
     }
 
+    /// The other member of a linked pair, if `id` is linked.
+    pub fn linked_partner(&self, id: ClipId) -> Option<&Clip> {
+        let link = self.clip(id)?.link?;
+        self.clips
+            .iter()
+            .find(|c| c.link == Some(link) && c.id != id)
+    }
+
+    /// Checks the named link groups: each has exactly one video and one audio
+    /// clip with the same media, start, duration and source in-point.
+    pub fn validate_links(
+        &self,
+        links: impl IntoIterator<Item = LinkId>,
+    ) -> Result<(), ProjectError> {
+        let wanted: HashSet<LinkId> = links.into_iter().collect();
+        if wanted.is_empty() {
+            return Ok(());
+        }
+        let mut groups: HashMap<LinkId, Vec<&Clip>> = HashMap::with_capacity(wanted.len());
+        for clip in &self.clips {
+            if let Some(link) = clip.link.filter(|l| wanted.contains(l)) {
+                groups.entry(link).or_default().push(clip);
+            }
+        }
+        for link in &wanted {
+            let Some([a, b]) = groups.get(link).map(Vec::as_slice) else {
+                return Err(ProjectError::InvalidLink);
+            };
+            let kinds = (a.stream.track_kind(), b.stream.track_kind());
+            if !matches!(
+                kinds,
+                (TrackKind::Video, TrackKind::Audio) | (TrackKind::Audio, TrackKind::Video)
+            ) || a.media_id != b.media_id
+                || a.start != b.start
+                || a.duration != b.duration
+                || a.source_in != b.source_in
+            {
+                return Err(ProjectError::InvalidLink);
+            }
+        }
+        Ok(())
+    }
+
     /// Timeline position just after the last clip on a track (zero when empty):
     /// the append-to-end insertion point.
     pub fn track_end(&self, track: TrackId) -> Result<TimelineTime, ProjectError> {
@@ -258,11 +346,13 @@ impl Project {
             }
         }
         let mut clips = HashSet::new();
+        let mut links = HashSet::new();
         let mut intervals = Vec::with_capacity(self.clips.len());
         for clip in &self.clips {
             if !clips.insert(clip.id) {
                 return Err(ProjectError::DuplicateId);
             }
+            links.extend(clip.link);
             validate_clip_values(
                 clip,
                 *tracks
@@ -280,7 +370,7 @@ impl Project {
                 return Err(ProjectError::Overlap);
             }
         }
-        Ok(())
+        self.validate_links(links)
     }
 
     fn validate_clip(&self, clip: &Clip) -> Result<(), ProjectError> {
@@ -307,7 +397,17 @@ fn validate_clip_values(
         return Err(ProjectError::NegativeStart);
     }
     clip.end()?;
-    if track_kind != media_kind {
+    // A clip's stream decides its track family. Video clips need a video
+    // source; audio clips come from an audiovisual (or audio) source.
+    if clip.stream.track_kind() != track_kind {
+        return Err(ProjectError::KindMismatch);
+    }
+    if clip.stream == ClipStream::Video && media_kind != TrackKind::Video {
+        return Err(ProjectError::KindMismatch);
+    }
+    if let ClipStream::Audio { index } = clip.stream
+        && index >= 64
+    {
         return Err(ProjectError::KindMismatch);
     }
     Ok(())
@@ -343,14 +443,20 @@ pub enum ProjectError {
     DuplicateId,
     #[error("referenced track, media or clip does not exist")]
     MissingReference,
-    #[error("clip start cannot be negative in schema 1")]
+    #[error("clip start cannot be negative")]
     NegativeStart,
-    #[error("track and media kinds differ")]
+    #[error("the clip's stream does not match its track or media kind")]
     KindMismatch,
-    #[error("clips cannot overlap on the same track in schema 1")]
+    #[error("clips cannot overlap on the same track")]
     Overlap,
     #[error("project limit reached for {0}")]
     Limit(&'static str),
+    #[error(
+        "a linked group must be one video and one audio clip with the same media, timing and source in-point"
+    )]
+    InvalidLink,
+    #[error("the schema 1 document cannot be migrated: {0}")]
+    Migration(&'static str),
     #[error(transparent)]
     Time(#[from] TimeError),
 }

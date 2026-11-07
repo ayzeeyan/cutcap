@@ -16,9 +16,16 @@ name = "cutcap-gpu-info"
 path = "src/bin/gpu_info.rs"
 required-features = ["gpu-diagnostics"]
 
+# Phase 4B native verification: records the default output by loopback.
+[[bin]]
+name = "cutcap-audio-loopback"
+path = "src/bin/audio_loopback.rs"
+required-features = ["audio-diagnostics"]
+
 [features]
 default = []
 gpu-diagnostics = ["dep:wgpu", "dep:pollster"]
+audio-diagnostics = []
 
 [dependencies]
 cutcap-contracts.workspace = true
@@ -34,6 +41,10 @@ tracing-subscriber.workspace = true
 uuid.workspace = true
 wgpu = { workspace = true, optional = true }
 pollster = { workspace = true, optional = true }
+
+[target.'cfg(windows)'.dependencies]
+# Phase 4B audio output: safe WASAPI bindings (MIT), exact version pinned.
+wasapi = "=0.27.0"
 
 [lints]
 workspace = true

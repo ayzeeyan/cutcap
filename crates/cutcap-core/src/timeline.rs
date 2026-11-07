@@ -8,14 +8,16 @@ pub struct TimelineIndex {
     tracks: BTreeMap<TrackId, (Track, Vec<Clip>)>,
     clip_tracks: HashMap<ClipId, TrackId>,
     default: Option<TrackId>,
+    audio: Option<TrackId>,
 }
 impl TimelineIndex {
     /// Rebuild only after geometry changes; Project already enforces graph invariants.
+    /// Video and audio tracks are both indexed; the video monitor only ever
+    /// selects a video track.
     pub fn new(project: &Project) -> Self {
         let mut tracks: BTreeMap<_, _> = project
             .tracks()
             .iter()
-            .filter(|t| t.kind == TrackKind::Video)
             .map(|t| (t.id, (t.clone(), Vec::new())))
             .collect();
         let mut clip_tracks = HashMap::with_capacity(project.clips().len());
@@ -37,19 +39,44 @@ impl TimelineIndex {
                 .iter()
                 .find(|t| t.kind == TrackKind::Video)
                 .map(|t| t.id),
+            audio: project
+                .tracks()
+                .iter()
+                .find(|t| t.kind == TrackKind::Audio)
+                .map(|t| t.id),
         }
     }
+    /// The video track to monitor: the selected video track (or the track of
+    /// the selected video clip), otherwise the first video track.
     pub fn monitor(&self, selection: SelectionState) -> Option<&Track> {
+        let video = |id: &TrackId| {
+            self.tracks
+                .get(id)
+                .is_some_and(|(t, _)| t.kind == TrackKind::Video)
+        };
         let id = match selection {
-            SelectionState::Track(id) if self.tracks.contains_key(&id) => Some(id),
-            SelectionState::Clip(id) => self.clip_tracks.get(&id).copied(),
+            SelectionState::Track(id) if video(&id) => Some(id),
+            SelectionState::Clip(id) => self.clip_tracks.get(&id).copied().filter(video),
             _ => None,
         }
         .or(self.default)?;
         self.tracks.get(&id).map(|(track, _)| track)
     }
+    /// The audio track the timeline plays (Phase 4B, no mixing): the first
+    /// audio track in project order.
+    pub fn monitored_audio(&self) -> Option<&Track> {
+        self.audio
+            .and_then(|id| self.tracks.get(&id))
+            .map(|(track, _)| track)
+    }
     pub fn track(&self, id: TrackId) -> Option<&Track> {
         self.tracks.get(&id).map(|(t, _)| t)
+    }
+    /// The clips of a track in start order (empty for unknown tracks).
+    pub fn clips(&self, id: TrackId) -> &[Clip] {
+        self.tracks
+            .get(&id)
+            .map_or(&[], |(_, clips)| clips.as_slice())
     }
     pub fn end(&self, id: TrackId) -> Result<TimelineTime, TimeError> {
         self.tracks
@@ -168,6 +195,62 @@ pub fn frame_timeline_time(
         return Err(EvaluationError::OutsideClip);
     }
     Ok(position)
+}
+
+/// Phase 4B audio mapping. Output sample `k` of a playback epoch that begins
+/// at timeline position `origin` is presented at `origin + k / rate` seconds.
+/// Inside `clip` it plays source sample `k + offset` on the source clock at
+/// `rate`, where `offset = ceil((source_in + (origin - start)) * rate)` —
+/// the same rational instant the video evaluator maps, rounded once (and
+/// `ceil(x + k) = ceil(x) + k` for whole `k`, so no rounding accumulates).
+pub fn source_sample_offset(
+    clip: &Clip,
+    origin: TimelineTime,
+    project_clock: Timebase,
+    rate: u32,
+) -> Result<i64, TimeError> {
+    let samples = Timebase::new(1, rate).map_err(|_| TimeError::Overflow)?;
+    sum_parts_ceil(
+        i128::from(clip.source_in.ticks),
+        clip.source_in.timebase,
+        i128::from(origin.0) - i128::from(clip.start.0),
+        project_clock,
+        samples,
+    )
+}
+
+/// Whole output samples (ceiling) from `origin` to `position` at `rate`; the
+/// first sample presented at or after `position`. Negative before `origin`.
+pub fn samples_until(
+    origin: TimelineTime,
+    position: TimelineTime,
+    project_clock: Timebase,
+    rate: u32,
+) -> Result<i64, TimeError> {
+    let samples = Timebase::new(1, rate).map_err(|_| TimeError::Overflow)?;
+    sum_parts_ceil(
+        i128::from(position.0) - i128::from(origin.0),
+        project_clock,
+        0,
+        project_clock,
+        samples,
+    )
+}
+
+/// The timeline position (floor, project ticks) of output sample `frames`.
+pub fn timeline_at_sample(
+    origin: TimelineTime,
+    frames: u64,
+    project_clock: Timebase,
+    rate: u32,
+) -> Result<TimelineTime, TimeError> {
+    let ticks = i128::from(frames)
+        .checked_mul(i128::from(project_clock.denominator()))
+        .ok_or(TimeError::Overflow)?
+        / (i128::from(rate) * i128::from(project_clock.numerator()));
+    i64::try_from(i128::from(origin.0) + ticks)
+        .map(TimelineTime)
+        .map_err(|_| TimeError::Overflow)
 }
 
 /// Sum rational times before rounding. Splitting quotient/remainder avoids the

@@ -74,7 +74,22 @@ pub struct Session {
     thumbnail_slot: Option<crate::thumbnails::Done>,
     /// Stats last published in the view (a change republishes it).
     thumbnail_stats_seen: crate::thumbnails::ThumbnailStats,
+    /// Phase 4B waveform peaks: presentation only, never project state.
+    waveforms: crate::waveforms::WaveformService,
+    waveform_slot: Option<crate::waveforms::Done>,
+    waveform_stats_seen: crate::waveforms::WaveformStats,
     closed: bool,
+}
+
+/// One waveform chunk the frontend wants (wire form of the demand list).
+#[derive(Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct WaveformWant {
+    token: u64,
+    media_id: MediaId,
+    audio_key: String,
+    stream: u32,
+    chunk: i64,
 }
 
 /// One filmstrip sample the frontend wants (wire form of the demand list).
@@ -89,12 +104,57 @@ struct ThumbnailWant {
     height: u32,
 }
 
+/// Opens the default Windows output for the timeline's audio master. Without
+/// a device (or with `CUTCAP_AUDIO=off`) playback keeps the system clock and
+/// the view explains why.
+fn open_audio(
+    backend: &Arc<dyn MediaBackend>,
+) -> (
+    Option<crate::audio_transport::AudioTransport>,
+    Option<String>,
+) {
+    if std::env::var("CUTCAP_AUDIO").is_ok_and(|v| v.eq_ignore_ascii_case("off")) {
+        return (
+            None,
+            Some("Audio output is disabled (CUTCAP_AUDIO=off).".into()),
+        );
+    }
+    match crate::audio_output::AudioOutput::open_default() {
+        Ok(output) => {
+            match crate::audio_transport::AudioTransport::start(backend.clone(), output) {
+                Ok(transport) => (Some(transport), None),
+                Err(error) => (
+                    None,
+                    Some(format!("Audio playback could not start: {error}")),
+                ),
+            }
+        }
+        Err(error) => (None, Some(error)),
+    }
+}
+
 impl Session {
+    /// The production session: real FFmpeg and the default audio output.
     pub fn start() -> Result<Self, SessionError> {
-        Self::with_backend(Arc::new(FfmpegBackend::default()))
+        let backend: Arc<dyn MediaBackend> = Arc::new(FfmpegBackend::default());
+        let (audio, note) = open_audio(&backend);
+        Self::with_parts(backend, audio, note)
     }
 
+    /// A session without audio output (tests and diagnostics).
     pub fn with_backend(backend: Arc<dyn MediaBackend>) -> Result<Self, SessionError> {
+        Self::with_parts(
+            backend,
+            None,
+            Some("No audio output in this session.".into()),
+        )
+    }
+
+    fn with_parts(
+        backend: Arc<dyn MediaBackend>,
+        audio: Option<crate::audio_transport::AudioTransport>,
+        audio_note: Option<String>,
+    ) -> Result<Self, SessionError> {
         let mut session = Self {
             bridge: EngineBridge::start()?,
             media: MediaHost::start(backend.clone())?,
@@ -111,7 +171,11 @@ impl Session {
             timeline_cached: None,
             preview_mode: PreviewMode::Source,
             timeline_preview: crate::timeline_preview::TimelinePreview::default(),
-            timeline_playback: crate::timeline_playback::TimelinePlayback::start(backend.clone())?,
+            timeline_playback: crate::timeline_playback::TimelinePlayback::start_with_audio(
+                backend.clone(),
+                audio,
+                audio_note,
+            )?,
             timeline_request: RequestId::new(),
             timeline_desired: None,
             timeline_inflight: None,
@@ -119,9 +183,12 @@ impl Session {
             timeline_seeking: false,
             timeline_waiting: false,
             clip_lookup: HashMap::new(),
-            thumbnails: crate::thumbnails::ThumbnailService::start(backend)?,
+            thumbnails: crate::thumbnails::ThumbnailService::start(backend.clone())?,
             thumbnail_slot: None,
             thumbnail_stats_seen: Default::default(),
+            waveforms: crate::waveforms::WaveformService::start(backend)?,
+            waveform_slot: None,
+            waveform_stats_seen: Default::default(),
             closed: false,
         };
         session.new_project()?;
@@ -353,6 +420,8 @@ impl Session {
             };
         };
         let core = cutcap_core::Clip {
+            stream: cutcap_core::ClipStream::Video,
+            link: None,
             id: clip.id,
             media_id: clip.media_id,
             track_id: clip.track_id,
@@ -734,9 +803,10 @@ impl Session {
 
     /// Drains bounded worker results. Returns true when the view changed.
     pub fn pump(&mut self) -> bool {
-        // Playback has priority: thumbnails take smaller batches while it runs.
-        self.thumbnails
-            .set_throttled(self.media.playback.active() || self.timeline_playback.active());
+        // Playback has priority: thumbnails and waveforms take smaller batches.
+        let playing = self.media.playback.active() || self.timeline_playback.active();
+        self.thumbnails.set_throttled(playing);
+        self.waveforms.set_throttled(playing);
         if self.closed {
             return false;
         }
@@ -935,6 +1005,11 @@ impl Session {
             self.thumbnail_stats_seen = stats;
             self.dirty = true;
         }
+        let stats = self.waveforms.stats();
+        if stats != self.waveform_stats_seen {
+            self.waveform_stats_seen = stats;
+            self.dirty = true;
+        }
         self.dirty
     }
 
@@ -1110,6 +1185,8 @@ impl Session {
             // Old asynchronous thumbnails must never reach a replacement project.
             self.thumbnails.clear();
             self.thumbnail_slot = None;
+            self.waveforms.clear();
+            self.waveform_slot = None;
         }
         let changed = self
             .requests
@@ -1266,6 +1343,8 @@ impl Session {
             history: snapshot.map(|s| s.history.clone()).unwrap_or_default(),
             editing: self.editing_view(),
             thumbnails: self.thumbnail_stats_seen.clone(),
+            waveforms: self.waveform_stats_seen.clone(),
+            audio: self.timeline_playback.audio_view(),
             preview_mode: self.preview_mode,
             timeline_preview,
             timeline_playback,
@@ -1440,6 +1519,91 @@ impl Session {
         self.thumbnails.stats()
     }
 
+    /// Replaces the waveform demand. Each want must name a current verified
+    /// audio stream (`audio_key`); others are dropped. Accepted means queued.
+    pub fn request_waveforms(&mut self, json: &str) -> Result<(), SessionError> {
+        let wants: Vec<WaveformWant> = serde_json::from_str(json).map_err(|_| {
+            SessionError::Invalid("Waveform requests must be a JSON array of wants.")
+        })?;
+        if wants.len() > crate::waveforms::MAX_DEMAND {
+            return Err(SessionError::Invalid("Too many waveform requests at once."));
+        }
+        let Some(snapshot) = self.requests.snapshot.as_ref() else {
+            return Ok(());
+        };
+        let mut jobs = Vec::with_capacity(wants.len());
+        for want in wants {
+            let Some(media) = snapshot.media.iter().find(|m| m.id == want.media_id) else {
+                continue;
+            };
+            let key = view::audio_key(snapshot, media, want.stream);
+            let Some(audio) = media.metadata.audio_stream(want.stream) else {
+                continue;
+            };
+            let limit =
+                i64::from(audio.sample_rate) * MAX_MEDIA_SECONDS / cutcap_media::PEAK_CHUNK_FRAMES;
+            if key.is_empty() || key != want.audio_key || !(0..=limit).contains(&want.chunk) {
+                continue;
+            }
+            jobs.push(crate::waveforms::Job {
+                token: want.token,
+                media: media.clone(),
+                audio_key: want.audio_key,
+                stream: want.stream,
+                chunk: want.chunk,
+            });
+        }
+        self.waveforms.set_demand(jobs);
+        Ok(())
+    }
+
+    /// Announces the next completed waveform chunk whose audio key is still
+    /// current (stale ones are discarded here), keeping it for `copy`.
+    pub fn next_waveform(&mut self) -> Option<&crate::waveforms::Done> {
+        let current: HashSet<String> = self
+            .requests
+            .snapshot
+            .as_ref()
+            .map(|s| {
+                s.media
+                    .iter()
+                    .flat_map(|m| {
+                        m.metadata
+                            .audio
+                            .iter()
+                            .map(|a| view::audio_key(s, m, a.stream_index))
+                            .collect::<Vec<_>>()
+                    })
+                    .filter(|k| !k.is_empty())
+                    .collect()
+            })
+            .unwrap_or_default();
+        self.waveform_slot = None;
+        while let Some(done) = self.waveforms.take() {
+            if current.contains(&done.audio_key) {
+                self.waveform_slot = Some(done);
+                break;
+            }
+        }
+        self.waveform_slot.as_ref()
+    }
+
+    pub fn announced_waveform(&self, token: u64) -> Option<&crate::waveforms::Done> {
+        self.waveform_slot.as_ref().filter(|d| d.token == token)
+    }
+
+    pub fn take_waveform(&mut self, token: u64) -> Option<crate::waveforms::Done> {
+        if self
+            .waveform_slot
+            .as_ref()
+            .is_some_and(|d| d.token == token)
+        {
+            self.waveform_slot.take()
+        } else {
+            None
+        }
+    }
+
     /// Stops media work, then the command worker. Idempotent.
     pub fn shutdown(&mut self) -> Result<(), SessionError> {
         if self.closed {
@@ -1447,6 +1611,7 @@ impl Session {
         }
         self.closed = true;
         self.thumbnails.shutdown();
+        self.waveforms.shutdown();
         let timeline = self.timeline_playback.shutdown();
         let media = self.media.shutdown();
         let bridge = self.bridge.shutdown();

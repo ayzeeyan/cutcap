@@ -37,7 +37,9 @@ use std::{
 /// exact ticks and trim limits; the view adds `editing`.
 /// ABI 8 (Phase 4A): filmstrip thumbnail demand/next/copy exports and the
 /// filmstrip clip-row and thumbnail-diagnostics view fields.
-pub const ABI_VERSION: u32 = 8;
+/// ABI 9 (Phase 4B): waveform demand/next/copy exports; clip rows add stream,
+/// link and waveform fields; the view adds audio-output and waveform state.
+pub const ABI_VERSION: u32 = 9;
 
 pub const CUTCAP_OK: i32 = 0;
 pub const CUTCAP_INVALID_ARGUMENT: i32 = 1;
@@ -1013,6 +1015,133 @@ pub unsafe extern "C" fn cutcap_session_copy_thumbnail(
                 target[start..start + row].copy_from_slice(source);
             }
             s.take_thumbnail(token);
+            Ok(())
+        })
+    })
+}
+
+/// Phase 4B: one completed waveform chunk, announced before its copy.
+/// 40 bytes, 8-byte aligned. `status`: 0 ready, 1 failed. A ready chunk
+/// covers native-rate samples `[chunk * buckets * bucket_frames, ...)` of
+/// its stream; bucket `i` holds the minimum and maximum sample over all
+/// channels (`min > max` marks a bucket with no decoded samples).
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Default)]
+pub struct CutCapWaveformInfo {
+    pub token: u64,
+    pub chunk: i64,
+    pub rate: u32,
+    pub channels: u32,
+    pub buckets: u32,
+    pub bucket_frames: u32,
+    pub status: u32,
+    pub reserved: u32,
+}
+
+/// Phase 4B (ABI 9): replaces the waveform demand with a UTF-8 JSON array of
+/// `{token, media_id, audio_key, stream, chunk}` (at most 128, visible
+/// first). Chunks no longer wanted are dropped or cancelled. Nonblocking.
+///
+/// # Safety
+/// `json` must be valid for reads of `len` bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn cutcap_session_request_waveforms(
+    handle: u64,
+    json: *const u8,
+    len: usize,
+) -> i32 {
+    guard(|| {
+        if len > 64 * 1024 {
+            return Err(Fail::argument("Waveform demand exceeds 64 KiB."));
+        }
+        // SAFETY: forwarded caller contract; input_str bounds and validates UTF-8.
+        let text = unsafe { input_str(json, len) }?;
+        with_session(handle, |s| Ok(s.request_waveforms(text)?))
+    })
+}
+
+/// Announces the next completed waveform chunk, or returns `CUTCAP_NO_FRAME`
+/// when none is waiting. The pointer is validated before anything is consumed.
+///
+/// # Safety
+/// `out_info` must be valid for one `CutCapWaveformInfo` write.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn cutcap_session_next_waveform(
+    handle: u64,
+    out_info: *mut CutCapWaveformInfo,
+) -> i32 {
+    guard(|| {
+        if out_info.is_null() || !out_info.is_aligned() {
+            return Err(Fail::argument("Invalid output pointer."));
+        }
+        let info = with_session(handle, |s| {
+            let done = s
+                .next_waveform()
+                .ok_or_else(|| Fail::new(CUTCAP_NO_FRAME, "No waveform is waiting."))?;
+            let mut info = CutCapWaveformInfo {
+                token: done.token,
+                status: match done.status {
+                    crate::waveforms::Status::Ready => 0,
+                    crate::waveforms::Status::Failed => 1,
+                },
+                bucket_frames: cutcap_media::PEAK_BUCKET_FRAMES as u32,
+                ..Default::default()
+            };
+            if let Some(peaks) = &done.peaks {
+                info.chunk = peaks.chunk;
+                info.rate = peaks.rate;
+                info.channels = u32::from(peaks.channels);
+                info.buckets = u32::try_from(peaks.min.len()).unwrap_or(u32::MAX);
+            }
+            Ok(info)
+        })?;
+        // SAFETY: forwarded caller contract.
+        unsafe { write_out(out_info, info) }
+    })
+}
+
+/// Copies the announced chunk `token` as `buckets` interleaved `(min, max)`
+/// float pairs into caller memory (`dst_len` floats) and releases it. Another
+/// token → `CUTCAP_STALE_FRAME`; a failed chunk → `CUTCAP_NO_FRAME`
+/// (released); a too-small/null destination → `INVALID_ARGUMENT` and the
+/// chunk stays announced.
+///
+/// # Safety
+/// `dst` must be valid for writes of `dst_len` `f32` values.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn cutcap_session_copy_waveform(
+    handle: u64,
+    token: u64,
+    dst: *mut f32,
+    dst_len: usize,
+) -> i32 {
+    guard(|| {
+        with_session(handle, |s| {
+            let done = s.announced_waveform(token).ok_or_else(|| {
+                Fail::new(CUTCAP_STALE_FRAME, "That waveform is no longer waiting.")
+            })?;
+            let Some(peaks) = &done.peaks else {
+                s.take_waveform(token);
+                return Err(Fail::new(CUTCAP_NO_FRAME, "That waveform has no peaks."));
+            };
+            let required = peaks.min.len() * 2;
+            if dst.is_null()
+                || !dst.is_aligned()
+                || dst_len < required
+                || dst_len > isize::MAX as usize / 4
+            {
+                return Err(Fail::argument(
+                    "Destination buffer is too small for this waveform.",
+                ));
+            }
+            // SAFETY: `dst` is non-null and aligned, and the caller guarantees
+            // `dst_len` writable floats; at most `required <= dst_len` are written.
+            let target = unsafe { std::slice::from_raw_parts_mut(dst, dst_len) };
+            for (i, (lo, hi)) in peaks.min.iter().zip(&peaks.max).enumerate() {
+                target[2 * i] = *lo;
+                target[2 * i + 1] = *hi;
+            }
+            s.take_waveform(token);
             Ok(())
         })
     })

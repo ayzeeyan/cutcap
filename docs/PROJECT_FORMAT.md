@@ -1,4 +1,22 @@
-# CutCap project documents — format 1, core schema 1
+# CutCap project documents — format 1, core schema 2
+
+**Phase 4B: core schema 2.** Each clip gains `stream` — `{"kind":"video"}` or
+`{"kind":"audio","index":N}` (N is the media's audio stream index) — and an
+optional `link` (UUID). Rules: the stream must match the track kind and an
+existing stream of the media; a link group is exactly one video and one audio
+clip with the same `media_id`, `start`, `duration` and `source_in` (the audio
+member keeps the video clock's `source_in`; samples are derived with one
+ceiling rounding). Media metadata adds an `audio` array (per stream: index,
+codec, sample rate, channels, layout, sample format, timebase, start PTS,
+duration, default flag); metadata without it still loads.
+
+Migration 1 → 2 is in memory on open: every schema-1 clip becomes a video clip.
+A schema-1 clip on an audio track, or `stream`/`link` fields inside a schema-1
+document, are refused with a migration error and the file is left untouched.
+Opening never writes; the next save writes `schema_version: 2`. Schemas other
+than 1 and 2 are rejected. The envelope (`format: "CutCap"`, `format_version: 1`,
+`project`, `sources`) is unchanged. Waveform peaks, caches and audio device
+state are never written.
 
 Phase 4A adds no format/schema change. Filmstrip thumbnails, their cache and
 source keys are presentation state: nothing is written to `.cutcap` files and

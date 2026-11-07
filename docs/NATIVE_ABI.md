@@ -1,6 +1,37 @@
-# CutCap native engine ABI, version 8
+# CutCap native engine ABI, version 9
 
-## Phase 4A additions (current authority)
+## Phase 4B additions (current authority)
+
+Rust `ABI_VERSION`, managed `NativeMethods.AbiVersion` and `CONTRACT_VERSION`
+are **9** (ADR 025). Project envelope `format_version` remains 1; the core
+schema is **2** (PROJECT_FORMAT.md). Every ABI 8 export, status number, frame
+and thumbnail layout and handle rule is unchanged; the bump guards three new
+exports, new clip-row fields and the audio/waveform view sections.
+
+| New export | Semantics |
+|---|---|
+| `cutcap_session_request_waveforms(u64, u8* json, usize len)` | Replace the waveform demand with a UTF-8 JSON array of `{token, media_id, audio_key, stream, chunk}` (≤128, ≤64 KiB, visible first). Nonblocking. Wants whose media is not Ready, whose `audio_key` is not current or whose stream/chunk is invalid are dropped; chunks no longer wanted leave the queue and an in-flight batch nobody wants is cancelled. |
+| `cutcap_session_next_waveform(u64, CutCapWaveformInfo* out)` | Announce the next completed chunk whose key is still current, or `CUTCAP_NO_FRAME`. The pointer is validated before anything is consumed. |
+| `cutcap_session_copy_waveform(u64, u64 token, f32* dst, usize len)` | Copy the announced chunk as `buckets` interleaved `(min, max)` floats (`len ≥ 2·buckets`) and release it. Another token or a second copy → `CUTCAP_STALE_FRAME`; a failed chunk → `CUTCAP_NO_FRAME`; a null/short destination → `INVALID_ARGUMENT`, chunk stays announced. |
+
+`CutCapWaveformInfo` is 40 bytes, 8-byte aligned: `u64 token, i64 chunk, u32
+rate, u32 channels, u32 buckets, u32 bucket_frames, u32 status, u32 reserved`
+(status 0 ready, 1 failed). A chunk covers native-rate source samples
+`[chunk·262144, (chunk+1)·262144)` in 1024 buckets of 256 frames, min/max over
+all channels; an empty bucket has `min > max`. Peaks stay in Rust until copied.
+
+View additions: clip rows add `stream` (`"video"`/`"audio"`), `audio_stream`,
+`link_id`, `audio_key` (`"{media_id}:{path hash}:{stream}"` while Ready, else
+empty), `audio_rate`, `source_in_samples` and `source_end_samples` (the exact
+sample interval playback uses: one ceiling rounding of the shared `source_in`).
+The view adds `audio` (state, clock source, output status: device, rate,
+stream latency, latency compensation, buffered/played/padded ms, underruns,
+error; decoders, source silence, detail) and `waveforms` (worker stats).
+Timeline playback adds `clock_source`, `video_late`, `av_offset_ms`,
+`av_offset_max_ms` and `av_samples`. Placement of a source with audio inserts a
+linked video/audio pair; edits of either member apply to both (one undo step).
+
+## Phase 4A additions (ABI 8, retained)
 
 Rust `ABI_VERSION`, managed `NativeMethods.AbiVersion` and `CONTRACT_VERSION`
 are **8** (ADR 024). Project envelope/core schema remain 1. Every ABI 7 export,

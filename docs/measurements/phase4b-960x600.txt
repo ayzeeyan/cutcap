@@ -1,0 +1,4 @@
+23:18:49.582 window 1440x900 physical = 960x600 DIP at scale 1.5
+23:19:06.027 placed: 185 ms
+23:19:15.689 controls reachable: play/pause/split/delete/audio track = True,True,True,True,True
+23:19:17.407 exited=True

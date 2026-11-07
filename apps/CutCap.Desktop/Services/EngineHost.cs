@@ -56,8 +56,48 @@ public sealed class EngineHost : IDisposable
     /// <summary>Most thumbnails copied per pump, so a burst never stalls the UI thread.</summary>
     public const int MaxThumbnailsPerTick = 16;
 
+    /// <summary>Waveform peaks (Phase 4B): bounded, UI-thread owned, never project data.</summary>
+    public WaveformCache Waveforms { get; } = WaveformCache.FromEnvironment();
+
+    /// <summary>New waveform chunks arrived; the lanes redraw and may request more.</summary>
+    public event EventHandler? WaveformsChanged;
+
+    /// <summary>Most waveform chunks copied per pump.</summary>
+    public const int MaxWaveformsPerTick = 8;
+
+    private IReadOnlyList<WaveformWant> _lastWaveDemand = [];
+
+    /// <summary>Sends the current waveform demand (skipped when unchanged).</summary>
+    public void RequestWaveforms(IReadOnlyList<WaveformWant> wants)
+    {
+        if (_session is null || _session.IsDisposed) return;
+        if (wants.Count == _lastWaveDemand.Count && wants.Select(w => w.Token).SequenceEqual(_lastWaveDemand.Select(w => w.Token))) return;
+        _lastWaveDemand = wants;
+        Run(session => session.RequestWaveforms(wants));
+    }
+
+    /// <summary>Copies waiting waveform chunks (one array per chunk, reused for every draw).</summary>
+    private void DrainWaveforms(EngineSession session)
+    {
+        var changed = false;
+        for (var i = 0; i < MaxWaveformsPerTick && session.TryNextWaveform(out var info); i++)
+        {
+            if (info.Status != 0)
+            {
+                changed |= Waveforms.Complete(info.Token, new WaveChunk(null, 0, 0, 0));
+                continue;
+            }
+            var peaks = new float[checked((int)info.Buckets * 2)];
+            if (!session.CopyWaveform(info.Token, peaks)) continue;
+            changed |= Waveforms.Complete(info.Token, new WaveChunk(peaks, (int)info.Buckets, (int)info.BucketFrames, info.Rate));
+        }
+        if (changed) WaveformsChanged?.Invoke(this, EventArgs.Empty);
+    }
+
     private string? _thumbnailProject;
     private long _playbackTraced;
+    private long _audioTraced;
+    private static readonly bool AudioTraceEnabled = Environment.GetEnvironmentVariable("CUTCAP_TRACE_AUDIO") == "1";
     private IReadOnlyList<ThumbnailWant> _lastDemand = [];
 
     /// <summary>Sends the current filmstrip demand (skipped when unchanged).</summary>
@@ -188,6 +228,7 @@ public sealed class EngineHost : IDisposable
         {
             var viewChanged = _session.Pump();
             DrainThumbnails(_session);
+            DrainWaveforms(_session);
             if (!viewChanged)
             {
                 RequestFrame();
@@ -205,11 +246,20 @@ public sealed class EngineHost : IDisposable
                 _thumbnailProject = project;
                 Thumbnails.ClearPending();
                 _lastDemand = [];
+                Waveforms.ClearPending();
+                _lastWaveDemand = [];
             }
             var activeState = view.PreviewMode == PreviewMode.Timeline ? view.TimelinePlayback?.State : view.Playback?.State;
             PlaybackActive = activeState is PlaybackState.Starting or PlaybackState.Playing
                 or PlaybackState.Seeking or PlaybackState.Buffering;
             PreviewTrace.Transport(view.Playback);
+            if (AudioTraceEnabled && view.TimelinePlayback is { } tp && Environment.TickCount64 - _audioTraced >= 250)
+            {
+                _audioTraced = Environment.TickCount64;
+                var audio = view.Audio;
+                Console.WriteLine(FormattableString.Invariant(
+                    $"audio at={DateTime.UtcNow:HH:mm:ss.fff} unix_ms={(DateTime.UtcNow - DateTime.UnixEpoch).TotalMilliseconds:F1} state={tp.State} clock={tp.ClockSource} pos_ms={tp.ClockMs} copied={tp.Copied} video_late={tp.VideoLate} av_ms={tp.AvOffsetMs:F2} av_max_ms={tp.AvOffsetMaxMs:F2} av_n={tp.AvSamples} audio_state={audio?.State} out_state={audio?.Output.State} comp_ms={audio?.Output.LatencyCompensationMs:F0} buffered_ms={audio?.Output.BufferedMs:F1} underruns={audio?.Output.Underruns} padded_ms={audio?.Output.PaddedMs:F1} played_ms={audio?.Output.PlayedMs:F1} decoders={audio?.Decoders} starts={audio?.DecoderStarts} silence_ms={audio?.SourceSilenceMs:F1} device={audio?.Output.Device} wave_cache_hits={Waveforms.Hits} wave_cache_misses={Waveforms.Misses} wave_cache_kib={Waveforms.ResidentBytes / 1024} wave_analysed={view.Waveforms?.Analysed} wave_batches={view.Waveforms?.Batches} wave_cancelled={view.Waveforms?.CancelledBatches} wave_last_ms={view.Waveforms?.LastBatchMs} ws_mib={Environment.WorkingSet / 1048576}"));
+            }
             if (ThumbnailTrace.Enabled && view.TimelinePlayback is { } timeline && PlaybackActive
                 && Environment.TickCount64 - _playbackTraced >= 1000)
             {

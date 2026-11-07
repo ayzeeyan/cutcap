@@ -1,5 +1,21 @@
 # CutCap architecture — Avalonia frontend over the Rust engine
 
+Phase 4B current addition: **ABI/contract 9, core schema 2**, real audio.
+Contracts add `ClipStream`, `LinkId` and `AudioStreamMetadata`; core validates
+stream kinds and link groups inside every transaction and migrates schema 1 in
+memory. Media `audio.rs` decodes exact-PTS PCM (one FFmpeg per span, float
+stereo at the device rate) and analyses native-rate min/max peaks.
+`ffi/edits.rs`/`engine.rs` place, move, trim, split and remove linked pairs as
+one transaction. `ffi/audio_output.rs` owns the WASAPI render thread (shared,
+event driven, 400 ms ring) and the audio-master `ClockMap`;
+`ffi/audio_transport.rs` feeds the monitored track span by span with exact
+source samples and silence for gaps; `ffi/timeline_playback.rs` takes its clock
+from the device (system clock only without one). `ffi/waveforms.rs` is the
+low-priority peak service behind ABI 9. In Avalonia, `WaveformCache` (16 MiB
+LRU) and `TimelineLanes.PlanWaveforms`/`DrawWaveform` draw cached peaks in navy
+audio clips, and linked partners are outlined together. Peaks never enter the
+Project.
+
 Phase 4A current addition: **ABI/contract 8**, real video filmstrips. Media
 `thumbnail.rs` extracts a batch of ≤6 samples from one source in one
 below-normal-priority FFmpeg process (keyframe-seeked input per sample,
