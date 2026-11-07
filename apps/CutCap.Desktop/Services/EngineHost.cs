@@ -1,4 +1,7 @@
+using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Media.Imaging;
+using Avalonia.Platform;
 using Avalonia.Threading;
 using CutCap.Interop;
 
@@ -43,6 +46,65 @@ public sealed class EngineHost : IDisposable
     public event EventHandler<FrameView?>? FrameChanged;
 
     public EngineSession? Session => _session;
+
+    /// <summary>Filmstrip thumbnails (Phase 4A): bounded, UI-thread owned, never project data.</summary>
+    public ThumbnailCache Thumbnails { get; } = ThumbnailCache.FromEnvironment();
+
+    /// <summary>New thumbnails arrived; the lanes redraw and may request more.</summary>
+    public event EventHandler? ThumbnailsChanged;
+
+    /// <summary>Most thumbnails copied per pump, so a burst never stalls the UI thread.</summary>
+    public const int MaxThumbnailsPerTick = 16;
+
+    private string? _thumbnailProject;
+    private long _playbackTraced;
+    private IReadOnlyList<ThumbnailWant> _lastDemand = [];
+
+    /// <summary>Sends the current filmstrip demand (skipped when unchanged).</summary>
+    public void RequestThumbnails(IReadOnlyList<ThumbnailWant> wants)
+    {
+        if (_session is null || _session.IsDisposed) return;
+        if (wants.Count == _lastDemand.Count && wants.Select(w => w.Token).SequenceEqual(_lastDemand.Select(w => w.Token))) return;
+        _lastDemand = wants;
+        ThumbnailTrace.Line($"demand n={wants.Count}");
+        Run(session => session.RequestThumbnails(wants));
+    }
+
+    /// <summary>Copies waiting thumbnails into bitmaps (one allocation per decoded image).</summary>
+    private void DrainThumbnails(EngineSession session)
+    {
+        var changed = false;
+        var ready = 0;
+        var started = ThumbnailTrace.Enabled ? System.Diagnostics.Stopwatch.GetTimestamp() : 0;
+        for (var i = 0; i < MaxThumbnailsPerTick && session.TryNextThumbnail(out var info); i++)
+        {
+            if (info.Status != 0)
+            {
+                changed |= Thumbnails.Complete(info.Token, info.Status == 1 ? ThumbnailState.NoFrame : ThumbnailState.Failed, null, 0, 0);
+                continue;
+            }
+            var bitmap = new WriteableBitmap(new PixelSize((int)info.Width, (int)info.Height), new Vector(96, 96),
+                PixelFormats.Rgba8888, AlphaFormat.Opaque);
+            bool copied;
+            using (var target = bitmap.Lock())
+            {
+                copied = session.CopyThumbnail(info.Token, target.Address, target.RowBytes * target.Size.Height, target.RowBytes);
+            }
+            if (!copied)
+            {
+                bitmap.Dispose();
+                continue;
+            }
+            changed |= Thumbnails.Complete(info.Token, ThumbnailState.Ready, bitmap, info.ActualTicks,
+                (int)(info.Width * info.Height * 4));
+            ready++;
+        }
+        if (ThumbnailTrace.Enabled && ready > 0)
+        {
+            ThumbnailTrace.Line($"copied n={ready} copy_us={System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMicroseconds:F0} resident_kib={Thumbnails.ResidentBytes / 1024} entries={Thumbnails.Count} evictions={Thumbnails.Evictions} hits={Thumbnails.Hits} misses={Thumbnails.Misses} pid={View?.Thumbnails?.LastProcessId} batch_ms={View?.Thumbnails?.LastBatchMs} batches={View?.Thumbnails?.Batches} cancelled={View?.Thumbnails?.CancelledBatches} managed_mib={GC.GetTotalMemory(false) / 1048576} ws_mib={Environment.WorkingSet / 1048576}");
+        }
+        if (changed) ThumbnailsChanged?.Invoke(this, EventArgs.Empty);
+    }
 
     /// <summary>
     /// The latest clip list. Read only when the view's timeline generation
@@ -124,7 +186,9 @@ public sealed class EngineHost : IDisposable
         }
         try
         {
-            if (!_session.Pump())
+            var viewChanged = _session.Pump();
+            DrainThumbnails(_session);
+            if (!viewChanged)
             {
                 RequestFrame();
                 return;
@@ -135,10 +199,23 @@ public sealed class EngineHost : IDisposable
                 Timeline = _session.ReadTimeline();
             }
             View = view;
+            if (view.Project?.Id is { } project && project != _thumbnailProject)
+            {
+                // Results requested for the previous project are void.
+                _thumbnailProject = project;
+                Thumbnails.ClearPending();
+                _lastDemand = [];
+            }
             var activeState = view.PreviewMode == PreviewMode.Timeline ? view.TimelinePlayback?.State : view.Playback?.State;
             PlaybackActive = activeState is PlaybackState.Starting or PlaybackState.Playing
                 or PlaybackState.Seeking or PlaybackState.Buffering;
             PreviewTrace.Transport(view.Playback);
+            if (ThumbnailTrace.Enabled && view.TimelinePlayback is { } timeline && PlaybackActive
+                && Environment.TickCount64 - _playbackTraced >= 1000)
+            {
+                _playbackTraced = Environment.TickCount64;
+                ThumbnailTrace.Line($"playback copied={timeline.Copied} dropped={timeline.Dropped} stalls={timeline.BufferStalls} state={timeline.State} thumbs_pending={view.Thumbnails?.Pending} throttled={view.Thumbnails?.Throttled}");
+            }
             ViewChanged?.Invoke(this, view);
             var generation = view.Frame?.Generation ?? 0;
             if (generation != _frameGeneration)
@@ -159,6 +236,7 @@ public sealed class EngineHost : IDisposable
     public void Dispose()
     {
         _timer.Stop();
+        Thumbnails.Dispose();
         PlaybackActive = false;
         _renderLoop = null;
         _session?.Dispose();

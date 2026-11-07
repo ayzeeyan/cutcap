@@ -68,7 +68,25 @@ pub struct Session {
     timeline_seeking: bool,
     timeline_waiting: bool,
     clip_lookup: HashMap<ClipId, usize>,
+    /// Phase 4A filmstrip thumbnails: presentation only, never project state.
+    thumbnails: crate::thumbnails::ThumbnailService,
+    /// The completed thumbnail announced by `next_thumbnail`, awaiting its copy.
+    thumbnail_slot: Option<crate::thumbnails::Done>,
+    /// Stats last published in the view (a change republishes it).
+    thumbnail_stats_seen: crate::thumbnails::ThumbnailStats,
     closed: bool,
+}
+
+/// One filmstrip sample the frontend wants (wire form of the demand list).
+#[derive(Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ThumbnailWant {
+    token: u64,
+    media_id: MediaId,
+    source_key: String,
+    /// Source time in microseconds on the source's own time axis.
+    sample_us: i64,
+    height: u32,
 }
 
 impl Session {
@@ -93,7 +111,7 @@ impl Session {
             timeline_cached: None,
             preview_mode: PreviewMode::Source,
             timeline_preview: crate::timeline_preview::TimelinePreview::default(),
-            timeline_playback: crate::timeline_playback::TimelinePlayback::start(backend)?,
+            timeline_playback: crate::timeline_playback::TimelinePlayback::start(backend.clone())?,
             timeline_request: RequestId::new(),
             timeline_desired: None,
             timeline_inflight: None,
@@ -101,6 +119,9 @@ impl Session {
             timeline_seeking: false,
             timeline_waiting: false,
             clip_lookup: HashMap::new(),
+            thumbnails: crate::thumbnails::ThumbnailService::start(backend)?,
+            thumbnail_slot: None,
+            thumbnail_stats_seen: Default::default(),
             closed: false,
         };
         session.new_project()?;
@@ -713,6 +734,9 @@ impl Session {
 
     /// Drains bounded worker results. Returns true when the view changed.
     pub fn pump(&mut self) -> bool {
+        // Playback has priority: thumbnails take smaller batches while it runs.
+        self.thumbnails
+            .set_throttled(self.media.playback.active() || self.timeline_playback.active());
         if self.closed {
             return false;
         }
@@ -905,6 +929,12 @@ impl Session {
                 .timeline_playback
                 .poll(std::time::Instant::now(), &mut self.media);
         }
+        // Thumbnail progress is reported in the view: republish when it moves.
+        let stats = self.thumbnails.stats();
+        if stats != self.thumbnail_stats_seen {
+            self.thumbnail_stats_seen = stats;
+            self.dirty = true;
+        }
         self.dirty
     }
 
@@ -1076,6 +1106,11 @@ impl Session {
     }
 
     fn set_snapshot(&mut self, snapshot: ProjectSnapshot) {
+        if self.project_id() != Some(snapshot.id) {
+            // Old asynchronous thumbnails must never reach a replacement project.
+            self.thumbnails.clear();
+            self.thumbnail_slot = None;
+        }
         let changed = self
             .requests
             .snapshot
@@ -1230,6 +1265,7 @@ impl Session {
             timeline_generation: self.timeline_generation,
             history: snapshot.map(|s| s.history.clone()).unwrap_or_default(),
             editing: self.editing_view(),
+            thumbnails: self.thumbnail_stats_seen.clone(),
             preview_mode: self.preview_mode,
             timeline_preview,
             timeline_playback,
@@ -1280,12 +1316,137 @@ impl Session {
         }
     }
 
+    /// Replaces the filmstrip demand (visible samples first). Each want is
+    /// checked against the current verified source: an unknown or unavailable
+    /// media, or a stale source key, is dropped; a sample outside the source's
+    /// range completes immediately as no-frame. Accepted means queued.
+    pub fn request_thumbnails(&mut self, json: &str) -> Result<(), SessionError> {
+        let wants: Vec<ThumbnailWant> = serde_json::from_str(json).map_err(|_| {
+            SessionError::Invalid("Thumbnail requests must be a JSON array of wants.")
+        })?;
+        if wants.len() > crate::thumbnails::MAX_DEMAND {
+            return Err(SessionError::Invalid(
+                "Too many thumbnail requests at once.",
+            ));
+        }
+        let Some(snapshot) = self.requests.snapshot.as_ref() else {
+            return Ok(());
+        };
+        let micro = Timebase::new(1, 1_000_000).expect("constant");
+        let mut jobs = Vec::with_capacity(wants.len());
+        for want in wants {
+            let Some(media) = snapshot.media.iter().find(|m| m.id == want.media_id) else {
+                continue;
+            };
+            if view::source_key(snapshot, media) != want.source_key || want.source_key.is_empty() {
+                continue;
+            }
+            let meta = &media.metadata;
+            let Ok(position) = (SourceTime {
+                ticks: want.sample_us,
+                timebase: micro,
+            })
+            .rescale(meta.timebase, Rounding::Ceil) else {
+                self.thumbnails.complete_now(
+                    want.token,
+                    want.source_key,
+                    crate::thumbnails::Status::Failed,
+                );
+                continue;
+            };
+            let position = SourceTime {
+                ticks: position.ticks.max(meta.start_pts),
+                timebase: meta.timebase,
+            };
+            let past_end = meta
+                .duration_ticks
+                .and_then(|d| meta.start_pts.checked_add(d))
+                .is_some_and(|end| position.ticks >= end);
+            if past_end {
+                self.thumbnails.complete_now(
+                    want.token,
+                    want.source_key,
+                    crate::thumbnails::Status::NoFrame,
+                );
+                continue;
+            }
+            if cutcap_media::validate_position(meta, position).is_err() {
+                self.thumbnails.complete_now(
+                    want.token,
+                    want.source_key,
+                    crate::thumbnails::Status::Failed,
+                );
+                continue;
+            }
+            jobs.push(crate::thumbnails::Job {
+                token: want.token,
+                media: media.clone(),
+                source_key: want.source_key,
+                position,
+                height: want.height.clamp(
+                    cutcap_media::MIN_THUMBNAIL_HEIGHT,
+                    cutcap_media::MAX_THUMBNAIL_HEIGHT,
+                ),
+            });
+        }
+        self.thumbnails.set_demand(jobs);
+        Ok(())
+    }
+
+    /// Announces the next completed thumbnail that still belongs to a current
+    /// verified source (stale ones are discarded here), keeping it for `copy`.
+    pub fn next_thumbnail(&mut self) -> Option<&crate::thumbnails::Done> {
+        let current: HashSet<String> = self
+            .requests
+            .snapshot
+            .as_ref()
+            .map(|s| {
+                s.media
+                    .iter()
+                    .map(|m| view::source_key(s, m))
+                    .filter(|k| !k.is_empty())
+                    .collect()
+            })
+            .unwrap_or_default();
+        self.thumbnail_slot = None;
+        while let Some(done) = self.thumbnails.take() {
+            if current.contains(&done.source_key) {
+                self.thumbnail_slot = Some(done);
+                break;
+            }
+        }
+        self.thumbnail_slot.as_ref()
+    }
+
+    /// The announced thumbnail, if `token` names it (not released).
+    pub fn announced_thumbnail(&self, token: u64) -> Option<&crate::thumbnails::Done> {
+        self.thumbnail_slot.as_ref().filter(|d| d.token == token)
+    }
+
+    /// Releases the announced thumbnail for copying (token must match).
+    pub fn take_thumbnail(&mut self, token: u64) -> Option<crate::thumbnails::Done> {
+        if self
+            .thumbnail_slot
+            .as_ref()
+            .is_some_and(|d| d.token == token)
+        {
+            self.thumbnail_slot.take()
+        } else {
+            None
+        }
+    }
+
+    pub fn thumbnail_stats(&self) -> crate::thumbnails::ThumbnailStats {
+        self.thumbnails.stats()
+    }
+
     /// Stops media work, then the command worker. Idempotent.
     pub fn shutdown(&mut self) -> Result<(), SessionError> {
         if self.closed {
             return Ok(());
         }
         self.closed = true;
+        self.thumbnails.shutdown();
         let timeline = self.timeline_playback.shutdown();
         let media = self.media.shutdown();
         let bridge = self.bridge.shutdown();

@@ -8,7 +8,7 @@ use crate::{
     VerifiedMedia,
 };
 
-pub const CONTRACT_VERSION: u32 = 7;
+pub const CONTRACT_VERSION: u32 = 8;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TrackKind {

@@ -412,5 +412,5 @@ fn abi_edit_exports_validate_arguments() {
         rejected["status"]
     );
     assert_eq!(cutcap_session_destroy(handle), CUTCAP_OK);
-    assert_eq!(cutcap_abi_version(), 7);
+    assert_eq!(cutcap_abi_version(), ABI_VERSION);
 }

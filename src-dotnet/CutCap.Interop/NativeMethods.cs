@@ -28,6 +28,21 @@ public struct NativeFrameInfo
     public uint PixelFormat;
 }
 
+/// <summary>Mirror of Rust <c>CutCapThumbnailInfo</c>: 40 bytes, 8-byte aligned (ABI 8).</summary>
+[StructLayout(LayoutKind.Sequential)]
+public struct NativeThumbnailInfo
+{
+    public ulong Token;
+    public long ActualTicks;
+    public uint TimebaseNumerator;
+    public uint TimebaseDenominator;
+    public uint Width;
+    public uint Height;
+    public uint Stride;
+    /// <summary>0 ready, 1 no frame at/after the sample, 2 decode failed.</summary>
+    public uint Status;
+}
+
 /// <summary>
 /// Raw C ABI. Only <see cref="EngineSession"/> calls these; nothing else in the
 /// frontend sees native pointers. All strings are passed as explicit
@@ -38,7 +53,7 @@ internal static unsafe partial class NativeMethods
     private const string Library = "cutcap_engine";
 
     /// <summary>The ABI this frontend was written against.</summary>
-    public const uint AbiVersion = 7;
+    public const uint AbiVersion = 8;
     public const uint PixelRgba8Opaque = 1;
 
     [LibraryImport(Library, EntryPoint = "cutcap_abi_version")]
@@ -62,6 +77,15 @@ internal static unsafe partial class NativeMethods
     public static partial NativeStatus SeekTimeline(SessionSafeHandle session, long ticks);
     [LibraryImport(Library, EntryPoint = "cutcap_session_seek_timeline_ms")]
     public static partial NativeStatus SeekTimelineMilliseconds(SessionSafeHandle session, long milliseconds);
+    [LibraryImport(Library, EntryPoint = "cutcap_session_request_thumbnails")]
+    public static partial NativeStatus RequestThumbnails(SessionSafeHandle session, byte* json, nuint length);
+
+    [LibraryImport(Library, EntryPoint = "cutcap_session_next_thumbnail")]
+    public static partial NativeStatus NextThumbnail(SessionSafeHandle session, out NativeThumbnailInfo info);
+
+    [LibraryImport(Library, EntryPoint = "cutcap_session_copy_thumbnail")]
+    public static partial NativeStatus CopyThumbnail(SessionSafeHandle session, ulong token, byte* destination, nuint length, nuint stride);
+
     [LibraryImport(Library, EntryPoint = "cutcap_session_place_clip")]
     public static partial NativeStatus PlaceClip(SessionSafeHandle session, byte* media, nuint mediaLength,
         byte* track, nuint trackLength, long position, uint unit);

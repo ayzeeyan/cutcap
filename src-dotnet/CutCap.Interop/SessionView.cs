@@ -25,7 +25,20 @@ public sealed record SessionView(
     PreviewMode PreviewMode = PreviewMode.Source,
     TimelinePreviewView? TimelinePreview = null,
     TimelinePlaybackView? TimelinePlayback = null,
-    EditingView? Editing = null);
+    EditingView? Editing = null,
+    ThumbnailStats? Thumbnails = null);
+
+/// <summary>Filmstrip worker diagnostics (ABI 8); never project data.</summary>
+public sealed record ThumbnailStats(
+    int Pending, int InFlight, int Waiting, ulong Decoded, ulong NoFrame, ulong Failed,
+    ulong Batches, ulong CancelledBatches, ulong? LastBatchMs, uint? LastProcessId, bool Throttled);
+
+/// <summary>
+/// One filmstrip sample the frontend wants. <c>SampleUs</c> is a point on the
+/// source's microsecond axis chosen by the layout; Rust maps it to the stream
+/// clock (ceiling), validates it and picks the actual frame.
+/// </summary>
+public sealed record ThumbnailWant(ulong Token, string MediaId, string SourceKey, long SampleUs, int Height);
 
 /// <summary>Editing affordances that depend on Rust-owned time (ABI 7).</summary>
 public sealed record EditingView(bool SplitEnabled, string SplitDetail, string? Notice = null);
@@ -65,7 +78,9 @@ public sealed record ClipView(
     string Availability, bool Selected,
     long StartTicks = 0, long EndTicks = 0, long MinStartTicks = 0, long MinStartMs = 0,
     long? MaxEndTicks = null, long? MaxEndMs = null,
-    [property: JsonPropertyName("end_ms")] long? ExactEndMs = null)
+    [property: JsonPropertyName("end_ms")] long? ExactEndMs = null,
+    string SourceKey = "", long SourceInTicks = 0, long SourceEndTicks = 0,
+    long SourceInUs = 0, long SourceEndUs = 0, double ThumbAspect = 0)
 {
     /// <summary>Floor of the exact end; older/test rows fall back to start + duration.</summary>
     [JsonIgnore]
@@ -145,4 +160,5 @@ public sealed record PreviewMetrics(ulong? ProbeUs, ulong? DecodeUs, ulong? Requ
     UnmappedMemberHandling = JsonUnmappedMemberHandling.Skip)]
 [JsonSerializable(typeof(SessionView))]
 [JsonSerializable(typeof(TimelineView))]
+[JsonSerializable(typeof(IReadOnlyList<ThumbnailWant>))]
 internal sealed partial class ViewJsonContext : JsonSerializerContext;

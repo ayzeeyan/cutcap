@@ -144,6 +144,57 @@ public sealed class EngineSession : IDisposable
     /// Appends a ready video source to the end of a video track. Acceptance
     /// only: the engine validates and reports rejections in the view status.
     /// </summary>
+    /// <summary>
+    /// Replaces the filmstrip thumbnail demand (visible samples first, at most
+    /// 128). Samples no longer wanted are dropped or cancelled in Rust.
+    /// </summary>
+    public unsafe void RequestThumbnails(IReadOnlyList<ThumbnailWant> wants)
+    {
+        var json = JsonSerializer.SerializeToUtf8Bytes(wants, ViewJsonContext.Default.IReadOnlyListThumbnailWant);
+        fixed (byte* pointer = json)
+        {
+            Check(NativeMethods.RequestThumbnails(Handle, pointer, (nuint)json.Length));
+        }
+    }
+
+    /// <summary>Announces the next completed thumbnail; false when none is waiting.</summary>
+    public bool TryNextThumbnail(out NativeThumbnailInfo info)
+    {
+        var status = NativeMethods.NextThumbnail(Handle, out info);
+        if (status == NativeStatus.NoFrame)
+        {
+            return false;
+        }
+        Check(status);
+        if (info.Status == 0 && (info.Width == 0 || info.Height == 0 || info.Stride < info.Width * 4))
+        {
+            throw new EngineException(NativeStatus.Failed, "The engine described an invalid thumbnail.");
+        }
+        return true;
+    }
+
+    /// <summary>Copies the announced thumbnail into caller memory (for example a locked bitmap).</summary>
+    public unsafe bool CopyThumbnail(ulong token, nint destination, int length, int stride)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(length);
+        ArgumentOutOfRangeException.ThrowIfNegative(stride);
+        var status = NativeMethods.CopyThumbnail(Handle, token, (byte*)destination, (nuint)length, (nuint)stride);
+        if (status is NativeStatus.StaleFrame or NativeStatus.NoFrame)
+        {
+            return false;
+        }
+        Check(status);
+        return true;
+    }
+
+    public unsafe bool CopyThumbnail(ulong token, Span<byte> destination, int stride)
+    {
+        fixed (byte* pointer = destination)
+        {
+            return CopyThumbnail(token, (nint)pointer, destination.Length, stride);
+        }
+    }
+
     /// <summary>Places the whole Ready source at a position (drag-and-drop). Acceptance only.</summary>
     public unsafe void PlaceClip(string mediaId, string trackId, TimelinePosition position)
     {
