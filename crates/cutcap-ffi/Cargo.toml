@@ -16,9 +16,16 @@ name = "cutcap-gpu-info"
 path = "src/bin/gpu_info.rs"
 required-features = ["gpu-diagnostics"]
 
+# Phase 4B native verification: records the default output by loopback.
+[[bin]]
+name = "cutcap-audio-loopback"
+path = "src/bin/audio_loopback.rs"
+required-features = ["audio-diagnostics"]
+
 [features]
 default = []
 gpu-diagnostics = ["dep:wgpu", "dep:pollster"]
+audio-diagnostics = []
 
 [dependencies]
 cutcap-contracts.workspace = true
