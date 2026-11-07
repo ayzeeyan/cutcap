@@ -46,6 +46,15 @@ function Lane-Point([IntPtr]$h, [double]$ms, [int]$track, [double]$dy = 0, [int]
   $s = Scale $h; $r = (Find-Element $h 'Track lanes').Current.BoundingRectangle
   @{ X = [int]($r.X + (12 + $ms / 1000.0 * 20 * $zoom / 100) * $s); Y = [int]($r.Y + ($track * $TrackHeight + $TrackHeight / 2 + $dy) * $s) }
 }
+# A point inside the visible lanes for wheel input. The 'Track lanes' element is
+# the whole scrolled surface, so its rectangle moves left as the view scrolls;
+# the ruler stays fixed over the viewport, so it anchors x (middle of the view)
+# and the lanes' top (never scrolled vertically here) anchors y (audio lane).
+function Wheel-Point([IntPtr]$h) {
+  $ruler = (Find-Element $h 'Timeline ruler').Current.BoundingRectangle
+  $lanes = (Find-Element $h 'Track lanes').Current.BoundingRectangle
+  @{ X = [int]($ruler.X + $ruler.Width / 2); Y = [int]($lanes.Y + 1.5 * $TrackHeight * (Scale $h)) }
+}
 function Ruler-Point([IntPtr]$h, [double]$ms) {
   $s = Scale $h; $r = (Find-Element $h 'Timeline ruler').Current.BoundingRectangle
   @{ X = [int]($r.X + (12 + $ms / 1000.0 * 20) * $s); Y = [int]($r.Y + $r.Height / 2) }
@@ -183,10 +192,9 @@ Save-Client $h "$Shots\03-zoom-50.jpg"
 Click-Named $h 'Reset zoom'; Start-Sleep -Milliseconds 1500
 
 # 7-8. Scroll away and back (cached thumbnails reused: no placeholders on return).
-# The wheel goes over the empty audio lane, where no clip tooltip can take it.
-$lanes = (Find-Element $h 'Track lanes').Current.BoundingRectangle
+$wp = Wheel-Point $h
 Assert-CutCapForeground
-[void][Native2]::SetCursorPos([int]($lanes.X + 600), [int]($lanes.Y + 1.5 * $TrackHeight * (Scale $h)))
+[void][Native2]::SetCursorPos($wp.X, $wp.Y)
 foreach ($i in 1..25) { Assert-CutCapForeground; [Native2]::keybd_event(0x10, 0, 0, [IntPtr]::Zero); [Native2]::mouse_event(0x0800, 0, 0, -120, [IntPtr]::Zero); [Native2]::keybd_event(0x10, 0, 2, [IntPtr]::Zero); Start-Sleep -Milliseconds 30 }
 Start-Sleep -Milliseconds 800
 Save-Client $h "$Shots\04-scrolled-away.jpg"

@@ -6,12 +6,9 @@
 $long = Join-Path $work 'long 1080p.mp4'
 Copy-Item "$repo\.artifacts\filmstrip\sources\long 1080p.mp4" $long
 function Shift-Wheel([int]$ticks, [int]$delta) {
-  $lanes = (Find-Element $h 'Track lanes').Current.BoundingRectangle
+  $wp = Wheel-Point $h
   Assert-CutCapForeground
-  # Over the empty audio lane: a clip tooltip under a resting cursor would take the wheel.
-  [void][Native2]::SetCursorPos([int]($lanes.X + 600), [int]($lanes.Y + 1.5 * $TrackHeight * (Scale $h)))
-  # A small move first, so the pointer is current after a long rest.
-  [void][Native2]::SetCursorPos([int]($lanes.X + 610), [int]($lanes.Y + 1.5 * $TrackHeight * (Scale $h))); Start-Sleep -Milliseconds 120
+  [void][Native2]::SetCursorPos($wp.X, $wp.Y); Start-Sleep -Milliseconds 80
   foreach ($i in 1..$ticks) {
     Assert-CutCapForeground
     [Native2]::keybd_event(0x10, 0, 0, [IntPtr]::Zero); [Native2]::mouse_event(0x0800, 0, 0, $delta, [IntPtr]::Zero); [Native2]::keybd_event(0x10, 0, 2, [IntPtr]::Zero)
@@ -39,13 +36,10 @@ Save-Client $h "$Shots\perf-02-zoom-200.jpg"
 Note 'MARK zoom-reset'
 Click-Named $h 'Reset zoom'; Start-Sleep -Milliseconds 4000
 
-# Known pre-existing issue (reproduced on the Phase 3E build): on a long timeline,
-# synthetic wheel input after the first burst has no effect, so 'scroll-back'
-# does not move the view; the cache-on-return evidence is the zoom-reset phase.
 Note 'MARK scroll-away'
-Shift-Wheel 80 -120; Start-Sleep -Milliseconds 8000
+Shift-Wheel 30 -120; Start-Sleep -Milliseconds 8000
 Note 'MARK scroll-back'
-Shift-Wheel 80 120; Start-Sleep -Milliseconds 3000
+Shift-Wheel 45 120; Start-Sleep -Milliseconds 3000
 Save-Client $h "$Shots\perf-03-scrolled-back.jpg"
 
 Note 'MARK zoom-out'
