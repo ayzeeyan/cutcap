@@ -84,13 +84,41 @@ fn read_limited(
     }
 }
 
+/// Windows scheduling class for a media child. Background work (thumbnails)
+/// runs below normal so it never competes with playback decoders.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Priority {
+    Normal,
+    BelowNormal,
+}
+
 pub(crate) fn run(
+    command: Command,
+    stage: &'static str,
+    cancellation: &Cancellation,
+    timeout: Duration,
+    stdout_limit: usize,
+    stderr_limit: usize,
+) -> Result<Output, MediaError> {
+    run_with(
+        command,
+        stage,
+        cancellation,
+        timeout,
+        stdout_limit,
+        stderr_limit,
+        Priority::Normal,
+    )
+}
+
+pub(crate) fn run_with(
     mut command: Command,
     stage: &'static str,
     cancellation: &Cancellation,
     timeout: Duration,
     stdout_limit: usize,
     stderr_limit: usize,
+    priority: Priority,
 ) -> Result<Output, MediaError> {
     if cancellation.is_cancelled() {
         return Err(MediaError::Cancelled);
@@ -103,8 +131,16 @@ pub(crate) fn run(
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
-        command.creation_flags(0x0800_0000);
+        // CREATE_NO_WINDOW, plus BELOW_NORMAL_PRIORITY_CLASS for background work.
+        let below = if priority == Priority::BelowNormal {
+            0x0000_4000
+        } else {
+            0
+        };
+        command.creation_flags(0x0800_0000 | below);
     }
+    #[cfg(not(windows))]
+    let _ = priority;
     let started = Instant::now();
     let child = command
         .spawn()

@@ -9,6 +9,7 @@ mod persistent;
 mod probe;
 mod process;
 mod stream;
+mod thumbnail;
 
 pub use backend::*;
 pub use cancel::Cancellation;
@@ -17,6 +18,7 @@ pub use frame::*;
 pub use latest::*;
 pub use persistent::*;
 pub use probe::parse_probe;
+pub use thumbnail::*;
 
 #[derive(Debug, thiserror::Error)]
 pub enum MediaError {
