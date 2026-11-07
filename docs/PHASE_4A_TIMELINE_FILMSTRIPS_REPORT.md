@@ -228,6 +228,11 @@ All screenshots are genuine captures of the CutCap window (client area only) at 
 **Defects the native runs found and fixed:**
 - **Script logging.** The script's `Note` used `Write-Output` inside functions, so the per-cell results never reached the console (they were still recorded in `$log`). It now uses `Write-Host`.
 - **Scroll-back evidence.** The scroll-back check originally only re-matched the cells, which would also pass if the view had never moved. It now requires a mismatch after scrolling away.
+- **Wheel input that missed the timeline.** This was a harness defect, at first mistaken for an app bug.
+  - **Symptom.** On the 180 s clip, wheel scrolling seemed to "lock" after the first burst, and the Phase 3E build behaved the same.
+  - **Cause.** A temporary wheel-event trace showed that later bursts never reached the lanes' `ScrollViewer`. The scripts placed the cursor at the `Track lanes` element's left edge + 600 px, but that element is the whole scrolled surface (3,852 DIP wide). After scrolling 1,500 DIP its left edge is about 2,250 physical px off-screen, so the cursor landed outside the timeline. On the 30 s clip the lanes can only scroll 247 DIP, so the cursor stayed inside.
+  - **Fix.** Wheel input is now anchored to the fixed ruler (`Wheel-Point`), as `timeline-draw.ps1` already did. With it, the 180 s clip scrolls away 1,500 px and back to 0 (§11).
+  - **No app change.** Clicks and drags were never affected, because they map content positions through the same moving rectangle.
 - **Unsaved-prompt timeout.** The first full run's close-during-decode step timed out at 10 s. Relinking is a document edit, so CutCap correctly asked about unsaved changes. The script now saves after relinking, so the step measures shutdown alone.
 
 **Regression scenarios:**
@@ -244,34 +249,35 @@ All screenshots are genuine captures of the CutCap window (client area only) at 
 
 | Phase | Demands | Time to fill (no placeholders left) | Notes |
 |---|---|---|---|
-| Place the clip (cold) | 3 | first image 2.98 s, filled **8.1 s** | 17 thumbnails; batches of 6 take 2.6–3.0 s each on this source |
-| Zoom to 200% | 5 | filled 6.0 s | New grid: unchanged samples (e.g. 0 s) draw at once |
+| Place the clip (cold) | 3 | first image 3.0 s, filled **8.2 s** | 17 thumbnails; batches of 6 take 2.5–3.2 s each on this source |
+| Zoom to 200% | 5 | filled 5.5 s | New grid: unchanged samples (e.g. 0 s) draw at once |
 | **Back to 100%** | **0** | **0 placeholder renders** | Every cell came from the cache: no FFmpeg work |
-| Scroll to the clip end (2,855 px) | 3 | filled 9.9 s | 53 renders with placeholders while scrolling, never blank lanes |
-| Zoom to 50% | 5 | filled 11.4 s | Samples 8.6 s apart, each a separate keyframe seek |
-| Timeline Play while 14 thumbnails are pending | 6 | — | **30.0 fps copied, 0 dropped**; thumbnails throttled to 2 per batch (1.1–1.4 s each) |
+| Scroll 1,500 px into the clip (30 wheel ticks) | 3 | not filled within the 8 s pause | 14 new cells at about 3 s per batch of 6; placeholders, never blank lanes |
+| **Scroll back to the start** (45 ticks) | **0 new** | **0 placeholder renders** | 365 cache hits during the scroll: the cells decoded at placement draw at once |
+| Zoom to 50% (at the start) | 1 | filled 1.3 s | Most 50% samples coincide with cached ones near the start |
+| Timeline Play while 14 thumbnails are pending | 6 | — | **30.0 fps copied, 0 dropped**; thumbnails throttled to 2 per batch (0.8–1.2 s each) |
 | Timeline Play with all cached | 0 | — | 30.0 fps, 0 dropped |
-| Close during decoding | — | — | exited in **717 ms**, 0 leftover processes |
+| Close during decoding | — | — | exited in **686 ms**, 0 leftover processes |
 
-**Process launches.** There were 23 FFmpeg batches for 75 delivered thumbnails, and 4 batches were cancelled because the view moved on. Completed batches averaged about 3.9 thumbnails per launch; throttled playback batches carry 2. There is at most one thumbnail process at a time.
+**Process launches.** There were 18 FFmpeg batches for 60 delivered thumbnails, and 4 batches were cancelled because the view moved on. Completed batches averaged about 4.3 thumbnails per launch; throttled playback batches carry 2. There is at most one thumbnail process at a time.
 
 **Memory.**
-- The cache held 75 thumbnails in 2.1 MiB (about 28.5 KiB each), with 0 evictions under the 48 MiB budget.
-- Peak managed heap was 31 MiB. The whole app's working set peaked at 388 MiB; that figure includes 1080p preview and playback frames.
+- The cache held 60 thumbnails in 1.7 MiB (about 28.5 KiB each), with 0 evictions under the 48 MiB budget.
+- Peak managed heap was 27 MiB. The whole app's working set peaked at 384 MiB; that figure includes 1080p preview and playback frames.
 - FFmpeg batch output is bounded at 6 × 384 × 216 × 4 bytes.
 
 **UI-thread cost** (draw-call recording, not GPU raster or presentation):
-- **Lanes render** with one long filmstrip: 207–520 µs average and ≤ 843 µs max per phase. The highest was 2.6 ms, the first render after placement, which includes JIT.
-- **Planning:** 95–184 µs average (the first plan was 1.2 ms).
+- **Lanes render** with one long filmstrip: 160–351 µs average and ≤ 541 µs max per phase (scrolling: 351 µs average). The highest was 2.5 ms, the first render after placement, which includes JIT.
+- **Planning:** 100–190 µs average (the first plan was about 1.2 ms).
 - **Bitmap copies:** 0.2–1.2 ms per drain, capped at ≤ 16 per tick.
 
-**Cache effectiveness.** The trace counted 2,375 hits against 1,547 misses. A miss here is a lookup for a cell whose image has not arrived yet, i.e. a placeholder frame. Zooming back, resuming playback and pausing produced no new demand.
+**Cache effectiveness.** The trace counted 3,630 hits against 1,037 misses. A miss here is a lookup for a cell whose image has not arrived yet, i.e. a placeholder frame. Scrolling back, zooming back, resuming playback and pausing produced no placeholder renders.
 
 **Start-up and playback impact.** These come from the controlled engine measurement (`docs/measurements/phase4a-playback-startup.json`), with real FFmpeg and no UI.
 - Timeline Play → Playing at the same positions, with and without a 6-sample thumbnail batch in flight, differs by −99 to +241 ms with no consistent sign.
 - A first play in a fresh session at 5 s took 2.18–2.34 s either way.
 - Start-up is dominated by decoding from the previous keyframe: 0.8–3.8 s on this GOP-250 source.
-- The native trace shows 4.3 s for the session's first play against 1.0 s for a later one at the same position. The later play resumed warm decoders; the engine measurement shows the gap is not caused by thumbnails.
+- The native trace shows about 3.2 s (sampled at 1 Hz) for the session's first play, while a later play at the same position was already Playing at its first sample. The later play resumed warm decoders; the engine measurement shows the gap is not caused by thumbnails.
 
 **Before the thread fix (§4)** (`phase4a-filmstrip-performance-before-thread-fix.json`), batches were about 2× faster in wall time but used about 2.7 cores each. The fix halves the background CPU at the cost of slower fills on long-GOP sources. Sources whose samples sit nearer to keyframes fill much faster. In the native scenario, the three checked cells of the 1280×720 source showed their real frames when checked about 6 s after placement (the script waits 4 s, then checks). The short fixture batches take about 0.1 s.
 
@@ -286,7 +292,6 @@ The two builds overlap, so no filmstrip-specific cost is distinguishable from ru
 
 **Not claimed.**
 - Smooth 60 fps scrolling is not claimed: frame pacing and compositor presentation were not measured, only UI-thread draw-recording time.
-- The return-scroll cache hit was not measured by wheel because of the pre-existing scroll issue in §13. The zoom-back phase demonstrates the same cache path.
 
 ## 12. Regression results
 
@@ -304,11 +309,6 @@ The two builds overlap, so no filmstrip-specific cost is distinguishable from ru
 - **No zoom fallback.** A zoom change requests a new grid; until it arrives, cells show placeholders rather than reusing images from another zoom.
 - **Fixed preview height.** Thumbnails are requested at the lane's physical strip height; there is no per-monitor re-request beyond what the next plan does after a DPI change.
 - **Video only.** Audio lanes and waveforms are out of scope.
-- **Pre-existing wheel-scroll lock, not caused by this phase.**
-  - On a long timeline (the 180 s clip), synthetic wheel input after the first burst has no effect in either direction. This happens with both Shift+wheel and horizontal-wheel events: the lanes stayed at offset 1500, or at 2855 when the first burst reached the end.
-  - On the 30 s clip, repeated bursts scroll back and forth normally.
-  - The identical probe on the **Phase 3E publish build** shows the same lock, so it predates filmstrips.
-  - It has not been confirmed with a physical mouse, and the cause is not yet known. It is left for a separate fix; the performance stage's "scroll-back" phase therefore did not move the view.
 - **FFmpeg is still external.** FFmpeg 9.0.1 is required on PATH; without it, clips keep placeholders (import itself also needs it).
 
 ## 14. ABI changes
@@ -344,6 +344,9 @@ Branch `claude/phase-4a-timeline-filmstrips`, created from `origin/main` `7a510d
 | `2692f60` | feat(ui): render real video filmstrips in timeline clips |
 | `0150333` | test(timeline): validate thumbnail timing caching and native rendering |
 | `cea06a7` | docs: report Phase 4A filmstrip implementation |
+| `6a0aa2b` | docs: record the Phase 4A pull request |
+| `7f334f7` | test(timeline): anchor native wheel input to the visible timeline |
+| (this commit) | docs: correct the Phase 4A scroll finding and measurements |
 
 **Clean-worktree checks.** Each of the first four commits was checked out in a clean worktree and checked with:
 - clippy `-D warnings` on all targets;
@@ -368,7 +371,7 @@ Screenshots and measurement logs were copied into `docs/` after checking that th
 
 - **PR:** [#4](https://github.com/ayzeeyan/cutcap/pull/4) "feat: add real video filmstrips and thumbnail caching (Phase 4A)": base `main`, head `claude/phase-4a-timeline-filmstrips`.
 - **State at creation:** open, not a draft, mergeable, auto-merge off.
-- **Commits:** five, head `cea06a7` at creation. This report update follows as a sixth commit.
+- **Commits:** five, head `cea06a7` at creation. Later commits added the PR record and the wheel-input harness fix with its corrected measurements (§10, §11).
 - **Push:** `git push -u origin claude/phase-4a-timeline-filmstrips` without force. The remote head was verified equal to the local one.
 - **Base:** `origin/main` (`7a510d0`) is an ancestor of the branch.
 - **For the owner:** the PR is left open for review. `main` and the feature branch are not deleted.
