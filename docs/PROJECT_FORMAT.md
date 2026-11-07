@@ -1,5 +1,9 @@
 # CutCap project documents — format 1, core schema 1
 
+Phase 4A adds no format/schema change. Filmstrip thumbnails, their cache and
+source keys are presentation state: nothing is written to `.cutcap` files and
+thumbnail work never changes the document revision or dirty state.
+
 Phase 3E adds no format/schema change. Moved, trimmed and split clips are
 ordinary schema-1 clips: identity, track, exact integer `start`/`duration` in
 project ticks and an integer `source_in` in the stream clock. Start trims and

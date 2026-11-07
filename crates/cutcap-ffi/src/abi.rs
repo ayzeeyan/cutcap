@@ -35,7 +35,9 @@ use std::{
 /// ABI 6 adds independent continuous timeline transport and diagnostics.
 /// ABI 7 (Phase 3E): place, move, trim and split clip exports; clip rows add
 /// exact ticks and trim limits; the view adds `editing`.
-pub const ABI_VERSION: u32 = 7;
+/// ABI 8 (Phase 4A): filmstrip thumbnail demand/next/copy exports and the
+/// filmstrip clip-row and thumbnail-diagnostics view fields.
+pub const ABI_VERSION: u32 = 8;
 
 pub const CUTCAP_OK: i32 = 0;
 pub const CUTCAP_INVALID_ARGUMENT: i32 = 1;
@@ -876,6 +878,142 @@ pub unsafe extern "C" fn cutcap_session_timeline(
             let json = s.timeline_json()?;
             // SAFETY: forwarded caller contract.
             unsafe { copy_text(json.as_bytes(), buffer, capacity, out_len) }
+        })
+    })
+}
+
+/// Phase 4A: one completed filmstrip thumbnail, announced before its copy.
+/// 40 bytes, 8-byte aligned. `status`: 0 ready (pixels available), 1 no frame
+/// at/after the sample, 2 decode failed. `actual_ticks` is the decoded frame's
+/// original PTS in `timebase_num/timebase_den` (0 unless ready).
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Default)]
+pub struct CutCapThumbnailInfo {
+    pub token: u64,
+    pub actual_ticks: i64,
+    pub timebase_num: u32,
+    pub timebase_den: u32,
+    pub width: u32,
+    pub height: u32,
+    pub stride: u32,
+    pub status: u32,
+}
+
+/// Phase 4A (ABI 8): replaces the filmstrip demand with a UTF-8 JSON array of
+/// `{token, media_id, source_key, sample_us, height}` (at most 128, visible
+/// first). Samples no longer wanted are dropped or cancelled. Nonblocking.
+///
+/// # Safety
+/// `json` must be valid for reads of `len` bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn cutcap_session_request_thumbnails(
+    handle: u64,
+    json: *const u8,
+    len: usize,
+) -> i32 {
+    guard(|| {
+        if len > 64 * 1024 {
+            return Err(Fail::argument("Thumbnail demand exceeds 64 KiB."));
+        }
+        // SAFETY: forwarded caller contract; input_str bounds and validates UTF-8.
+        let text = unsafe { input_str(json, len) }?;
+        with_session(handle, |s| Ok(s.request_thumbnails(text)?))
+    })
+}
+
+/// Announces the next completed thumbnail, or returns `CUTCAP_NO_FRAME` when
+/// none is waiting. A ready one must be copied before the next call, which
+/// otherwise discards it.
+///
+/// # Safety
+/// `out_info` must be valid for one `CutCapThumbnailInfo` write.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn cutcap_session_next_thumbnail(
+    handle: u64,
+    out_info: *mut CutCapThumbnailInfo,
+) -> i32 {
+    guard(|| {
+        // Validate before announcing, so a bad pointer never consumes a result.
+        if out_info.is_null() || !out_info.is_aligned() {
+            return Err(Fail::argument("Invalid output pointer."));
+        }
+        let info = with_session(handle, |s| {
+            let done = s
+                .next_thumbnail()
+                .ok_or_else(|| Fail::new(CUTCAP_NO_FRAME, "No thumbnail is waiting."))?;
+            let mut info = CutCapThumbnailInfo {
+                token: done.token,
+                status: match done.status {
+                    crate::thumbnails::Status::Ready => 0,
+                    crate::thumbnails::Status::NoFrame => 1,
+                    crate::thumbnails::Status::Failed => 2,
+                },
+                ..Default::default()
+            };
+            if let Some(t) = &done.thumbnail {
+                info.actual_ticks = t.actual.ticks;
+                info.timebase_num = t.actual.timebase.numerator();
+                info.timebase_den = t.actual.timebase.denominator();
+                info.width = t.image.width();
+                info.height = t.image.height();
+                info.stride = u32::try_from(t.image.stride()).unwrap_or(u32::MAX);
+            }
+            Ok(info)
+        })?;
+        // SAFETY: forwarded caller contract.
+        unsafe { write_out(out_info, info) }
+    })
+}
+
+/// Copies the announced thumbnail `token` into caller memory with `dst_stride`
+/// bytes per row and releases it. A different token → `CUTCAP_STALE_FRAME`.
+/// The destination is validated first: a rejected buffer leaves the thumbnail
+/// announced, so a corrected call can still copy it.
+///
+/// # Safety
+/// `dst` must be valid for writes of `dst_len` bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn cutcap_session_copy_thumbnail(
+    handle: u64,
+    token: u64,
+    dst: *mut u8,
+    dst_len: usize,
+    dst_stride: usize,
+) -> i32 {
+    guard(|| {
+        with_session(handle, |s| {
+            let done = s.announced_thumbnail(token).ok_or_else(|| {
+                Fail::new(CUTCAP_STALE_FRAME, "That thumbnail is no longer waiting.")
+            })?;
+            let Some(thumbnail) = &done.thumbnail else {
+                s.take_thumbnail(token);
+                return Err(Fail::new(CUTCAP_NO_FRAME, "That thumbnail has no pixels."));
+            };
+            let image = &thumbnail.image;
+            let row = image.stride();
+            let rows = image.height() as usize;
+            let required = dst_stride
+                .checked_mul(rows.saturating_sub(1))
+                .and_then(|n| n.checked_add(row))
+                .ok_or_else(|| Fail::argument("Destination size overflow."))?;
+            if dst.is_null()
+                || dst_len > isize::MAX as usize
+                || dst_stride < row
+                || dst_len < required
+            {
+                return Err(Fail::argument(
+                    "Destination buffer is too small for this thumbnail.",
+                ));
+            }
+            // SAFETY: `dst` is non-null and the caller guarantees `dst_len` writable
+            // bytes; every row write below stays within `required <= dst_len`.
+            let target = unsafe { std::slice::from_raw_parts_mut(dst, dst_len) };
+            for (index, source) in image.pixels().chunks_exact(row).enumerate() {
+                let start = index * dst_stride;
+                target[start..start + row].copy_from_slice(source);
+            }
+            s.take_thumbnail(token);
+            Ok(())
         })
     })
 }

@@ -1,6 +1,13 @@
 # Claude onboarding
 
-Phase 3E current handoff: ABI/contract 7 add exact clip place/move/trim/split
+Phase 4A current handoff: ABI/contract 8 add real video filmstrips
+(docs/PHASE_4A_TIMELINE_FILMSTRIPS_REPORT.md, ADR 024). Rust selects each
+thumbnail frame (first actual PTS ≥ the sample, ceiling µs→ticks) in bounded,
+cancellable, low-priority FFmpeg batches; C# lays cells on a fixed source-time
+grid, caches bitmaps in a 48 MiB LRU and draws only cached images. Thumbnails
+never enter the Project. Schema/envelope remain 1.
+
+Phase 3E handoff: ABI/contract 7 add exact clip place/move/trim/split
 with one undo step per gesture (docs/PHASE_3E_ADVANCED_TIMELINE_REPORT.md,
 ADR 023). Start trims and splits align to the source tick grid so source_in
 stays an exact integer; the frontend previews gestures locally and commits

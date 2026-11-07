@@ -28,6 +28,8 @@ pub struct SessionView {
     pub timeline_generation: u64,
     pub history: HistoryStatus,
     pub editing: EditingView,
+    /// Filmstrip worker diagnostics (queue depths, batches, counters).
+    pub thumbnails: crate::thumbnails::ThumbnailStats,
     pub preview_mode: PreviewMode,
     pub timeline_preview: crate::timeline_preview::TimelinePreviewView,
     pub timeline_playback: crate::timeline_playback::TimelinePlaybackView,
@@ -71,6 +73,66 @@ pub struct ClipView {
     pub min_start_ms: i64,
     pub max_end_ticks: Option<i64>,
     pub max_end_ms: Option<i64>,
+    /// Phase 4A filmstrip inputs (presentation only). `source_key` names the
+    /// verified source (empty when it is not Ready, so nothing is drawn); the
+    /// clip's source interval is `[source_in_ticks, source_end_ticks)` in the
+    /// stream clock (exact, from the evaluator's mapping) and
+    /// `[source_in_us, source_end_us)` on the source's microsecond axis
+    /// (ceil/floor, for laying out sample cells). `thumb_aspect` is the
+    /// rotated display aspect (width / height) thumbnails are decoded at.
+    pub source_key: String,
+    pub source_in_ticks: i64,
+    pub source_end_ticks: i64,
+    pub source_in_us: i64,
+    pub source_end_us: i64,
+    pub thumb_aspect: f64,
+}
+
+/// Identity of a verified, Ready source for thumbnail caching: media id plus a
+/// hash of its verified path. Relinking changes it; missing/changed sources
+/// have none. (Content is verified by fingerprint before a source is Ready.)
+pub fn source_key(snapshot: &ProjectSnapshot, media: &MediaSummary) -> String {
+    let ready = snapshot
+        .media_state
+        .iter()
+        .any(|s| s.id == media.id && s.state == Availability::Ready);
+    if !ready {
+        return String::new();
+    }
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    for byte in media.path.as_os_str().to_string_lossy().bytes() {
+        hash = (hash ^ u64::from(byte)).wrapping_mul(0x0100_0000_01b3);
+    }
+    format!("{}:{hash:016x}:{}", media.id, media.metadata.stream_index)
+}
+
+/// Filmstrip timing for one clip: exact stream-tick interval, microsecond axis
+/// bounds and aspect. `None` without verified metadata.
+fn filmstrip(
+    snapshot: &ProjectSnapshot,
+    clip: &cutcap_core::Clip,
+    media: Option<&MediaSummary>,
+) -> Option<(String, i64, i64, i64, i64, f64)> {
+    let media = media?;
+    let meta = &media.metadata;
+    if meta.timebase != clip.source_in.timebase {
+        return None;
+    }
+    let end = cutcap_core::map_clip_source(clip, clip.start, snapshot.timebase, meta.timebase)
+        .ok()?
+        .end_exclusive;
+    let micro = Timebase::new(1, 1_000_000).ok()?;
+    let in_us = clip.source_in.rescale(micro, Rounding::Ceil).ok()?.ticks;
+    let end_us = end.rescale(micro, Rounding::Floor).ok()?.ticks;
+    let (w, h) = meta.preview_dimensions().ok()?;
+    Some((
+        source_key(snapshot, media),
+        clip.source_in.ticks,
+        end.ticks,
+        in_us,
+        end_us,
+        f64::from(w) / f64::from(h),
+    ))
 }
 
 /// Editing affordances that depend on Rust-owned time (the playhead).
@@ -365,6 +427,14 @@ pub fn clip_views(snapshot: &ProjectSnapshot) -> Vec<ClipView> {
                 tb,
                 crate::edits::source_range(media, &core, tb),
             );
+            let (
+                source_key,
+                source_in_ticks,
+                source_end_ticks,
+                source_in_us,
+                source_end_us,
+                thumb_aspect,
+            ) = filmstrip(snapshot, &core, media).unwrap_or_default();
             ClipView {
                 id: clip.id.to_string(),
                 track_id: clip.track_id.to_string(),
@@ -393,6 +463,12 @@ pub fn clip_views(snapshot: &ProjectSnapshot) -> Vec<ClipView> {
                 min_start_ms: timeline_ms(min_start.0, tb),
                 max_end_ticks: max_end.map(|t| t.0),
                 max_end_ms: max_end.map(|t| timeline_ms(t.0, tb)),
+                source_key,
+                source_in_ticks,
+                source_end_ticks,
+                source_in_us,
+                source_end_us,
+                thumb_aspect,
             }
         })
         .collect()

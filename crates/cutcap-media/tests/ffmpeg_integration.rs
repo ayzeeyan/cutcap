@@ -451,3 +451,159 @@ fn missing_corrupt_unsupported_and_pre_cancelled_inputs() {
         Err(MediaError::Cancelled)
     ));
 }
+
+fn thumbs(
+    name: &str,
+    height: u32,
+    ticks: &[i64],
+) -> (MediaSummary, Vec<Result<Thumbnail, MediaError>>) {
+    let media = media(name);
+    let batch: Vec<ThumbnailRequest> = ticks
+        .iter()
+        .enumerate()
+        .map(|(n, t)| ThumbnailRequest {
+            token: n as u64 + 100,
+            position: SourceTime {
+                ticks: *t,
+                timebase: media.metadata.timebase,
+            },
+        })
+        .collect();
+    let results = FfmpegBackend::default()
+        .extract_thumbnails(&media, height, &batch, &Cancellation::default())
+        .unwrap();
+    (media, results)
+}
+
+fn centre(t: &Thumbnail) -> [u8; 3] {
+    let (w, h) = (t.image.width() as usize, t.image.height() as usize);
+    let i = (h / 2 * w + w / 2) * 4;
+    let p = &t.image.pixels()[i..i + 3];
+    [p[0], p[1], p[2]]
+}
+
+fn is(rgb: [u8; 3], color: &str) -> bool {
+    let [r, g, b] = rgb.map(i32::from);
+    match color {
+        "red" => r > 200 && g < 60 && b < 60,
+        "green" => g > 90 && r < 60 && b < 60,
+        "blue" => b > 200 && r < 60 && g < 60,
+        _ => false,
+    }
+}
+
+#[test]
+#[ignore = "requires external FFmpeg/FFprobe"]
+fn batched_thumbnails_return_real_pixels_at_the_first_pts_at_or_after_each_sample() {
+    let _guard = SERIAL.lock().unwrap();
+    // CFR 4 fps: frames 0-3 red, 4-7 green, 8-11 blue; PTS 0,250,...,2750 (1/1000).
+    let (media, results) = thumbs("colors-cfr.mkv", 36, &[0, 100, 1100, 2100, 2750, 2751]);
+    let expected = [
+        (0, "red"),
+        (250, "red"),
+        (1250, "green"),
+        (2250, "blue"),
+        (2750, "blue"),
+    ];
+    for (result, (pts, color)) in results.iter().zip(expected) {
+        let t = result.as_ref().unwrap();
+        assert_eq!(t.actual.ticks, pts);
+        assert_eq!(t.actual.timebase, media.metadata.timebase);
+        assert!(is(centre(t), color), "{pts}: {:?}", centre(t));
+        assert_eq!(
+            (t.image.width(), t.image.height()),
+            (64, 36),
+            "16:9 aspect kept"
+        );
+    }
+    assert_eq!(results[0].as_ref().unwrap().token, 100);
+    // Past the last frame: no frame, not a substitute.
+    assert!(
+        matches!(results[5], Err(MediaError::NoFrame)),
+        "{:?}",
+        results[5].as_ref().err()
+    );
+}
+
+#[test]
+#[ignore = "requires external FFmpeg/FFprobe"]
+fn thumbnails_use_actual_vfr_and_offset_pts_and_keep_rotation() {
+    let _guard = SERIAL.lock().unwrap();
+    // VFR PTS 0,200,700,1500,2300: red, green, blue, red, green.
+    let (_, vfr) = thumbs("colors-vfr.mkv", 32, &[201, 699, 701, 1499, 2299]);
+    let pts: Vec<i64> = vfr
+        .iter()
+        .map(|r| r.as_ref().unwrap().actual.ticks)
+        .collect();
+    assert_eq!(
+        pts,
+        [700, 700, 1500, 1500, 2300],
+        "never a nominal-rate frame index"
+    );
+    assert!(is(centre(vfr[0].as_ref().unwrap()), "blue"));
+    assert!(is(centre(vfr[2].as_ref().unwrap()), "red"));
+    assert!(is(centre(vfr[4].as_ref().unwrap()), "green"));
+    // Nonzero start PTS (5000): absolute positions, not relative to zero.
+    let (offset, results) = thumbs("offset.mkv", 36, &[5000, 6100]);
+    assert_eq!(offset.metadata.start_pts, 5000);
+    assert_eq!(results[0].as_ref().unwrap().actual.ticks, 5000);
+    assert!(results[1].as_ref().unwrap().actual.ticks >= 6100);
+    // Display-matrix rotation: portrait thumbnail, not stretched landscape.
+    let (_, rotated) = thumbs("rotated.mp4", 64, &[0]);
+    let t = rotated[0].as_ref().unwrap();
+    assert!(
+        t.image.width() < t.image.height(),
+        "{}x{}",
+        t.image.width(),
+        t.image.height()
+    );
+}
+
+#[test]
+#[ignore = "requires external FFmpeg/FFprobe"]
+fn thumbnail_batches_reject_bad_requests_and_cancel_promptly() {
+    let _guard = SERIAL.lock().unwrap();
+    let media = media("long-gop-bframes.mp4");
+    let backend = FfmpegBackend::default();
+    let at = |ticks| ThumbnailRequest {
+        token: 1,
+        position: SourceTime {
+            ticks,
+            timebase: media.metadata.timebase,
+        },
+    };
+    let cancel = Cancellation::default();
+    assert!(
+        backend
+            .extract_thumbnails(&media, 40, &[], &cancel)
+            .is_err()
+    );
+    assert!(
+        backend
+            .extract_thumbnails(&media, 40, &[at(0); 7], &cancel)
+            .is_err()
+    );
+    let wrong = ThumbnailRequest {
+        token: 1,
+        position: SourceTime {
+            ticks: 0,
+            timebase: Timebase::new(1, 7).unwrap(),
+        },
+    };
+    assert!(
+        backend
+            .extract_thumbnails(&media, 40, &[wrong], &cancel)
+            .is_err()
+    );
+    assert!(
+        backend
+            .extract_thumbnails(&media, 40, &[at(i64::MAX)], &cancel)
+            .is_err()
+    );
+    let cancel = Cancellation::default();
+    cancel.cancel();
+    assert!(matches!(
+        backend.extract_thumbnails(&media, 40, &[at(0)], &cancel),
+        Err(MediaError::Cancelled)
+    ));
+}

@@ -43,6 +43,7 @@ fn fixture(path: &str) -> std::path::PathBuf {
 struct Controlled {
     delay: Duration,
     decodes: AtomicUsize,
+    thumbnail_batches: AtomicUsize,
 }
 
 impl Controlled {
@@ -50,11 +51,53 @@ impl Controlled {
         Arc::new(Self {
             delay,
             decodes: AtomicUsize::new(0),
+            thumbnail_batches: AtomicUsize::new(0),
         })
     }
 }
 
 impl MediaBackend for Controlled {
+    /// Thumbnail i has red = requested ticks mod 256 and actual PTS = requested,
+    /// so tests can tell which sample produced which image. Samples at ticks
+    /// 2999 or later report no frame (past the 3 s controlled source's frames).
+    fn thumbnails(
+        &self,
+        media: &cutcap_contracts::MediaSummary,
+        height: u32,
+        batch: &[ThumbnailRequest],
+        cancel: &Cancellation,
+    ) -> Result<Vec<Result<Thumbnail, MediaError>>, MediaError> {
+        let started = Instant::now();
+        while started.elapsed() < self.delay {
+            if cancel.is_cancelled() {
+                return Err(MediaError::Cancelled);
+            }
+            thread::sleep(Duration::from_millis(2));
+        }
+        self.thumbnail_batches.fetch_add(1, Ordering::SeqCst);
+        let (width, height) = thumbnail_size(&media.metadata, height)?;
+        Ok(batch
+            .iter()
+            .map(|r| {
+                if r.position.ticks >= 2999 {
+                    return Err(MediaError::NoFrame);
+                }
+                let red = u8::try_from(r.position.ticks.rem_euclid(256)).unwrap_or(0);
+                Ok(Thumbnail {
+                    token: r.token,
+                    requested: r.position,
+                    actual: r.position,
+                    image: RgbaFrame::new(
+                        width,
+                        height,
+                        width as usize * 4,
+                        [red, 40, 60, 255].repeat((width * height) as usize),
+                    )?,
+                    process_id: 0,
+                })
+            })
+            .collect())
+    }
     fn stream_interval(
         &self,
         request: &DecodeRequest,
@@ -703,6 +746,8 @@ fn abi_frame_copy_validates_buffers_generation_and_stride() {
     assert_eq!(cutcap_session_destroy(handle), CUTCAP_OK);
 }
 
+#[path = "thumbnail_tests.rs"]
+mod thumbnail;
 #[path = "timeline_tests.rs"]
 mod timeline;
 #[path = "timeline_edit_session_tests.rs"]

@@ -1,0 +1,14 @@
+{
+  "phase": "4A real video filmstrips",
+  "machine": "Windows 11 Home 10.0.26300, Intel Core Ultra 7 255H, integrated Intel graphics, 16 GB RAM, 150% scaling",
+  "script": "scripts/native-ui/timeline-draw.ps1 (CUTCAP_TRACE_TIMELINE=1): opens the generated 5,000-clip project (one 3 s colour source), zooms and wheel-scrolls; each line averages 30 renders of the lanes (draw-call recording only, not compositor raster or presentation)",
+  "release_publish_same_script": {
+    "phase3e": { "build": "artifacts/publish/win-x64 at 7a510d0 (no filmstrips)", "avg_us": [1774.3, 1296.8], "max_us": [17752.5, 1903.1] },
+    "phase4a": { "build": "artifacts/publish/win-x64 from this branch (filmstrips drawn: one shared cached sample per 3 s clip)", "avg_us": [1627.2, 2221.9], "max_us": [3173.7, 18233.2] }
+  },
+  "debug_phase4a_before_render_hoist": { "avg_us": [2593.6, 1867.5], "max_us": [7376.5, 2702.4], "note": "before the per-render scaling lookup and rectangular clip change" },
+  "phase3e_report_debug_reference": { "avg_us": [823.8, 908.1], "note": "from phase3e-editing.json, a different session; shows the run-to-run spread of this trace" },
+  "drawn_clips_per_render": 18,
+  "conclusion": "Same-script Release runs of Phase 3E and Phase 4A overlap (1.3-2.2 ms average for 18 visible clips) with single-render outliers of 17-18 ms in both builds; no filmstrip-specific regression is distinguishable from run-to-run variance in this trace. Not a frame-pacing measurement.",
+  "limitation": "Both runs stopped at the script's later drag segment because another application took the foreground; the input guard aborted without sending input. The render samples above were recorded before that point."
+}

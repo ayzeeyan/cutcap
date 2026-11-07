@@ -12,6 +12,7 @@ pub mod media;
 mod persistence;
 mod playback;
 pub mod session;
+mod thumbnails;
 mod timeline_plan;
 mod timeline_playback;
 mod timeline_preview;

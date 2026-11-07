@@ -1,9 +1,47 @@
-# CutCap native engine ABI, version 7
+# CutCap native engine ABI, version 8
 
-## Phase 3E additions (current authority)
+## Phase 4A additions (current authority)
 
 Rust `ABI_VERSION`, managed `NativeMethods.AbiVersion` and `CONTRACT_VERSION`
-are **7** (ADR 023). Project envelope/core schema remain 1. Every ABI 6 export,
+are **8** (ADR 024). Project envelope/core schema remain 1. Every ABI 7 export,
+status number, frame layout and handle rule is unchanged; the bump guards the
+three new exports and the new view fields.
+
+| New export | Semantics |
+|---|---|
+| `cutcap_session_request_thumbnails(u64, u8* json, usize len)` | Replace the filmstrip demand with a UTF-8 JSON array of `{token, media_id, source_key, sample_us, height}` (≤128 wants, ≤64 KiB, visible first). Nonblocking acceptance. Wants whose media is unknown/not Ready or whose `source_key` is not the current key are dropped; a sample at/after the source end completes at once as no-frame without decoding. Samples no longer wanted are dropped from the queue, and an in-flight batch none of whose samples is still wanted is cancelled. |
+| `cutcap_session_next_thumbnail(u64, CutCapThumbnailInfo* out)` | Announce the next completed thumbnail whose source key is still current (stale ones are discarded here), or `CUTCAP_NO_FRAME` when none waits. The pointer is validated before anything is consumed. Announcing again discards an announced, uncopied one. |
+| `cutcap_session_copy_thumbnail(u64, u64 token, u8* dst, usize len, usize stride)` | Copy the announced thumbnail's RGBA8 rows (`stride ≥ width·4`) and release it. Another token → `CUTCAP_STALE_FRAME`; a no-frame/failed result → `CUTCAP_NO_FRAME` (released); a too-small/null destination → `INVALID_ARGUMENT` and the thumbnail stays announced. |
+
+`CutCapThumbnailInfo` is 40 bytes, 8-byte aligned: `u64 token, i64
+actual_ticks, u32 timebase_num, u32 timebase_den, u32 width, u32 height, u32
+stride, u32 status` (0 ready, 1 no frame at/after the sample, 2 failed).
+`actual_ticks` is the decoded frame's original PTS in the stream timebase (0
+unless ready). Ownership: pixels stay in Rust until copied into caller memory;
+no pointer, callback or handle escapes.
+
+Sample mapping (Rust): `sample_us` → stream ticks with **ceiling** rounding,
+clamped to `start_pts`; the thumbnail is the first decoded frame whose actual
+PTS is ≥ that tick (the Phase 3C still policy), never a nominal-FPS frame
+index. Heights are clamped to 16–216 px; the width follows the display aspect
+(rotation and sample aspect applied, ≤384 px).
+
+View additions: clip rows add `source_key` (`"{media_id}:{fnv1a64(path)}:{stream}"`
+while the media is Ready, otherwise empty, so relinking changes it),
+`source_in_ticks`/`source_end_ticks` (the clip's exact source interval,
+end-exclusive, stream ticks), `source_in_us` (ceil) / `source_end_us` (floor)
+and `thumb_aspect`. The session view adds `thumbnails { pending, in_flight,
+waiting, decoded, no_frame, failed, batches, cancelled_batches, last_batch_ms,
+last_process_id, throttled }`; it is republished whenever these change.
+Thumbnail work never touches the project snapshot, history or document
+revision. Tests: `crates/cutcap-ffi/src/thumbnail_tests.rs`,
+`crates/cutcap-media/tests/ffmpeg_integration.rs` (thumbnail cases),
+`tests/CutCap.Interop.Tests/ThumbnailTests.cs`.
+
+## Phase 3E additions (ABI 7, retained)
+
+Rust `ABI_VERSION`, managed `NativeMethods.AbiVersion` and `CONTRACT_VERSION`
+were **7** (ADR 023). Project envelope/core schema remain 1. Every ABI 6 export,
 status number, frame layout and handle rule is unchanged; the bump is required
 because the frontend consumes new view fields and calls new exports, and it is
 the guard that stops a stale ABI-6 DLL from failing on the first edit.

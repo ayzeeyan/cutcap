@@ -1,8 +1,52 @@
-# UI–engine and media contracts, version 7
+# UI–engine and media contracts, version 8
 
-## Phase 3E additions (current authority)
+## Phase 4A filmstrip contract (current authority)
 
-ABI/CONTRACT_VERSION are 7 (ADR 023); schema/envelope remain 1. The Phase 3D
+ABI/CONTRACT_VERSION are 8 (ADR 024); schema/envelope remain 1. Exports and
+layouts: NATIVE_ABI.md. Thumbnails are presentation data: they never enter the
+Project, its JSON views, history or document revision, and requesting them
+never dirties a document.
+
+- **Ownership.** C# owns the filmstrip *layout* (cell geometry from the zoom
+  and the strip height) and the bounded RAM cache. Rust owns every time
+  conversion that selects a frame: the clip's exact source interval
+  (`source_in_ticks`, `source_end_ticks`), µs → stream ticks (ceiling, clamped
+  to `start_pts`) and the frame policy (first actual decoded PTS ≥ the sample).
+- **Grid.** Cell width = strip height × `thumb_aspect`; one cell covers
+  `round(cellWidth / pixelsPerSecond · 10⁶)` µs of *source* time. Cells sit at
+  source multiples of that step, plus a leading partial cell sampled at
+  `source_in_us`, so a clip never samples before its in-point and trims, splits,
+  moves and scrolling reuse the same samples at a given zoom.
+- **Acceptance.** A decoded image is drawn in a clip only if its actual PTS is
+  inside `[source_in_ticks, source_end_ticks)`; a successor clip's frame never
+  appears in an earlier clip. Otherwise the cell keeps its placeholder.
+- **Identity and staleness.** Cache key = (`source_key`, sample µs, pixel
+  height). `source_key` changes on relink and is empty while media is missing
+  or unverified, so stale images are never reused for a different file. Rust
+  drops wants with an old key, discards completed results whose key is no
+  longer current when announcing, and clears all queued/in-flight work when the
+  project id changes. C# also voids pending tokens on project change.
+- **Demand.** The lanes plan visible cells first, then 25 % overscan each side
+  (≤96 wants), on a 50 ms debounce after scroll/zoom/edit/viewport changes,
+  never in Render. Each request replaces the previous one; unwanted queued
+  samples are dropped and an in-flight batch with no wanted sample is
+  cancelled. Known no-frame/failed samples are remembered and not retried for
+  the same key.
+- **Scheduling.** One low-priority worker thread; one FFmpeg process per batch
+  of ≤6 samples from one source and height (below-normal process priority,
+  `-threads 1`). While source or timeline playback is active the worker takes
+  batches of 2 with a 150 ms pause. Completed-but-untaken results are bounded
+  (64, checked per batch: at most 64 + 6), after which the worker pauses.
+- **Delivery.** The UI pulls with `next_thumbnail` and copies ≤16 per pump into
+  one new `WriteableBitmap` each; Render only draws cached bitmaps (no decode,
+  I/O or allocation of images).
+- **States.** Ready (image), pending (placeholder), no frame and failed (solid
+  fallback, not retried), unavailable media (no images; the Phase 3B
+  missing-media style), changed/relinked (new key → new samples).
+
+## Phase 3E additions (ABI 7, retained)
+
+ABI/CONTRACT_VERSION were 7 (ADR 023); schema/envelope remain 1. The Phase 3D
 contract below still binds transport and evaluation.
 
 - **PlaceClip { media, track, position }** places the whole Ready video source
@@ -167,6 +211,7 @@ This mailbox intentionally coalesces obsolete **ephemeral preview outcomes**, no
 - The project worker solely owns Engine/Project and session selections. Two channels each hold 32; pump drains ≤8 per 16 ms tick; worker result sends apply backpressure.
 - One probe thread owns one FFprobe process. One decoder worker owns one FFmpeg process. Each process has two bounded pipe readers.
 - Direct argument spawning uses stdin null/no console. Probe timeout 15 s, decode 20 s; cooperative condition-variable wake/check ≤10 ms. Error/cancel/timeout paths kill/reap before reader joins. This configuration launches no helper children.
+- The thumbnail worker (Phase 4A) owns at most one FFmpeg batch process; on close it is stopped first (batch cancelled, child killed/reaped, thread joined).
 - On close, stop timer, cancel/join media, drop reliable results before requests and join project worker. Tests cover saturated queues, active child termination/reaping and decoder shutdown.
 
 See ARCHITECTURE.md for byte/source/input budgets and filesystem/OS limitations. These are not hard real-time cancellation or a hostile-codec sandbox. No media buffer or codec pointer crosses into core/contracts serialization.

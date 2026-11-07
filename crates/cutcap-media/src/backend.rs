@@ -44,6 +44,19 @@ pub trait MediaBackend: Send + Sync + 'static {
     }
     /// Continuous interval mode: retain the last eligible real PTS <= target,
     /// then successors. `minimum` is the clip's inclusive source bound.
+    /// Phase 4A: a batch of filmstrip thumbnails from one source (see
+    /// `crate::thumbnail`). Backends without it report Unsupported.
+    fn thumbnails(
+        &self,
+        _media: &MediaSummary,
+        _height: u32,
+        _batch: &[crate::ThumbnailRequest],
+        _cancellation: &Cancellation,
+    ) -> Result<Vec<Result<crate::Thumbnail, MediaError>>, MediaError> {
+        Err(MediaError::Unsupported(
+            "thumbnail extraction is unavailable for this backend".into(),
+        ))
+    }
     fn stream_interval(
         &self,
         _request: &DecodeRequest,
@@ -133,6 +146,15 @@ pub(crate) fn input_limits(command: &mut Command) {
 }
 
 impl MediaBackend for FfmpegBackend {
+    fn thumbnails(
+        &self,
+        media: &MediaSummary,
+        height: u32,
+        batch: &[crate::ThumbnailRequest],
+        cancellation: &Cancellation,
+    ) -> Result<Vec<Result<crate::Thumbnail, MediaError>>, MediaError> {
+        self.extract_thumbnails(media, height, batch, cancellation)
+    }
     fn stream_interval(
         &self,
         request: &DecodeRequest,

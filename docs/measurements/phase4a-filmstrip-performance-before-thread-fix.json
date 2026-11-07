@@ -1,0 +1,336 @@
+{
+  "generated": "2026-11-07T08:18:46",
+  "source": "generated testsrc2 1920x1080 30 fps H.264, GOP 250, 180 s (long 1080p.mp4)",
+  "scale": "scale=1.5 window=1800x1050",
+  "note": "Times are from the scripted input (MARK) to the trace event, so they include UI input latency. draw_us is draw-call recording time on the UI thread, not GPU raster or presentation time.",
+  "phases": {
+    "place": {
+      "demands_sent": 3,
+      "first_demand_ms": 586.0,
+      "first_thumbnail_drawn_ms": 1468.0,
+      "renders_with_placeholders": 3,
+      "max_placeholders_in_one_render": 13.0,
+      "viewport_filled_ms": 3858.0,
+      "thumbnails_copied": 17.0,
+      "copy_us_per_drain": {
+        "n": 3,
+        "avg": 1741.3,
+        "p95": 4794.0,
+        "max": 4794.0
+      },
+      "lanes_render_record_us": {
+        "n": 4,
+        "avg": 1097.5,
+        "p95": 2888.0,
+        "max": 2888.0
+      },
+      "plan_us": {
+        "n": 4,
+        "avg": 1523.2,
+        "p95": 5607.0,
+        "max": 5607.0
+      },
+      "cache_hits_delta": 18.0,
+      "batches_at_end": 2.0,
+      "cancelled_batches_at_end": 0.0,
+      "last_batch_ms": 1293.0,
+      "resident_kib_at_end": 484.0,
+      "entries_at_end": 17.0,
+      "working_set_mib_max": 340.0
+    },
+    "zoom-in": {
+      "demands_sent": 5,
+      "first_demand_ms": 528.0,
+      "first_thumbnail_drawn_ms": 469.0,
+      "renders_with_placeholders": 4,
+      "max_placeholders_in_one_render": 12.0,
+      "viewport_filled_ms": 3957.0,
+      "thumbnails_copied": 8.0,
+      "copy_us_per_drain": {
+        "n": 2,
+        "avg": 193.0,
+        "p95": 210.0,
+        "max": 210.0
+      },
+      "lanes_render_record_us": {
+        "n": 6,
+        "avg": 233.3,
+        "p95": 331.0,
+        "max": 331.0
+      },
+      "plan_us": {
+        "n": 6,
+        "avg": 520.5,
+        "p95": 2444.0,
+        "max": 2444.0
+      },
+      "cache_hits_delta": 13.0,
+      "batches_at_end": 7.0,
+      "cancelled_batches_at_end": 3.0,
+      "last_batch_ms": 1001.0,
+      "resident_kib_at_end": 712.0,
+      "entries_at_end": 25.0,
+      "working_set_mib_max": 344.0
+    },
+    "zoom-reset": {
+      "demands_sent": 0,
+      "first_demand_ms": null,
+      "first_thumbnail_drawn_ms": 551.0,
+      "renders_with_placeholders": 0,
+      "max_placeholders_in_one_render": 0,
+      "viewport_filled_ms": 0,
+      "thumbnails_copied": 0.0,
+      "copy_us_per_drain": null,
+      "lanes_render_record_us": {
+        "n": 1,
+        "avg": 412.0,
+        "p95": 412.0,
+        "max": 412.0
+      },
+      "plan_us": {
+        "n": 1,
+        "avg": 103.0,
+        "p95": 103.0,
+        "max": 103.0
+      }
+    },
+    "scroll-away": {
+      "demands_sent": 4,
+      "first_demand_ms": 1161.0,
+      "first_thumbnail_drawn_ms": 202.0,
+      "renders_with_placeholders": 26,
+      "max_placeholders_in_one_render": 14.0,
+      "viewport_filled_ms": 5018.0,
+      "thumbnails_copied": 19.0,
+      "copy_us_per_drain": {
+        "n": 4,
+        "avg": 284.0,
+        "p95": 503.0,
+        "max": 503.0
+      },
+      "lanes_render_record_us": {
+        "n": 34,
+        "avg": 482.1,
+        "p95": 672.0,
+        "max": 878.0
+      },
+      "plan_us": {
+        "n": 5,
+        "avg": 157.0,
+        "p95": 218.0,
+        "max": 218.0
+      },
+      "cache_hits_delta": 32.0,
+      "batches_at_end": 11.0,
+      "cancelled_batches_at_end": 3.0,
+      "last_batch_ms": 993.0,
+      "resident_kib_at_end": 1254.0,
+      "entries_at_end": 44.0,
+      "working_set_mib_max": 372.0
+    },
+    "scroll-back": {
+      "demands_sent": 0,
+      "first_demand_ms": null,
+      "first_thumbnail_drawn_ms": null,
+      "renders_with_placeholders": 0,
+      "max_placeholders_in_one_render": 0,
+      "viewport_filled_ms": null,
+      "thumbnails_copied": 0.0,
+      "copy_us_per_drain": null,
+      "lanes_render_record_us": null,
+      "plan_us": null
+    },
+    "zoom-out": {
+      "demands_sent": 2,
+      "first_demand_ms": 555.0,
+      "first_thumbnail_drawn_ms": 496.0,
+      "renders_with_placeholders": 2,
+      "max_placeholders_in_one_render": 12.0,
+      "viewport_filled_ms": 2509.0,
+      "thumbnails_copied": 6.0,
+      "copy_us_per_drain": {
+        "n": 1,
+        "avg": 728.0,
+        "p95": 728.0,
+        "max": 728.0
+      },
+      "lanes_render_record_us": {
+        "n": 5,
+        "avg": 221.8,
+        "p95": 394.0,
+        "max": 394.0
+      },
+      "plan_us": {
+        "n": 4,
+        "avg": 154.8,
+        "p95": 232.0,
+        "max": 232.0
+      },
+      "cache_hits_delta": 0.0,
+      "batches_at_end": 13.0,
+      "cancelled_batches_at_end": 4.0,
+      "last_batch_ms": 803.0,
+      "resident_kib_at_end": 1425.0,
+      "entries_at_end": 50.0,
+      "working_set_mib_max": 362.0
+    },
+    "play-decoding": {
+      "demands_sent": 8,
+      "first_demand_ms": 692.0,
+      "first_thumbnail_drawn_ms": 2284.0,
+      "renders_with_placeholders": 5,
+      "max_placeholders_in_one_render": 14.0,
+      "viewport_filled_ms": 5205.0,
+      "thumbnails_copied": 20.0,
+      "copy_us_per_drain": {
+        "n": 8,
+        "avg": 308.0,
+        "p95": 592.0,
+        "max": 592.0
+      },
+      "lanes_render_record_us": {
+        "n": 175,
+        "avg": 186.0,
+        "p95": 294.0,
+        "max": 386.0
+      },
+      "plan_us": {
+        "n": 9,
+        "avg": 100.4,
+        "p95": 198.0,
+        "max": 198.0
+      },
+      "cache_hits_delta": 1506.0,
+      "batches_at_end": 21.0,
+      "cancelled_batches_at_end": 4.0,
+      "last_batch_ms": 627.0,
+      "resident_kib_at_end": 1995.0,
+      "entries_at_end": 70.0,
+      "working_set_mib_max": 408.0,
+      "playback_seconds": 6.39,
+      "playback_copied_fps": 11.42,
+      "playback_dropped": 0.0,
+      "playback_stalls": 1.0,
+      "thumbnails_throttled": true
+    },
+    "pause-decoding": {
+      "demands_sent": 0,
+      "first_demand_ms": null,
+      "first_thumbnail_drawn_ms": 6306.0,
+      "renders_with_placeholders": 0,
+      "max_placeholders_in_one_render": 0,
+      "viewport_filled_ms": 0,
+      "thumbnails_copied": 0.0,
+      "copy_us_per_drain": null,
+      "lanes_render_record_us": {
+        "n": 1,
+        "avg": 100.0,
+        "p95": 100.0,
+        "max": 100.0
+      },
+      "plan_us": null
+    },
+    "play-cached": {
+      "demands_sent": 0,
+      "first_demand_ms": null,
+      "first_thumbnail_drawn_ms": 544.0,
+      "renders_with_placeholders": 0,
+      "max_placeholders_in_one_render": 0,
+      "viewport_filled_ms": 0,
+      "thumbnails_copied": 0.0,
+      "copy_us_per_drain": null,
+      "lanes_render_record_us": {
+        "n": 409,
+        "avg": 165.2,
+        "p95": 275.0,
+        "max": 660.0
+      },
+      "plan_us": null,
+      "playback_seconds": 6.0,
+      "playback_copied_fps": 29.81,
+      "playback_dropped": 0.0,
+      "playback_stalls": 0.0,
+      "thumbnails_throttled": true
+    },
+    "pause-cached": {
+      "demands_sent": 0,
+      "first_demand_ms": null,
+      "first_thumbnail_drawn_ms": 1283.0,
+      "renders_with_placeholders": 0,
+      "max_placeholders_in_one_render": 0,
+      "viewport_filled_ms": 0,
+      "thumbnails_copied": 0.0,
+      "copy_us_per_drain": null,
+      "lanes_render_record_us": {
+        "n": 3,
+        "avg": 324.3,
+        "p95": 532.0,
+        "max": 532.0
+      },
+      "plan_us": {
+        "n": 2,
+        "avg": 150.5,
+        "p95": 217.0,
+        "max": 217.0
+      }
+    },
+    "close-decoding": {
+      "demands_sent": 1,
+      "first_demand_ms": 629.0,
+      "first_thumbnail_drawn_ms": 571.0,
+      "renders_with_placeholders": 1,
+      "max_placeholders_in_one_render": 10.0,
+      "viewport_filled_ms": null,
+      "thumbnails_copied": 0.0,
+      "copy_us_per_drain": null,
+      "lanes_render_record_us": {
+        "n": 1,
+        "avg": 384.0,
+        "p95": 384.0,
+        "max": 384.0
+      },
+      "plan_us": {
+        "n": 1,
+        "avg": 284.0,
+        "p95": 284.0,
+        "max": 284.0
+      }
+    }
+  },
+  "totals": {
+    "ffmpeg_batches": 21.0,
+    "cancelled_batches": 4.0,
+    "thumbnails_copied": 70.0,
+    "cache_hits": 1903.0,
+    "cache_misses": 321.0,
+    "evictions": 0.0,
+    "resident_kib": 1995.0,
+    "entries": 70.0,
+    "working_set_mib_max": 408.0,
+    "managed_mib_max": 28.0
+  },
+  "timeline_render_trace": [
+    "timeline-render clips=1 drawn=1 avg_us=1987.2 max_us=7491.6 width_px=3852",
+    "timeline-render clips=1 drawn=1 avg_us=1268.7 max_us=2812.3 width_px=4752",
+    "timeline-render clips=1 drawn=1 avg_us=801.3 max_us=2100.0 width_px=4752",
+    "timeline-render clips=1 drawn=1 avg_us=661.7 max_us=1113.4 width_px=4752",
+    "timeline-render clips=1 drawn=1 avg_us=726.2 max_us=1432.0 width_px=4752",
+    "timeline-render clips=1 drawn=1 avg_us=724.4 max_us=1320.2 width_px=4752",
+    "timeline-render clips=1 drawn=1 avg_us=652.7 max_us=966.6 width_px=4752",
+    "timeline-render clips=1 drawn=1 avg_us=621.9 max_us=1068.8 width_px=4752",
+    "timeline-render clips=1 drawn=1 avg_us=657.3 max_us=936.1 width_px=4752",
+    "timeline-render clips=1 drawn=1 avg_us=594.9 max_us=1006.6 width_px=4752",
+    "timeline-render clips=1 drawn=1 avg_us=616.4 max_us=956.8 width_px=4752",
+    "timeline-render clips=1 drawn=1 avg_us=592.3 max_us=922.2 width_px=4752",
+    "timeline-render clips=1 drawn=1 avg_us=643.8 max_us=980.9 width_px=4752",
+    "timeline-render clips=1 drawn=1 avg_us=594.6 max_us=903.8 width_px=4752",
+    "timeline-render clips=1 drawn=1 avg_us=589.4 max_us=1082.5 width_px=4752",
+    "timeline-render clips=1 drawn=1 avg_us=578.9 max_us=782.7 width_px=4752",
+    "timeline-render clips=1 drawn=1 avg_us=634.8 max_us=1061.1 width_px=4752",
+    "timeline-render clips=1 drawn=1 avg_us=592.9 max_us=1004.3 width_px=4752",
+    "timeline-render clips=1 drawn=1 avg_us=630.8 max_us=945.3 width_px=4752",
+    "timeline-render clips=1 drawn=1 avg_us=569.0 max_us=1114.1 width_px=4752",
+    "timeline-render clips=1 drawn=1 avg_us=616.3 max_us=974.0 width_px=4752"
+  ],
+  "close": "08:18:35.176 close during thumbnail decoding | exited=True in 670 ms code=0 leftover=0"
+}

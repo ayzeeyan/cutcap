@@ -32,7 +32,8 @@ public sealed class TimelineLanes : Control
     public static readonly StyledProperty<long> PlayheadTicksProperty = AvaloniaProperty.Register<TimelineLanes, long>(nameof(PlayheadTicks));
     /// <summary>Exact playhead (project ticks), used as a snap target.</summary>
     public long PlayheadTicks { get => GetValue(PlayheadTicksProperty); set => SetValue(PlayheadTicksProperty, value); }
-    public const double TrackHeight = 50;
+    /// <summary>Lane height (DIPs). Phase 4A: 56 (was 50) so filmstrip frames are recognisable.</summary>
+    public const double TrackHeight = 56;
     /// <summary>Space after the last clip so the end of the timeline is reachable.</summary>
     public const double TrailingSpace = 240;
     /// <summary>Distance from a viewport edge (px) at which a drag scrolls the timeline.</summary>
@@ -88,7 +89,24 @@ public sealed class TimelineLanes : Control
     private static Cursor TrimCursor => s_trimCursor ??= new Cursor(StandardCursorType.SizeWestEast);
     private static Cursor MoveCursor => s_moveCursor ??= new Cursor(StandardCursorType.Hand);
 
+    // Filmstrips: a dark teal base under the frames, lighter teal while a frame
+    // is pending, hairline dividers, and a translucent band behind the name.
+    private static readonly IBrush PlaceholderBrush = new SolidColorBrush(Color.Parse("#1B5960"));
+    private static readonly IPen DividerPen = new Pen(new SolidColorBrush(Color.Parse("#66101417")), 1);
+    private static readonly IBrush NameBandBrush = new SolidColorBrush(Color.Parse("#B30E1214"));
+
     private TimelineGeometry _geometry = TimelineGeometry.Empty;
+    private readonly List<FilmCell> _cells = new(64);
+    private readonly List<FilmCell> _planCells = new(64);
+    private readonly DispatcherTimer _plan;
+    private int _drawnThumbnails;
+    private int _drawnPlaceholders;
+
+    /// <summary>The shared thumbnail cache (set by the host view); null disables filmstrips.</summary>
+    public Services.ThumbnailCache? Thumbnails { get; set; }
+
+    /// <summary>Raised with the current filmstrip demand after the viewport settles.</summary>
+    public event EventHandler<IReadOnlyList<ThumbnailWant>>? ThumbnailDemand;
     private TimelineSnapper _snapper = TimelineSnapper.Empty;
 
     // Gesture state (frontend preview only).
@@ -131,6 +149,13 @@ public sealed class TimelineLanes : Control
         AddHandler(DragDrop.DragLeaveEvent, (_, _) => EndGesture());
         AddHandler(DragDrop.DropEvent, OnDrop);
         _autoScroll = new DispatcherTimer(TimeSpan.FromMilliseconds(16), DispatcherPriority.Input, (_, _) => AutoScrollTick());
+        // One-shot debounce: plan thumbnail demand 50 ms after the viewport settles.
+        _plan = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(50) };
+        _plan.Tick += (_, _) =>
+        {
+            _plan.Stop();
+            ThumbnailDemand?.Invoke(this, PlanThumbnails());
+        };
     }
 
     public IReadOnlyList<LaneInfo>? Lanes
@@ -191,6 +216,11 @@ public sealed class TimelineLanes : Control
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
     {
         base.OnPropertyChanged(change);
+        if (change.Property == ClipsProperty || change.Property == LanesProperty || change.Property == ZoomProperty
+            || change.Property == ScrollOffsetProperty || change.Property == ViewportProperty)
+        {
+            SchedulePlan();
+        }
         if (change.Property == ClipsProperty || change.Property == LanesProperty)
         {
             _geometry = new TimelineGeometry(Clips ?? [], Lanes?.Count ?? 0);
@@ -396,6 +426,7 @@ public sealed class TimelineLanes : Control
     public override void Render(DrawingContext context)
     {
         var started = TraceTimeline ? System.Diagnostics.Stopwatch.GetTimestamp() : 0;
+        var traceStarted = Services.ThumbnailTrace.Enabled ? System.Diagnostics.Stopwatch.GetTimestamp() : 0;
         var lanes = Lanes ?? [];
         var scale = TimelineScale.ForZoom(Zoom);
         var width = Bounds.Width;
@@ -407,6 +438,9 @@ public sealed class TimelineLanes : Control
         var lastLane = Math.Min(lanes.Count - 1, (int)Math.Floor((ScrollOffset.Y + viewport.Height) / TrackHeight));
         var editing = _active && _preview is not null ? _preview.ClipId : null;
         var drawn = 0;
+        _drawnThumbnails = 0;
+        _drawnPlaceholders = 0;
+        _renderHeightPx = ThumbnailHeightPx; // one visual-tree lookup per render, not per clip
         for (var index = firstLane; index <= lastLane; index++)
         {
             var lane = lanes[index];
@@ -434,6 +468,12 @@ public sealed class TimelineLanes : Control
             }
         }
         LastDrawnClips = drawn;
+        LastDrawnThumbnails = _drawnThumbnails;
+        LastDrawnPlaceholders = _drawnPlaceholders;
+        if (Services.ThumbnailTrace.Enabled)
+        {
+            Services.ThumbnailTrace.Line($"render thumbs={_drawnThumbnails} placeholders={_drawnPlaceholders} clips={drawn} zoom={Zoom} scroll={ScrollOffset.X:F0} draw_us={System.Diagnostics.Stopwatch.GetElapsedTime(traceStarted).TotalMicroseconds:F0}");
+        }
         var height = Math.Max(TrackHeight, lanes.Count * TrackHeight);
         if (_preview is { } preview && (_active || preview.Kind == GestureKind.Place))
         {
@@ -475,40 +515,183 @@ public sealed class TimelineLanes : Control
         }
     }
 
-    private static void DrawClip(DrawingContext context, TimelineScale scale, ClipView clip, double left, double right)
+    // ---- Filmstrips (Phase 4A) --------------------------------------------------
+
+    /// <summary>Height (DIPs) of the image strip inside a clip's border.</summary>
+    public static double StripHeight => TrackHeight - 2 * TimelineGeometry.LaneInset - 3;
+
+    /// <summary>The overscan (fraction of the viewport width each side) the planner prefetches.</summary>
+    public const double Overscan = 0.25;
+
+    /// <summary>Most samples requested per plan (visible ones first).</summary>
+    public const int MaxDemand = 96;
+
+    private double RenderScaling => TopLevel.GetTopLevel(this)?.RenderScaling ?? 1;
+    private int ThumbnailHeightPx => (int)Math.Round(StripHeight * RenderScaling);
+
+    private void SchedulePlan()
     {
-        var rect = TimelineGeometry.ClipRect(scale, clip, TrackHeight).Deflate(new Thickness(0.5, 0.5));
+        if (Thumbnails is null) return;
+        _plan.Stop();
+        _plan.Start();
+    }
+
+    /// <summary>New thumbnails were cached: redraw, then ask for what is still missing.</summary>
+    public void ThumbnailsArrived()
+    {
+        InvalidateVisual();
+        SchedulePlan();
+    }
+
+    /// <summary>
+    /// Viewport-driven demand: the cells of visible video clips, then a small
+    /// overscan, skipping samples already cached (or known to have no frame).
+    /// Runs on a short debounce after scroll/zoom/clip changes, never in Render.
+    /// </summary>
+    public IReadOnlyList<ThumbnailWant> PlanThumbnails()
+    {
+        var cache = Thumbnails;
+        if (cache is null || Lanes is not { } lanes) return [];
+        var planStarted = Services.ThumbnailTrace.Enabled ? System.Diagnostics.Stopwatch.GetTimestamp() : 0;
+        var scale = TimelineScale.ForZoom(Zoom);
+        var viewport = Viewport.Width > 0 ? Viewport : Bounds.Size;
+        var left = ScrollOffset.X;
+        var right = left + viewport.Width;
+        var margin = viewport.Width * Overscan;
+        var firstLane = Math.Max(0, (int)Math.Floor(ScrollOffset.Y / TrackHeight));
+        var lastLane = Math.Min(lanes.Count - 1, (int)Math.Floor((ScrollOffset.Y + viewport.Height) / TrackHeight));
+        var height = ThumbnailHeightPx;
+        var visible = new List<ThumbnailWant>();
+        var overscan = new List<ThumbnailWant>();
+        var seen = new HashSet<ThumbKey>();
+        for (var lane = firstLane; lane <= lastLane; lane++)
+        {
+            if (!lanes[lane].IsVideo) continue;
+            foreach (var clip in _geometry.Visible(lane, scale, left - margin, right + margin))
+            {
+                if (!clip.SourceReady || clip.SourceKey.Length == 0) continue;
+                var rect = TimelineGeometry.ClipRect(scale, clip, TrackHeight);
+                var cellWidth = FilmstripLayout.CellWidth(StripHeight, clip.ThumbAspect);
+                if (rect.Width < FilmstripLayout.MinStripWidth || cellWidth <= 0) continue;
+                _planCells.Clear();
+                FilmstripLayout.Cells(clip, rect.X, rect.Right, scale.PixelsPerSecond,
+                    FilmstripLayout.StepUs(cellWidth, scale.PixelsPerSecond), left - margin, right + margin, left, right, _planCells);
+                foreach (var cell in _planCells)
+                {
+                    var key = new ThumbKey(clip.SourceKey, cell.SampleUs, height);
+                    if (cache.Contains(key) || !seen.Add(key)) continue;
+                    (cell.Visible ? visible : overscan).Add(new ThumbnailWant(cache.TokenFor(key), clip.MediaId, clip.SourceKey, cell.SampleUs, height));
+                }
+            }
+        }
+        var wants = visible.Concat(overscan).Take(MaxDemand).ToArray();
+        cache.RetainPending(wants.Select(w => w.Token).ToHashSet());
+        LastPlannedVisible = visible.Count;
+        Services.ThumbnailTrace.Line($"plan visible={visible.Count} overscan={overscan.Count} sent={wants.Length} plan_us={(Services.ThumbnailTrace.Enabled ? System.Diagnostics.Stopwatch.GetElapsedTime(planStarted).TotalMicroseconds : 0):F0}");
+        return wants;
+    }
+
+    /// <summary>Visible samples still missing at the last plan (tests, diagnostics).</summary>
+    public int LastPlannedVisible { get; private set; }
+
+    private int _renderHeightPx;
+
+    /// <summary>Cells drawn with a real thumbnail / as a placeholder in the last render.</summary>
+    public int LastDrawnThumbnails { get; private set; }
+    public int LastDrawnPlaceholders { get; private set; }
+
+    private void DrawClip(DrawingContext context, TimelineScale scale, ClipView clip, double left, double right)
+    {
+        var raw = TimelineGeometry.ClipRect(scale, clip, TrackHeight);
+        var rect = raw.Deflate(new Thickness(0.5, 0.5));
         var ready = clip.SourceReady;
         var pen = clip.Selected ? ClipSelectedPen : ready ? ClipPen : MissingPen;
-        context.DrawRectangle(ready ? ClipBrush : MissingBrush, pen, rect, 3, 3);
+        context.DrawRectangle(ready ? ClipBrush : MissingBrush, null, rect, 3, 3);
+        var inner = rect.Deflate(new Thickness(1));
+        var filmstrip = ready && Thumbnails is not null && clip.SourceKey.Length > 0
+            && rect.Width >= FilmstripLayout.MinStripWidth && clip.ThumbAspect > 0;
+        if (filmstrip)
+        {
+            DrawFilmstrip(context, scale, clip, raw, inner, left, right);
+        }
+        if (rect.Width >= 14)
+        {
+            using (context.PushClip(inner))
+            {
+                // Keep the name readable when the clip start is scrolled out of view.
+                var textX = Math.Max(rect.X, left) + 6;
+                var name = ready ? clip.Name : $"Missing · {clip.Name}";
+                var title = new FormattedText(name, CultureInfo.CurrentCulture, FlowDirection.LeftToRight, UiBold, 11,
+                    ready ? ClipTextBrush : MissingTextBrush);
+                var range = new FormattedText($"{clip.StartText} – {clip.EndText} · {clip.DurationText}",
+                    CultureInfo.InvariantCulture, FlowDirection.LeftToRight, Mono, 10, ready ? ClipSubtleBrush : MissingTextBrush);
+                var visibleRight = Math.Min(rect.Right, right);
+                var showRange = textX + title.Width + 12 + range.Width <= visibleRight - 4;
+                if (ready)
+                {
+                    // A slim translucent name band: the frames stay visible beneath it.
+                    var band = Math.Min(inner.Width, title.Width + (showRange ? range.Width + 12 : 0) + 12);
+                    context.FillRectangle(filmstrip ? NameBandBrush : ClipHeaderBrush,
+                        new Rect(textX - 6, inner.Y, filmstrip ? band : inner.Width, 16));
+                }
+                context.DrawText(title, new Point(textX, rect.Y + 2));
+                if (showRange)
+                {
+                    context.DrawText(range, new Point(textX + title.Width + 12, rect.Y + 3));
+                }
+            }
+        }
+        // Outline and grips last, above the images.
+        context.DrawRectangle(null, pen, rect, 3, 3);
         if (clip.Selected && rect.Width >= 10)
         {
             // Trim grips: the zones a press on the edge will trim.
             var grip = Math.Min(3, TimelineGestures.HandleWidth(rect.Width) / 2);
-            context.FillRectangle(HandleBrush, new Rect(rect.X + 1, rect.Y + 12, grip, rect.Height - 24), 1);
-            context.FillRectangle(HandleBrush, new Rect(rect.Right - 1 - grip, rect.Y + 12, grip, rect.Height - 24), 1);
+            context.FillRectangle(HandleBrush, new Rect(rect.X + 1, rect.Y + 14, grip, rect.Height - 26), 1);
+            context.FillRectangle(HandleBrush, new Rect(rect.Right - 1 - grip, rect.Y + 14, grip, rect.Height - 26), 1);
         }
-        if (rect.Width < 14)
+    }
+
+    /// <summary>
+    /// Real source frames across the visible part of a clip. Each cell shows its
+    /// cached thumbnail only if the frame's actual PTS lies inside this clip's
+    /// exact source interval; otherwise (pending, no frame, failed) a restrained
+    /// placeholder. No decoding, I/O or allocation per image here.
+    /// </summary>
+    private void DrawFilmstrip(DrawingContext context, TimelineScale scale, ClipView clip, Rect raw, Rect inner, double left, double right)
+    {
+        var cache = Thumbnails!;
+        var cellWidth = FilmstripLayout.CellWidth(StripHeight, clip.ThumbAspect);
+        var height = _renderHeightPx;
+        _cells.Clear();
+        FilmstripLayout.Cells(clip, raw.X, raw.Right, scale.PixelsPerSecond, FilmstripLayout.StepUs(cellWidth, scale.PixelsPerSecond),
+            left, right, left, right, _cells);
+        // A rectangular clip (cheaper than a rounded geometry); the outline drawn
+        // last covers the corners.
+        using (context.PushClip(inner))
         {
-            return;
-        }
-        using (context.PushClip(rect.Deflate(new Thickness(1))))
-        {
-            if (ready)
+            for (var i = 0; i < _cells.Count; i++)
             {
-                context.FillRectangle(ClipHeaderBrush, new Rect(rect.X + 1, rect.Y + 1, rect.Width - 2, 16));
-            }
-            // Keep the name readable when the clip start is scrolled out of view.
-            var textX = Math.Max(rect.X, left) + 6;
-            var name = ready ? clip.Name : $"Missing · {clip.Name}";
-            var title = new FormattedText(name, CultureInfo.CurrentCulture, FlowDirection.LeftToRight, UiBold, 11,
-                ready ? ClipTextBrush : MissingTextBrush);
-            context.DrawText(title, new Point(textX, rect.Y + 2));
-            var range = new FormattedText($"{clip.StartText} – {clip.EndText} · {clip.DurationText}",
-                CultureInfo.InvariantCulture, FlowDirection.LeftToRight, Mono, 10, ready ? ClipSubtleBrush : MissingTextBrush);
-            if (range.Width + 12 <= Math.Min(rect.Right, right) - textX + 6)
-            {
-                context.DrawText(range, new Point(textX, rect.Y + 20));
+                var cell = _cells[i];
+                var dest = new Rect(cell.X, inner.Y, Math.Min(cellWidth, cell.Width), inner.Height);
+                if (cache.TryGet(new ThumbKey(clip.SourceKey, cell.SampleUs, height), out var entry)
+                    && entry is { State: Services.ThumbnailState.Ready, Bitmap: { } bitmap }
+                    && FilmstripLayout.Belongs(clip, entry.ActualTicks))
+                {
+                    var size = bitmap.PixelSize;
+                    // Partial cells show the left part of the frame, never a stretched one.
+                    context.DrawImage(bitmap, new Rect(0, 0, size.Width * dest.Width / cellWidth, size.Height), dest);
+                    _drawnThumbnails++;
+                }
+                else
+                {
+                    context.FillRectangle(PlaceholderBrush, dest.Deflate(new Thickness(0.5, 0)));
+                    _drawnPlaceholders++;
+                }
+                if (cell.X > raw.X + 1)
+                {
+                    context.DrawLine(DividerPen, new Point(Math.Round(cell.X) + 0.5, inner.Top), new Point(Math.Round(cell.X) + 0.5, inner.Bottom));
+                }
             }
         }
     }

@@ -29,7 +29,7 @@ public sealed class TimelineEditingTests
     {
         var scale = TimelineScale.ForZoom(100); // 20 px/s, origin 12
         var rect = TimelineGeometry.ClipRect(scale, Clip("a", 1, 3000, 1500), TimelineLanes.TrackHeight);
-        Assert.Equal(new Rect(72, 55, 30, 40), rect);
+        Assert.Equal(new Rect(72, TimelineLanes.TrackHeight + TimelineGeometry.LaneInset, 30, TimelineLanes.TrackHeight - 2 * TimelineGeometry.LaneInset), rect);
         var doubled = TimelineGeometry.ClipRect(TimelineScale.ForZoom(200), Clip("a", 1, 3000, 1500), TimelineLanes.TrackHeight);
         Assert.Equal((132, 60), (doubled.X, doubled.Width));
         var tiny = TimelineGeometry.ClipRect(scale, Clip("t", 0, 0, 1), TimelineLanes.TrackHeight);
