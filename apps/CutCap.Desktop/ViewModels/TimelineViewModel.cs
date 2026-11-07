@@ -53,6 +53,7 @@ public sealed partial class TimelineViewModel : ObservableObject
     {
         _engine = engine;
         engine.ThumbnailsChanged += (_, _) => ThumbnailsChanged?.Invoke(this, EventArgs.Empty);
+        engine.WaveformsChanged += (_, _) => WaveformsChanged?.Invoke(this, EventArgs.Empty);
     }
 
     /// <summary>Filmstrip thumbnails (presentation cache, never project state).</summary>
@@ -63,6 +64,15 @@ public sealed partial class TimelineViewModel : ObservableObject
 
     /// <summary>Forwards the lanes' viewport demand to the engine's low-priority worker.</summary>
     public void RequestThumbnails(IReadOnlyList<ThumbnailWant> wants) => _engine.RequestThumbnails(wants);
+
+    /// <summary>Waveform peaks (presentation cache, never project state).</summary>
+    public WaveformCache Waveforms => _engine.Waveforms;
+
+    /// <summary>New waveform chunks arrived.</summary>
+    public event EventHandler? WaveformsChanged;
+
+    /// <summary>Forwards the lanes' waveform demand to the engine's low-priority worker.</summary>
+    public void RequestWaveforms(IReadOnlyList<WaveformWant> wants) => _engine.RequestWaveforms(wants);
 
     public ObservableCollection<TrackViewModel> Tracks { get; } = [];
 

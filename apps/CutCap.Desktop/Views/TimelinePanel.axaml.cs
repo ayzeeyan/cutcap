@@ -36,6 +36,7 @@ public partial class TimelinePanel : UserControl
         };
         Ruler.PositionPressed += (_, milliseconds) => (DataContext as TimelineViewModel)?.SeekRuler(milliseconds);
         Lanes.ThumbnailDemand += (_, wants) => (DataContext as TimelineViewModel)?.RequestThumbnails(wants);
+        Lanes.WaveformDemand += (_, wants) => (DataContext as TimelineViewModel)?.RequestWaveforms(wants);
     }
 
     private TimelineViewModel? _timeline;
@@ -43,10 +44,19 @@ public partial class TimelinePanel : UserControl
     protected override void OnDataContextChanged(EventArgs e)
     {
         base.OnDataContextChanged(e);
-        if (_timeline is not null) _timeline.ThumbnailsChanged -= OnThumbnailsChanged;
+        if (_timeline is not null)
+        {
+            _timeline.ThumbnailsChanged -= OnThumbnailsChanged;
+            _timeline.WaveformsChanged -= OnThumbnailsChanged;
+        }
         _timeline = DataContext as TimelineViewModel;
         Lanes.Thumbnails = _timeline?.Thumbnails;
-        if (_timeline is not null) _timeline.ThumbnailsChanged += OnThumbnailsChanged;
+        Lanes.Waveforms = _timeline?.Waveforms;
+        if (_timeline is not null)
+        {
+            _timeline.ThumbnailsChanged += OnThumbnailsChanged;
+            _timeline.WaveformsChanged += OnThumbnailsChanged;
+        }
     }
 
     private void OnThumbnailsChanged(object? sender, EventArgs e) => Lanes.ThumbnailsArrived();
