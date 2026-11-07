@@ -72,6 +72,18 @@ fn terminal_errors_bypass_future_pixels_but_successful_eof_waits_for_the_queue()
         p.begin(plan, false, false, Instant::now()).unwrap();
         let mut slot = p.new_slot(clips[0].clone(), TimelineTime::ZERO, 0).unwrap();
         let deadline = Instant::now() + Duration::from_secs(2);
+        // The producer never blocks (3 frames fit the queue), so it can finish
+        // entirely between a poll's frame takes and its terminal read; that
+        // poll would observe the terminal result with nothing taken yet. Wait
+        // for all three frames to be queued first, so the first poll takes two
+        // and the terminal result is observed afterwards, in either order.
+        while p.workers[0].progress().unwrap().decoded < 3 {
+            assert!(
+                Instant::now() < deadline,
+                "producer did not queue its frames"
+            );
+            std::thread::park_timeout(Duration::from_millis(1));
+        }
         while slot.error.is_none() && !slot.finished {
             slot.poll(&p.workers[0], p.clock.timebase).unwrap();
             assert!(

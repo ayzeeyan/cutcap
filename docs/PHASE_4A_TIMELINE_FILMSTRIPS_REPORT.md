@@ -299,6 +299,10 @@ The two builds overlap, so no filmstrip-specific cost is distinguishable from ru
 - **Editing.** The Phase 3E native editing scenario passes on 56 DIP lanes (§10): placement, moves, trims, split, snapping, rejections, undo/redo, save/reopen with an identical file. Desktop geometry tests use the lane constants instead of a hard-coded 50 px.
 - **Persistence.** Thumbnail work never changes the document. The session test checks history depth, the interop test checks revision and Dirty on a saved project, and the native run checks the title after reopen.
 - **Shutdown.** The app closes during thumbnail decoding in 635–717 ms across all runs, with no CutCap, FFmpeg or FFprobe processes left. The Rust test `clear_and_shutdown_cancel_a_running_batch_promptly` covers cancellation of a running batch.
+- **Flaky Phase 3D test fixed.** CI ran PR commit `581ab8f` twice: one run passed, and the other failed in `terminal_errors_bypass_future_pixels_but_successful_eof_waits_for_the_queue`.
+  - **Cause.** The test's fake producer never blocks, because its 3 frames fit the queue. So it could finish entirely between a poll's frame takes and its terminal read, and the loop then exited with no frame taken. Production handles both orders.
+  - **Fix.** The test now waits until all three frames are queued before polling. This is an explicit decoder condition, not a sleep.
+  - **Evidence.** Before the fix: 1 failure in 400 idle runs and 1 in 800 runs under 8× parallel load. After: 0 in 400 and 0 in 800.
 - **Layout.** Lanes are 6 DIP taller per track. The timeline area is unchanged (42% of the workspace, minimum 170). At the minimum window two tracks remain fully visible (screenshot).
 
 ## 13. Known limitations
