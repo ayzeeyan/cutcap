@@ -26,7 +26,7 @@ fn io(source: std::io::Error) -> MediaError {
         source,
     }
 }
-fn line(reader: &mut impl BufRead, limit: usize) -> Result<Option<Vec<u8>>, MediaError> {
+pub(crate) fn line(reader: &mut impl BufRead, limit: usize) -> Result<Option<Vec<u8>>, MediaError> {
     let mut bytes = Vec::new();
     let count = reader
         .take((limit + 1) as u64)
@@ -41,12 +41,12 @@ fn line(reader: &mut impl BufRead, limit: usize) -> Result<Option<Vec<u8>>, Medi
     Ok(Some(bytes))
 }
 #[derive(Debug)]
-struct Packet {
-    index: u64,
-    pts: SourceTime,
-    size: usize,
+pub(crate) struct Packet {
+    pub(crate) index: u64,
+    pub(crate) pts: SourceTime,
+    pub(crate) size: usize,
 }
-fn packet(bytes: &[u8], tag: &str) -> Result<Option<Packet>, MediaError> {
+pub(crate) fn packet(bytes: &[u8], tag: &str) -> Result<Option<Packet>, MediaError> {
     let text = std::str::from_utf8(bytes).map_err(|_| invalid("invalid packet record UTF-8"))?;
     let Some(rest) = text.strip_prefix(tag).and_then(|s| s.strip_prefix(' ')) else {
         return Ok(None);

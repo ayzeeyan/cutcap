@@ -28,6 +28,8 @@ fn fixture() -> (Project, TrackId, TrackId, MediaId) {
 }
 fn clip(track: TrackId, media: MediaId, start: i64, duration: u64) -> Clip {
     Clip {
+        stream: cutcap_core::ClipStream::Video,
+        link: None,
         id: ClipId::new(),
         track_id: track,
         media_id: media,
@@ -74,8 +76,19 @@ fn half_open_cuts_gaps_and_empty_regions_are_exact() {
         index.active(ProjectId::new(), track, TimelineTime(0)),
         Err(EvaluationError::StaleProject)
     ));
+    // Phase 4B indexes audio tracks (audio transport); the empty audio track
+    // has no active clip, and the video monitor never selects it.
     assert!(matches!(
         index.active(p.id(), audio, TimelineTime(0)),
+        Ok(None)
+    ));
+    assert_eq!(index.monitored_audio().map(|t| t.id), Some(audio));
+    assert_ne!(
+        index.monitor(SelectionState::Track(audio)).map(|t| t.id),
+        Some(audio)
+    );
+    assert!(matches!(
+        index.active(p.id(), TrackId::new(), TimelineTime(0)),
         Err(EvaluationError::NotVideoTrack)
     ));
     assert!(matches!(
@@ -277,5 +290,72 @@ fn vfr_ceiling_outside_clip_and_arithmetic_overflow_are_explicit() {
             Timebase::new(u32::MAX, u32::MAX).unwrap()
         )
         .is_ok()
+    );
+}
+
+#[test]
+fn audio_sample_mapping_rounds_once_and_agrees_with_the_video_instant() {
+    let project = Timebase::DEFAULT_TIMELINE; // 1/720000
+    let video = Timebase::new(1, 15360).unwrap();
+    let clip = Clip {
+        id: ClipId::new(),
+        media_id: MediaId::new(),
+        track_id: TrackId::new(),
+        start: TimelineTime(720_000),
+        duration: TimelineDuration::new(7_200_000).unwrap(),
+        // 0.5 s + 1/15360 s into the source, in the video clock.
+        source_in: SourceTime {
+            ticks: 7681,
+            timebase: video,
+        },
+        stream: ClipStream::Audio { index: 1 },
+        link: None,
+    };
+    // Epoch starting exactly at the clip start: offset = ceil(source_in * 48000).
+    // 7681/15360 s * 48000 = 24003.125 -> 24004.
+    assert_eq!(
+        source_sample_offset(&clip, clip.start, project, 48_000).unwrap(),
+        24_004
+    );
+    // Starting 0.25 s into the clip adds exactly 12000 samples.
+    let origin = TimelineTime(720_000 + 180_000);
+    assert_eq!(
+        source_sample_offset(&clip, origin, project, 48_000).unwrap(),
+        36_004
+    );
+    // Starting 1 s before the clip: the clip begins at output sample 48000.
+    let early = TimelineTime(0);
+    assert_eq!(
+        samples_until(early, clip.start, project, 48_000).unwrap(),
+        48_000
+    );
+    let offset = source_sample_offset(&clip, early, project, 48_000).unwrap();
+    assert_eq!(
+        offset + 48_000,
+        24_004,
+        "the same source sample at the clip start"
+    );
+    // 44.1 kHz: 0.5000651 s * 44100 = 22052.87 -> 22053.
+    assert_eq!(
+        source_sample_offset(&clip, clip.start, project, 44_100).unwrap(),
+        22_053
+    );
+    // Output sample -> timeline floor: sample 1 at 48 kHz is 15 project ticks.
+    assert_eq!(
+        timeline_at_sample(early, 1, project, 48_000).unwrap(),
+        TimelineTime(15)
+    );
+    assert_eq!(
+        timeline_at_sample(early, 48_000, project, 48_000).unwrap(),
+        TimelineTime(720_000)
+    );
+    // Partial-tick boundaries round up to the first sample at or after.
+    assert_eq!(
+        samples_until(early, TimelineTime(16), project, 48_000).unwrap(),
+        2
+    );
+    assert_eq!(
+        samples_until(TimelineTime(30), TimelineTime(0), project, 48_000).unwrap(),
+        -2
     );
 }

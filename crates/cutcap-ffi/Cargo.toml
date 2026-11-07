@@ -35,5 +35,9 @@ uuid.workspace = true
 wgpu = { workspace = true, optional = true }
 pollster = { workspace = true, optional = true }
 
+[target.'cfg(windows)'.dependencies]
+# Phase 4B audio output: safe WASAPI bindings (MIT), exact version pinned.
+wasapi = "=0.27.0"
+
 [lints]
 workspace = true

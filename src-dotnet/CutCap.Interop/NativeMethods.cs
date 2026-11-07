@@ -28,6 +28,24 @@ public struct NativeFrameInfo
     public uint PixelFormat;
 }
 
+/// <summary>
+/// Mirror of Rust <c>CutCapWaveformInfo</c>: 40 bytes, 8-byte aligned (ABI 9).
+/// A ready chunk covers native-rate samples starting at
+/// <c>Chunk * Buckets * BucketFrames</c>; status 0 ready, 1 failed.
+/// </summary>
+[StructLayout(LayoutKind.Sequential)]
+public struct NativeWaveformInfo
+{
+    public ulong Token;
+    public long Chunk;
+    public uint Rate;
+    public uint Channels;
+    public uint Buckets;
+    public uint BucketFrames;
+    public uint Status;
+    public uint Reserved;
+}
+
 /// <summary>Mirror of Rust <c>CutCapThumbnailInfo</c>: 40 bytes, 8-byte aligned (ABI 8).</summary>
 [StructLayout(LayoutKind.Sequential)]
 public struct NativeThumbnailInfo
@@ -53,7 +71,7 @@ internal static unsafe partial class NativeMethods
     private const string Library = "cutcap_engine";
 
     /// <summary>The ABI this frontend was written against.</summary>
-    public const uint AbiVersion = 8;
+    public const uint AbiVersion = 9;
     public const uint PixelRgba8Opaque = 1;
 
     [LibraryImport(Library, EntryPoint = "cutcap_abi_version")]
@@ -85,6 +103,15 @@ internal static unsafe partial class NativeMethods
 
     [LibraryImport(Library, EntryPoint = "cutcap_session_copy_thumbnail")]
     public static partial NativeStatus CopyThumbnail(SessionSafeHandle session, ulong token, byte* destination, nuint length, nuint stride);
+
+    [LibraryImport(Library, EntryPoint = "cutcap_session_request_waveforms")]
+    public static partial NativeStatus RequestWaveforms(SessionSafeHandle session, byte* json, nuint length);
+
+    [LibraryImport(Library, EntryPoint = "cutcap_session_next_waveform")]
+    public static partial NativeStatus NextWaveform(SessionSafeHandle session, out NativeWaveformInfo info);
+
+    [LibraryImport(Library, EntryPoint = "cutcap_session_copy_waveform")]
+    public static partial NativeStatus CopyWaveform(SessionSafeHandle session, ulong token, float* destination, nuint length);
 
     [LibraryImport(Library, EntryPoint = "cutcap_session_place_clip")]
     public static partial NativeStatus PlaceClip(SessionSafeHandle session, byte* media, nuint mediaLength,

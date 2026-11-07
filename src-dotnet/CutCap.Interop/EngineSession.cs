@@ -195,6 +195,50 @@ public sealed class EngineSession : IDisposable
         }
     }
 
+    /// <summary>
+    /// Replaces the waveform demand (visible chunks first, at most 128). Chunks
+    /// no longer wanted are dropped or cancelled in Rust (ABI 9).
+    /// </summary>
+    public unsafe void RequestWaveforms(IReadOnlyList<WaveformWant> wants)
+    {
+        var json = JsonSerializer.SerializeToUtf8Bytes(wants, ViewJsonContext.Default.IReadOnlyListWaveformWant);
+        fixed (byte* pointer = json)
+        {
+            Check(NativeMethods.RequestWaveforms(Handle, pointer, (nuint)json.Length));
+        }
+    }
+
+    /// <summary>Announces the next completed waveform chunk; false when none is waiting.</summary>
+    public bool TryNextWaveform(out NativeWaveformInfo info)
+    {
+        var status = NativeMethods.NextWaveform(Handle, out info);
+        if (status == NativeStatus.NoFrame)
+        {
+            return false;
+        }
+        Check(status);
+        if (info.Status == 0 && (info.Buckets == 0 || info.Buckets > 1 << 20 || info.Rate == 0 || info.BucketFrames == 0))
+        {
+            throw new EngineException(NativeStatus.Failed, "The engine described an invalid waveform.");
+        }
+        return true;
+    }
+
+    /// <summary>Copies the announced chunk as interleaved (min, max) pairs; false when stale or failed.</summary>
+    public unsafe bool CopyWaveform(ulong token, Span<float> destination)
+    {
+        fixed (float* pointer = destination)
+        {
+            var status = NativeMethods.CopyWaveform(Handle, token, pointer, (nuint)destination.Length);
+            if (status is NativeStatus.StaleFrame or NativeStatus.NoFrame)
+            {
+                return false;
+            }
+            Check(status);
+            return true;
+        }
+    }
+
     /// <summary>Places the whole Ready source at a position (drag-and-drop). Acceptance only.</summary>
     public unsafe void PlaceClip(string mediaId, string trackId, TimelinePosition position)
     {

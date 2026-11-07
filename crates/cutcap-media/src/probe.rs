@@ -1,5 +1,5 @@
 use crate::MediaError;
-use cutcap_contracts::{Ratio, Rounding, SourceTime, Timebase, VideoMetadata};
+use cutcap_contracts::{AudioStreamMetadata, Ratio, Rounding, SourceTime, Timebase, VideoMetadata};
 use serde_json::Value;
 
 pub const MAX_PROBE_BYTES: usize = 1024 * 1024;
@@ -80,6 +80,53 @@ fn angle(raw: &str) -> Result<i64, MediaError> {
     whole
         .parse()
         .map_err(|_| invalid("invalid display rotation"))
+}
+
+fn timebase_of(stream: &Value) -> Option<Timebase> {
+    let (n, d) = text(stream, "time_base")?.split_once('/')?;
+    Timebase::new(n.parse().ok()?, d.parse().ok()?).ok()
+}
+
+/// Details of one audio stream, or `None` when FFprobe did not report what
+/// decoding needs (rate, channels, clock, integer start). Such a stream stays
+/// listed in `audio_streams` but is not offered for linked placement.
+fn audio_details(stream: &Value) -> Result<Option<AudioStreamMetadata>, MediaError> {
+    let Some(index) = integer(stream, "index").and_then(|i| u32::try_from(i).ok()) else {
+        return Err(invalid("invalid audio stream index"));
+    };
+    let (Some(timebase), Some(start_pts), Some(codec), Some(sample_rate), Some(channels)) = (
+        timebase_of(stream),
+        integer(stream, "start_pts"),
+        text(stream, "codec_name"),
+        integer(stream, "sample_rate").and_then(|r| u32::try_from(r).ok()),
+        integer(stream, "channels").and_then(|c| u16::try_from(c).ok()),
+    ) else {
+        return Ok(None);
+    };
+    let duration_ticks = match integer(stream, "duration_ts") {
+        Some(ticks) => Some(ticks),
+        None => text(stream, "duration")
+            .map(|s| decimal_time(s, timebase))
+            .transpose()?,
+    };
+    let audio = AudioStreamMetadata {
+        stream_index: index,
+        stream_id: text(stream, "id").map(str::to_owned),
+        codec: codec.into(),
+        timebase,
+        start_pts,
+        duration_is_estimate: duration_ticks.is_none(),
+        duration_ticks,
+        sample_rate,
+        channels,
+        channel_layout: text(stream, "channel_layout").map(str::to_owned),
+        sample_format: text(stream, "sample_fmt").map(str::to_owned),
+        initial_padding: integer(stream, "initial_padding")
+            .and_then(|p| u32::try_from(p).ok())
+            .filter(|p| *p > 0),
+        default: stream["disposition"]["default"].as_i64() == Some(1),
+    };
+    Ok(audio.validate().is_ok().then_some(audio))
 }
 
 pub fn parse_probe(bytes: &[u8]) -> Result<VideoMetadata, MediaError> {
@@ -233,6 +280,12 @@ pub fn parse_probe(bytes: &[u8]) -> Result<VideoMetadata, MediaError> {
                     .ok_or_else(|| invalid("invalid audio stream index"))
             })
             .collect::<Result<_, _>>()?,
+        audio: streams
+            .iter()
+            .filter(|s| text(s, "codec_type") == Some("audio"))
+            .map(audio_details)
+            .filter_map(Result::transpose)
+            .collect::<Result<_, _>>()?,
         color_space: text(video, "color_space").map(str::to_owned),
         color_transfer: text(video, "color_transfer").map(str::to_owned),
         color_range: text(video, "color_range").map(str::to_owned),
@@ -263,6 +316,13 @@ pub(crate) mod tests {
             "r_frame_rate":"30000/1001","sample_aspect_ratio":"1:1","display_aspect_ratio":"16:9"},
             {"index":1,"codec_type":"audio"}],"format":{"format_name":"mov,mp4","duration":"3.000000"}})
     }
+    /// A stereo AAC stream on its own clock, starting 21 ms after the video.
+    fn audio_stream(index: i64, default: i64) -> Value {
+        serde_json::json!({"index":index,"codec_type":"audio","codec_name":"aac","sample_rate":"44100",
+            "channels":2,"channel_layout":"stereo","sample_fmt":"fltp","initial_padding":1024,
+            "time_base":"1/44100","start_pts":926,"duration_ts":132300,"id":"0x2",
+            "disposition":{"default":default}})
+    }
     fn parse(value: &Value) -> Result<VideoMetadata, MediaError> {
         parse_probe(&serde_json::to_vec(value).unwrap())
     }
@@ -286,6 +346,75 @@ pub(crate) mod tests {
         assert_eq!(metadata.duration_ticks, None);
         assert!(!metadata.duration_is_estimate);
         assert_eq!(metadata.average_rate, None);
+    }
+    #[test]
+    fn audio_streams_keep_their_own_clock_and_the_primary_follows_the_default_flag() {
+        let mut root = fixture();
+        root["streams"][1] = audio_stream(1, 0);
+        root["streams"]
+            .as_array_mut()
+            .unwrap()
+            .push(audio_stream(2, 1));
+        root["streams"][2]["sample_rate"] = "48000".into();
+        root["streams"][2]["channels"] = 1.into();
+        root["streams"][2]["time_base"] = "1/48000".into();
+        root["streams"][2]["start_pts"] = (-1024).into();
+        root["streams"][2]
+            .as_object_mut()
+            .unwrap()
+            .remove("duration_ts");
+        root["streams"][2]["duration"] = "2.5".into();
+        let m = parse(&root).unwrap();
+        assert_eq!(m.audio_streams, vec![1, 2]);
+        assert_eq!(m.audio.len(), 2);
+        let first = m.audio_stream(1).unwrap();
+        assert_eq!(first.timebase, Timebase::new(1, 44100).unwrap());
+        assert_ne!(first.timebase, m.timebase, "audio keeps its own clock");
+        assert_eq!((first.start_pts, first.duration_ticks), (926, Some(132300)));
+        assert_eq!((first.sample_rate, first.channels), (44100, 2));
+        assert_eq!(first.initial_padding, Some(1024));
+        let primary = m.primary_audio().unwrap();
+        assert_eq!(
+            primary.stream_index, 2,
+            "the default-disposition stream wins"
+        );
+        assert_eq!(
+            (primary.start_pts, primary.duration_ticks),
+            (-1024, Some(120000))
+        );
+        assert_eq!(primary.channels, 1);
+        // Without a default flag the lowest index is primary.
+        root["streams"][2]["disposition"]["default"] = 0.into();
+        assert_eq!(
+            parse(&root).unwrap().primary_audio().unwrap().stream_index,
+            1
+        );
+        // A stream missing decoding facts stays listed but is not decodable.
+        root["streams"][1]
+            .as_object_mut()
+            .unwrap()
+            .remove("sample_rate");
+        let m = parse(&root).unwrap();
+        assert_eq!(m.audio_streams, vec![1, 2]);
+        assert_eq!(m.audio.len(), 1);
+        assert_eq!(m.primary_audio().unwrap().stream_index, 2);
+        // Out-of-budget channel counts are not decodable either.
+        root["streams"][2]["channels"] = 12.into();
+        assert!(parse(&root).unwrap().primary_audio().is_none());
+        // Video-only sources are unchanged.
+        let mut silent = fixture();
+        silent["streams"].as_array_mut().unwrap().pop();
+        let m = parse(&silent).unwrap();
+        assert!(m.audio_streams.is_empty() && m.audio.is_empty() && m.primary_audio().is_none());
+    }
+    #[test]
+    fn metadata_saved_before_audio_details_still_deserializes() {
+        let m = parse(&fixture()).unwrap();
+        let mut json = serde_json::to_value(&m).unwrap();
+        json.as_object_mut().unwrap().remove("audio");
+        let old: VideoMetadata = serde_json::from_value(json).unwrap();
+        assert!(old.audio.is_empty());
+        assert_eq!(old.audio_streams, vec![1]);
     }
     #[test]
     fn untrusted_metadata_limits_and_unsupported_streams_are_rejected() {

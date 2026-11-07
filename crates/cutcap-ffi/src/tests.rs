@@ -19,6 +19,8 @@ use std::{
 };
 
 const PROBE: &[u8] = br#"{"streams":[{"index":0,"codec_type":"video","codec_name":"ffv1","width":320,"height":180,"time_base":"1/1000","start_pts":0,"duration_ts":3000}],"format":{"format_name":"matroska"}}"#;
+/// Files whose name contains "av" also carry a 48 kHz stereo audio stream (#1).
+const AV_PROBE: &[u8] = br#"{"streams":[{"index":0,"codec_type":"video","codec_name":"ffv1","width":320,"height":180,"time_base":"1/1000","start_pts":0,"duration_ts":3000},{"index":1,"codec_type":"audio","codec_name":"flac","sample_rate":"48000","channels":2,"time_base":"1/48000","start_pts":0,"duration_ts":144000,"disposition":{"default":1}}],"format":{"format_name":"matroska"}}"#;
 
 #[path = "timeline_preview_tests.rs"]
 mod timeline_preview;
@@ -121,6 +123,41 @@ impl MediaBackend for Controlled {
         }
         Ok(())
     }
+    /// Chunk `c` has, in every bucket, min = -(c + 1) / 100 and
+    /// max = (c + 1) / 100, so tests can tell which chunk produced which peaks.
+    fn audio_peaks(
+        &self,
+        media: &cutcap_contracts::MediaSummary,
+        stream_index: u32,
+        first_chunk: i64,
+        count: usize,
+        cancel: &Cancellation,
+    ) -> Result<Vec<cutcap_media::Peaks>, MediaError> {
+        let audio = media
+            .metadata
+            .audio_stream(stream_index)
+            .ok_or_else(|| MediaError::Unsupported("no such stream".into()))?;
+        let started = Instant::now();
+        while started.elapsed() < self.delay {
+            if cancel.is_cancelled() {
+                return Err(MediaError::Cancelled);
+            }
+            thread::sleep(Duration::from_millis(2));
+        }
+        Ok((0..count as i64)
+            .map(|k| {
+                let level = (first_chunk + k + 1) as f32 / 100.0;
+                cutcap_media::Peaks {
+                    chunk: first_chunk + k,
+                    rate: audio.sample_rate,
+                    channels: audio.channels,
+                    min: vec![-level; cutcap_media::PEAK_CHUNK_BUCKETS as usize],
+                    max: vec![level; cutcap_media::PEAK_CHUNK_BUCKETS as usize],
+                    process_id: 11,
+                }
+            })
+            .collect())
+    }
     fn stream(
         &self,
         request: &DecodeRequest,
@@ -142,9 +179,13 @@ impl MediaBackend for Controlled {
                 detail: "invalid data".into(),
             });
         }
+        let name = path
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
         Ok(ProbeResult {
             path: path.to_owned(),
-            metadata: parse_probe(PROBE)?,
+            metadata: parse_probe(if name.contains("av") { AV_PROBE } else { PROBE })?,
             probe_us: 7,
         })
     }
@@ -752,3 +793,5 @@ mod thumbnail;
 mod timeline;
 #[path = "timeline_edit_session_tests.rs"]
 mod timeline_edit_session;
+#[path = "waveform_tests.rs"]
+mod waveform;
