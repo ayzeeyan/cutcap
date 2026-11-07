@@ -343,7 +343,7 @@ Branch `claude/phase-4a-timeline-filmstrips`, created from `origin/main` `7a510d
 | `7b27f38` | feat(cache): implement viewport thumbnail cache and cancellation |
 | `2692f60` | feat(ui): render real video filmstrips in timeline clips |
 | `0150333` | test(timeline): validate thumbnail timing caching and native rendering |
-| (this commit) | docs: report Phase 4A filmstrip implementation |
+| `cea06a7` | docs: report Phase 4A filmstrip implementation |
 
 **Clean-worktree checks.** Each of the first four commits was checked out in a clean worktree and checked with:
 - clippy `-D warnings` on all targets;
@@ -365,6 +365,13 @@ Tests that pin the lane height or ABI version travel with the change that alters
 Screenshots and measurement logs were copied into `docs/` after checking that they contain no user paths.
 
 ## 16. Pull request
+
+- **PR:** [#4](https://github.com/ayzeeyan/cutcap/pull/4) "feat: add real video filmstrips and thumbnail caching (Phase 4A)": base `main`, head `claude/phase-4a-timeline-filmstrips`.
+- **State at creation:** open, not a draft, mergeable, auto-merge off.
+- **Commits:** five, head `cea06a7` at creation. This report update follows as a sixth commit.
+- **Push:** `git push -u origin claude/phase-4a-timeline-filmstrips` without force. The remote head was verified equal to the local one.
+- **Base:** `origin/main` (`7a510d0`) is an ancestor of the branch.
+- **For the owner:** the PR is left open for review. `main` and the feature branch are not deleted.
 
 ## 17. Recommended next milestone
 
