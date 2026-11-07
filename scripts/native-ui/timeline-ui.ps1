@@ -46,7 +46,7 @@ function State([IntPtr]$h, [string]$label) {
 function Click-Lane([IntPtr]$h, [double]$ms, [int]$track, [int]$zoom = 100) {
   $scale = [Dpi3B]::GetDpiForWindow($h) / 96.0
   $r = (Find-Element $h 'Track lanes').Current.BoundingRectangle
-  $x = 12 + $ms / 1000.0 * 20 * $zoom / 100; $y = $track * 50 + 25
+  $x = 12 + $ms / 1000.0 * 20 * $zoom / 100; $y = $track * 56 + 28
   Assert-CutCapForeground
   [void][Native2]::SetCursorPos([int]($r.X + $x * $scale), [int]($r.Y + $y * $scale)); Start-Sleep -Milliseconds 80
   [Native2]::mouse_event(2, 0, 0, 0, [IntPtr]::Zero); Start-Sleep -Milliseconds 40; [Native2]::mouse_event(4, 0, 0, 0, [IntPtr]::Zero)

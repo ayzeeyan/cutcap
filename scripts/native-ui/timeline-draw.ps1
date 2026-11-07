@@ -77,7 +77,7 @@ Start-Sleep -Milliseconds 800
 Click-Named $h 'Reset zoom'; Start-Sleep -Milliseconds 400
 $s = [Dpi.Window]::Scale($h)
 $lanes = (Find-Element $h 'Track lanes').Current.BoundingRectangle
-$from = @{ X = [int]($lanes.X + (12 + 4.5 * 20) * $s); Y = [int]($lanes.Y + 25 * $s) }
+$from = @{ X = [int]($lanes.X + (12 + 4.5 * 20) * $s); Y = [int]($lanes.Y + 28 * $s) }
 Assert-CutCapForeground
 [void][Native2]::SetCursorPos($from.X, $from.Y); Start-Sleep -Milliseconds 100
 [Native2]::mouse_event(2, 0, 0, 0, [IntPtr]::Zero); Start-Sleep -Milliseconds 100

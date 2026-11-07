@@ -60,7 +60,7 @@ function Scale([IntPtr]$h) { [Dpi3E]::GetDpiForWindow($h) / 96.0 }
 # A physical screen point for a timeline position (ms) and track lane at a zoom (no horizontal scroll).
 function Lane-Point([IntPtr]$h, [double]$ms, [int]$track, [double]$dy = 0, [int]$zoom = 100) {
   $s = Scale $h; $r = (Find-Element $h 'Track lanes').Current.BoundingRectangle
-  @{ X = [int]($r.X + (12 + $ms / 1000.0 * 20 * $zoom / 100) * $s); Y = [int]($r.Y + ($track * 50 + 25 + $dy) * $s) }
+  @{ X = [int]($r.X + (12 + $ms / 1000.0 * 20 * $zoom / 100) * $s); Y = [int]($r.Y + ($track * 56 + 28 + $dy) * $s) }
 }
 function Ruler-Point([IntPtr]$h, [double]$ms, [int]$zoom = 100) {
   $s = Scale $h; $r = (Find-Element $h 'Timeline ruler').Current.BoundingRectangle
