@@ -49,7 +49,20 @@ public sealed partial class TimelineViewModel : ObservableObject
     private readonly EngineHost _engine;
     private bool _applying;
 
-    public TimelineViewModel(EngineHost engine) => _engine = engine;
+    public TimelineViewModel(EngineHost engine)
+    {
+        _engine = engine;
+        engine.ThumbnailsChanged += (_, _) => ThumbnailsChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>Filmstrip thumbnails (presentation cache, never project state).</summary>
+    public ThumbnailCache Thumbnails => _engine.Thumbnails;
+
+    /// <summary>New thumbnails arrived.</summary>
+    public event EventHandler? ThumbnailsChanged;
+
+    /// <summary>Forwards the lanes' viewport demand to the engine's low-priority worker.</summary>
+    public void RequestThumbnails(IReadOnlyList<ThumbnailWant> wants) => _engine.RequestThumbnails(wants);
 
     public ObservableCollection<TrackViewModel> Tracks { get; } = [];
 

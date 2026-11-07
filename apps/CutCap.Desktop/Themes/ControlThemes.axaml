@@ -214,7 +214,8 @@
     <Setter Property="BorderThickness" Value="1.5" />
     <Setter Property="CornerRadius" Value="{StaticResource ControlRadius}" />
     <Setter Property="Padding" Value="8,0,4,0" />
-    <Setter Property="Height" Value="50" />
+    <!-- Matches TimelineLanes.TrackHeight (56, Phase 4A filmstrips). -->
+    <Setter Property="Height" Value="56" />
     <Setter Property="Cursor" Value="Hand" />
     <Setter Property="Template">
       <ControlTemplate>
