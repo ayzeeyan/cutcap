@@ -662,6 +662,20 @@ fn audio(p: &TimelinePlayback) -> &crate::audio_transport::AudioTransport {
 }
 
 #[test]
+fn without_a_device_the_view_says_unavailable_at_every_level_and_why() {
+    let backend: Arc<dyn MediaBackend> = Arc::new(AvBackend);
+    let p = TimelinePlayback::start_with_audio(backend, None, Some("No audio endpoint.".into()))
+        .unwrap();
+    let view = p.audio_view().unwrap();
+    assert_eq!(
+        (view.state, view.clock, view.output.state),
+        ("unavailable", "system", "unavailable")
+    );
+    assert_eq!(view.detail.as_deref(), Some("No audio endpoint."));
+    assert_eq!(view.output.underruns, 0);
+}
+
+#[test]
 fn audio_is_the_master_clock_and_wall_time_alone_never_advances_playback() {
     let now = Instant::now();
     let (plan, clips) = av_fixture(1000);

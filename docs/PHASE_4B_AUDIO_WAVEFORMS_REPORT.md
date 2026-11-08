@@ -269,13 +269,13 @@ only):
 
 | Suite | Result |
 |---|---|
-| Rust workspace (`cargo test --workspace`) | 168 passed, 0 failed |
+| Rust workspace (`cargo test --workspace`) | 169 passed, 0 failed |
 | FFmpeg integration (`cutcap-media -- --ignored`) | 12 video + 4 audio passed |
 | Real-device output test (`audio_output -- --ignored`) | passed |
 | .NET Desktop tests | 57 passed |
 | .NET Interop tests | 52 passed, against real FFmpeg and the real engine DLL |
 
-The Rust workspace total breaks down as: contracts 6, core 11 + 7, engine 124
+The Rust workspace total breaks down as: contracts 6, core 11 + 7, engine 125
 (7 ignored measurements or fixtures), media 20.
 
 **New or changed coverage:**
@@ -479,7 +479,15 @@ Branch `claude/phase-4b-audio-waveforms` from `origin/main` `0a2708c`:
 | `5f63459` | feat(ui): draw real waveforms and linked audio clips in the timeline |
 | `1ee2737` | test(audio): verify audible output, A/V offset and drift natively |
 | `ba0ec14` | docs: report Phase 4B audio, synchronization and waveforms |
-| (this commit) | docs: record the Phase 4B pull request |
+| `ce5f606` | docs: record the Phase 4B pull request |
+| (this commit) | fix(audio): report an unavailable output when no device exists |
+
+**CI finding after the PR opened.** The `windows-2025` runner has no audio
+endpoint, a path the test machine never took. There the top-level audio state
+said `unavailable`, but `output.state` was an empty string instead of its
+documented `unavailable`. The interop test caught it. It reproduces locally with
+`CUTCAP_AUDIO=off`, and a Rust test now covers the no-device view on every
+machine.
 
 **Clean-worktree checks.** Each of the first three commits was checked out in a
 clean worktree and checked with:

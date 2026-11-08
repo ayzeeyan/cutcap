@@ -360,6 +360,10 @@ impl TimelinePlayback {
             .unwrap_or_else(|| AudioView {
                 state: "unavailable",
                 clock: "system",
+                output: crate::audio_output::OutputStatus {
+                    state: "unavailable",
+                    ..Default::default()
+                },
                 ..Default::default()
             });
         if !self.audio_master {
