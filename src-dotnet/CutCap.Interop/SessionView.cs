@@ -26,7 +26,32 @@ public sealed record SessionView(
     TimelinePreviewView? TimelinePreview = null,
     TimelinePlaybackView? TimelinePlayback = null,
     EditingView? Editing = null,
-    ThumbnailStats? Thumbnails = null);
+    ThumbnailStats? Thumbnails = null,
+    AudioView? Audio = null,
+    WaveformStats? Waveforms = null);
+
+/// <summary>
+/// Phase 4B audio output and master-clock state (ABI 9). <c>Clock</c> is
+/// "audio" when the output device clocks timeline playback, else "system".
+/// </summary>
+public sealed record AudioView(
+    string State, string Clock, AudioOutputStatus Output, ulong Epoch, int Decoders, ulong DecoderStarts,
+    double SourceSilenceMs, ulong SilentClips, string? Detail);
+
+public sealed record AudioOutputStatus(
+    string State, string Device, uint Rate, double StreamLatencyMs, double LatencyCompensationMs, double BufferedMs, ulong Underruns,
+    double PaddedMs, double PlayedMs, string? Error);
+
+/// <summary>Waveform worker diagnostics (ABI 9); never project data.</summary>
+public sealed record WaveformStats(
+    int Pending, int InFlight, int Waiting, ulong Analysed, ulong Failed,
+    ulong Batches, ulong CancelledBatches, ulong? LastBatchMs, uint? LastProcessId, bool Throttled);
+
+/// <summary>
+/// One waveform chunk the frontend wants: chunk <c>Chunk</c> of audio stream
+/// <c>Stream</c> of a verified source (<c>AudioKey</c> from the clip row).
+/// </summary>
+public sealed record WaveformWant(ulong Token, string MediaId, string AudioKey, uint Stream, long Chunk);
 
 /// <summary>Filmstrip worker diagnostics (ABI 8); never project data.</summary>
 public sealed record ThumbnailStats(
@@ -48,7 +73,8 @@ public sealed record TimelinePlaybackView(
     PlaybackState State, bool DesiredPlaying, string? Epoch, long RequestedTicks, string RequestedText, long ClockTicks, long ClockMs, string ClockText,
     long? OfferedTicks, long? CopiedTicks, SourceTimestamp? OfferedPts, SourceTimestamp? CopiedPts, string? CopiedClipId,
     ulong Decoded, ulong Offered, ulong Copied, ulong Dropped, ulong BufferStalls, ulong Handoffs, ulong DecoderStarts,
-    int Buffered, uint? ProcessId, uint? PreparedProcessId, string? Error, ulong? RequestToReadyUs);
+    int Buffered, uint? ProcessId, uint? PreparedProcessId, string? Error, ulong? RequestToReadyUs,
+    string ClockSource = "system", ulong VideoLate = 0, double? AvOffsetMs = null, double AvOffsetMaxMs = 0, ulong AvSamples = 0);
 
 [JsonConverter(typeof(JsonStringEnumConverter<PreviewMode>))]
 public enum PreviewMode { Source, Timeline }
@@ -80,8 +106,12 @@ public sealed record ClipView(
     long? MaxEndTicks = null, long? MaxEndMs = null,
     [property: JsonPropertyName("end_ms")] long? ExactEndMs = null,
     string SourceKey = "", long SourceInTicks = 0, long SourceEndTicks = 0,
-    long SourceInUs = 0, long SourceEndUs = 0, double ThumbAspect = 0)
+    long SourceInUs = 0, long SourceEndUs = 0, double ThumbAspect = 0,
+    string Stream = "video", uint? AudioStream = null, string? LinkId = null,
+    string AudioKey = "", uint AudioRate = 0, long SourceInSamples = 0, long SourceEndSamples = 0)
 {
+    [JsonIgnore]
+    public bool IsAudio => Stream == "audio";
     /// <summary>Floor of the exact end; older/test rows fall back to start + duration.</summary>
     [JsonIgnore]
     public long EndMs => ExactEndMs ?? StartMs + DurationMs;
@@ -161,4 +191,5 @@ public sealed record PreviewMetrics(ulong? ProbeUs, ulong? DecodeUs, ulong? Requ
 [JsonSerializable(typeof(SessionView))]
 [JsonSerializable(typeof(TimelineView))]
 [JsonSerializable(typeof(IReadOnlyList<ThumbnailWant>))]
+[JsonSerializable(typeof(IReadOnlyList<WaveformWant>))]
 internal sealed partial class ViewJsonContext : JsonSerializerContext;

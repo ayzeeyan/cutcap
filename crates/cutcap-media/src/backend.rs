@@ -42,8 +42,6 @@ pub trait MediaBackend: Send + Sync + 'static {
             "continuous decoding is unavailable for this backend".into(),
         ))
     }
-    /// Continuous interval mode: retain the last eligible real PTS <= target,
-    /// then successors. `minimum` is the clip's inclusive source bound.
     /// Phase 4A: a batch of filmstrip thumbnails from one source (see
     /// `crate::thumbnail`). Backends without it report Unsupported.
     fn thumbnails(
@@ -57,6 +55,33 @@ pub trait MediaBackend: Send + Sync + 'static {
             "thumbnail extraction is unavailable for this backend".into(),
         ))
     }
+    /// Phase 4B: decoded PCM of one audio stream with real sample timestamps
+    /// (see `crate::audio`). `emit` applies bounded back-pressure.
+    fn stream_pcm(
+        &self,
+        _request: &crate::PcmRequest,
+        _cancellation: &Cancellation,
+        _emit: &mut (dyn FnMut(crate::PcmChunk) -> Result<(), MediaError> + Send),
+    ) -> Result<(), MediaError> {
+        Err(MediaError::Unsupported(
+            "audio decoding is unavailable for this backend".into(),
+        ))
+    }
+    /// Phase 4B: measured min/max peaks of consecutive waveform chunks.
+    fn audio_peaks(
+        &self,
+        _media: &MediaSummary,
+        _stream_index: u32,
+        _first_chunk: i64,
+        _count: usize,
+        _cancellation: &Cancellation,
+    ) -> Result<Vec<crate::Peaks>, MediaError> {
+        Err(MediaError::Unsupported(
+            "waveform analysis is unavailable for this backend".into(),
+        ))
+    }
+    /// Continuous interval mode: retain the last eligible real PTS <= target,
+    /// then successors. `minimum` is the clip's inclusive source bound.
     fn stream_interval(
         &self,
         _request: &DecodeRequest,
@@ -155,6 +180,24 @@ impl MediaBackend for FfmpegBackend {
     ) -> Result<Vec<Result<crate::Thumbnail, MediaError>>, MediaError> {
         self.extract_thumbnails(media, height, batch, cancellation)
     }
+    fn stream_pcm(
+        &self,
+        request: &crate::PcmRequest,
+        cancellation: &Cancellation,
+        emit: &mut (dyn FnMut(crate::PcmChunk) -> Result<(), MediaError> + Send),
+    ) -> Result<(), MediaError> {
+        crate::audio::run(self, request, cancellation, emit)
+    }
+    fn audio_peaks(
+        &self,
+        media: &MediaSummary,
+        stream_index: u32,
+        first_chunk: i64,
+        count: usize,
+        cancellation: &Cancellation,
+    ) -> Result<Vec<crate::Peaks>, MediaError> {
+        crate::audio::peaks(self, media, stream_index, first_chunk, count, cancellation)
+    }
     fn stream_interval(
         &self,
         request: &DecodeRequest,
@@ -180,7 +223,7 @@ impl MediaBackend for FfmpegBackend {
         let mut command = Command::new(&self.ffprobe);
         command.args(["-v", "error", "-max_alloc", "67108864"]);
         input_limits(&mut command);
-        command.args(["-show_entries", "stream=index,id,codec_type,codec_name,width,height,pix_fmt,sample_aspect_ratio,display_aspect_ratio,r_frame_rate,avg_frame_rate,time_base,start_pts,start_time,duration_ts,duration,color_space,color_transfer,color_range:stream_disposition=attached_pic:stream_tags=rotate:stream_side_data=rotation,displaymatrix:format=format_name,duration,start_time", "-of", "json", "-i"]).arg(&path);
+        command.args(["-show_entries", "stream=index,id,codec_type,codec_name,width,height,pix_fmt,sample_aspect_ratio,display_aspect_ratio,r_frame_rate,avg_frame_rate,time_base,start_pts,start_time,duration_ts,duration,color_space,color_transfer,color_range,sample_rate,channels,channel_layout,sample_fmt,initial_padding:stream_disposition=attached_pic,default:stream_tags=rotate:stream_side_data=rotation,displaymatrix:format=format_name,duration,start_time", "-of", "json", "-i"]).arg(&path);
         let output = process::run(
             command,
             "Probe media",

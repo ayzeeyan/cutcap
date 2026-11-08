@@ -1,5 +1,6 @@
 //! Bounded external media adapter. No UI handles or project mutation.
 #![forbid(unsafe_code)]
+mod audio;
 mod backend;
 mod cancel;
 mod clock;
@@ -11,6 +12,7 @@ mod process;
 mod stream;
 mod thumbnail;
 
+pub use audio::*;
 pub use backend::*;
 pub use cancel::Cancellation;
 pub use clock::*;

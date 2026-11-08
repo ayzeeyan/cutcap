@@ -107,6 +107,19 @@ public sealed class TimelineLanes : Control
 
     /// <summary>Raised with the current filmstrip demand after the viewport settles.</summary>
     public event EventHandler<IReadOnlyList<ThumbnailWant>>? ThumbnailDemand;
+
+    /// <summary>The shared waveform cache (set by the host view); null disables waveforms.</summary>
+    public Services.WaveformCache? Waveforms { get; set; }
+
+    /// <summary>Raised with the current waveform demand after the viewport settles.</summary>
+    public event EventHandler<IReadOnlyList<WaveformWant>>? WaveformDemand;
+
+    /// <summary>Pixel columns of audio clips drawn with peaks / still waiting, in the last render.</summary>
+    public int LastDrawnWaveColumns { get; private set; }
+    public int LastPendingWaveColumns { get; private set; }
+    private int _waveColumns;
+    private int _pendingColumns;
+    private string? _selectedLink;
     private TimelineSnapper _snapper = TimelineSnapper.Empty;
 
     // Gesture state (frontend preview only).
@@ -155,6 +168,7 @@ public sealed class TimelineLanes : Control
         {
             _plan.Stop();
             ThumbnailDemand?.Invoke(this, PlanThumbnails());
+            WaveformDemand?.Invoke(this, PlanWaveforms());
         };
     }
 
@@ -365,6 +379,17 @@ public sealed class TimelineLanes : Control
             _ => TimelineGestures.Move(_geometry, lanes, clip, pointerMs, _grabMs, (int)Math.Floor(point.Y / TrackHeight),
                 ThresholdMs(scale), _snapper, Playhead, !_noSnap),
         };
+        // The engine moves or trims a linked partner with the same timing on its
+        // own track: preview its overlap too, so release never surprises.
+        if (_preview is { Valid: true, Changed: true } p && Partner(clip.Id) is { } partner
+            && _geometry.Overlaps(partner.TrackIndex, p.StartMs, p.EndMs, partner.Id))
+        {
+            _preview = p with
+            {
+                Valid = false,
+                Reason = partner.IsAudio ? "The linked audio would overlap another clip" : "The linked video would overlap another clip",
+            };
+        }
         GestureHint?.Invoke(this, _preview.Reason);
         InvalidateVisual();
     }
@@ -440,6 +465,13 @@ public sealed class TimelineLanes : Control
         var drawn = 0;
         _drawnThumbnails = 0;
         _drawnPlaceholders = 0;
+        _waveColumns = 0;
+        _pendingColumns = 0;
+        _selectedLink = null;
+        foreach (var clip in Clips ?? [])
+        {
+            if (clip.Selected) { _selectedLink = clip.LinkId; break; }
+        }
         _renderHeightPx = ThumbnailHeightPx; // one visual-tree lookup per render, not per clip
         for (var index = firstLane; index <= lastLane; index++)
         {
@@ -470,14 +502,21 @@ public sealed class TimelineLanes : Control
         LastDrawnClips = drawn;
         LastDrawnThumbnails = _drawnThumbnails;
         LastDrawnPlaceholders = _drawnPlaceholders;
+        LastDrawnWaveColumns = _waveColumns;
+        LastPendingWaveColumns = _pendingColumns;
         if (Services.ThumbnailTrace.Enabled)
         {
-            Services.ThumbnailTrace.Line($"render thumbs={_drawnThumbnails} placeholders={_drawnPlaceholders} clips={drawn} zoom={Zoom} scroll={ScrollOffset.X:F0} draw_us={System.Diagnostics.Stopwatch.GetElapsedTime(traceStarted).TotalMicroseconds:F0}");
+            Services.ThumbnailTrace.Line($"render thumbs={_drawnThumbnails} placeholders={_drawnPlaceholders} clips={drawn} wave_cols={_waveColumns} wave_pending={_pendingColumns} zoom={Zoom} scroll={ScrollOffset.X:F0} draw_us={System.Diagnostics.Stopwatch.GetElapsedTime(traceStarted).TotalMicroseconds:F0}");
         }
         var height = Math.Max(TrackHeight, lanes.Count * TrackHeight);
         if (_preview is { } preview && (_active || preview.Kind == GestureKind.Place))
         {
             DrawGhost(context, scale, preview, left, right);
+            // A linked partner previews the same timing on its own track.
+            if (preview.ClipId is { } moving && Partner(moving) is { } partner)
+            {
+                DrawGhost(context, scale, preview with { TrackIndex = partner.TrackIndex, Reason = "" }, left, right);
+            }
             if (preview.Snap is { } snap)
             {
                 var sx = Math.Round(scale.TimeToX(snap.Ms)) + 0.5;
@@ -499,6 +538,24 @@ public sealed class TimelineLanes : Control
         }
     }
 
+    /// <summary>The other member of a linked pair (null when the clip is not linked).</summary>
+    private ClipView? Partner(string clipId)
+    {
+        var clips = Clips;
+        if (clips is null) return null;
+        string? link = null;
+        foreach (var c in clips)
+        {
+            if (c.Id == clipId) { link = c.LinkId; break; }
+        }
+        if (link is null) return null;
+        foreach (var c in clips)
+        {
+            if (c.LinkId == link && c.Id != clipId) return c;
+        }
+        return null;
+    }
+
     private static void DrawGhost(DrawingContext context, TimelineScale scale, GesturePreview preview, double left, double right)
     {
         var x1 = scale.TimeToX(preview.StartMs);
@@ -512,6 +569,145 @@ public sealed class TimelineLanes : Control
         if (tx + 40 < Math.Min(rect.Right, right))
         {
             using (context.PushClip(rect)) context.DrawText(text, new Point(tx, rect.Bottom - text.Height - 3));
+        }
+    }
+
+    // ---- Waveforms (Phase 4B) ---------------------------------------------------
+
+    private static readonly IBrush AudioBrush = new SolidColorBrush(Color.Parse("#26487F"));
+    private static readonly IPen AudioPen = new Pen(new SolidColorBrush(Color.Parse("#6E9BE0")), 1);
+    private static readonly IPen WavePen = new Pen(new SolidColorBrush(Color.Parse("#A9CBFF")), 1);
+    private static readonly IPen WavePendingPen = new Pen(new SolidColorBrush(Color.Parse("#4D7FB8F0")), 1);
+    private static readonly IPen LinkedPen = new Pen(new SolidColorBrush(Color.Parse("#B322D9E6")), 1.5);
+
+    /// <summary>Most waveform chunks requested per plan (visible ones first).</summary>
+    public const int MaxWaveDemand = 64;
+
+    /// <summary>
+    /// Viewport-driven waveform demand: the chunks under visible audio clips,
+    /// then a small overscan, skipping chunks already cached. Display-only
+    /// doubles map pixels to the clip's exact sample interval from Rust.
+    /// </summary>
+    public IReadOnlyList<WaveformWant> PlanWaveforms()
+    {
+        var cache = Waveforms;
+        if (cache is null || Lanes is not { } lanes) return [];
+        var scale = TimelineScale.ForZoom(Zoom);
+        var viewport = Viewport.Width > 0 ? Viewport : Bounds.Size;
+        var left = ScrollOffset.X;
+        var right = left + viewport.Width;
+        var margin = viewport.Width * Overscan;
+        var firstLane = Math.Max(0, (int)Math.Floor(ScrollOffset.Y / TrackHeight));
+        var lastLane = Math.Min(lanes.Count - 1, (int)Math.Floor((ScrollOffset.Y + viewport.Height) / TrackHeight));
+        var visible = new List<WaveformWant>();
+        var overscan = new List<WaveformWant>();
+        var seen = new HashSet<Services.WaveKey>();
+        for (var lane = firstLane; lane <= lastLane; lane++)
+        {
+            if (lanes[lane].IsVideo) continue;
+            foreach (var clip in _geometry.Visible(lane, scale, left - margin, right + margin))
+            {
+                if (!clip.IsAudio || !clip.SourceReady || clip.AudioKey.Length == 0 || clip.AudioRate == 0 || clip.AudioStream is not { } stream) continue;
+                var rect = TimelineGeometry.ClipRect(scale, clip, TrackHeight);
+                var perPixel = clip.AudioRate / scale.PixelsPerSecond;
+                long Sample(double x) => clip.SourceInSamples + (long)Math.Floor((x - rect.X) * perPixel);
+                void Add(double x0, double x1, List<WaveformWant> into)
+                {
+                    var from = Math.Max(x0, rect.X);
+                    var to = Math.Min(x1, rect.Right);
+                    if (to <= from) return;
+                    var s0 = Math.Max(clip.SourceInSamples, Sample(from));
+                    var s1 = Math.Min(clip.SourceEndSamples, Sample(to) + 1);
+                    if (s1 <= s0) return;
+                    for (var chunk = FloorDiv(s0, ChunkFrames); chunk <= FloorDiv(s1 - 1, ChunkFrames); chunk++)
+                    {
+                        if (chunk < 0) continue;
+                        var key = new Services.WaveKey(clip.AudioKey, chunk);
+                        if (cache.Contains(key) || !seen.Add(key)) continue;
+                        into.Add(new WaveformWant(cache.TokenFor(key), clip.MediaId, clip.AudioKey, stream, chunk));
+                    }
+                }
+                Add(left, right, visible);
+                Add(left - margin, left, overscan);
+                Add(right, right + margin, overscan);
+            }
+        }
+        var wants = visible.Concat(overscan).Take(MaxWaveDemand).ToArray();
+        cache.RetainPending(wants.Select(w => w.Token).ToHashSet());
+        return wants;
+    }
+
+    /// <summary>Native-rate frames per analysis chunk (Rust: PEAK_CHUNK_FRAMES).</summary>
+    public const long ChunkFrames = 256 * 1024;
+
+    private static long FloorDiv(long a, long b) => a / b - (a % b != 0 && (a < 0) != (b < 0) ? 1 : 0);
+
+    /// <summary>
+    /// Draws measured peaks: each visible pixel column takes the minimum and
+    /// maximum of the analysis buckets it covers (cached chunks only; nothing
+    /// is decoded or allocated here). Columns still waiting show a faint line.
+    /// </summary>
+    private void DrawWaveform(DrawingContext context, TimelineScale scale, ClipView clip, Rect raw, Rect inner, double left, double right)
+    {
+        var cache = Waveforms!;
+        var top = inner.Y + 16;
+        var height = inner.Bottom - top - 1;
+        if (height < 4) return;
+        var mid = top + height / 2;
+        var half = height / 2;
+        var perPixel = clip.AudioRate / scale.PixelsPerSecond;
+        var from = Math.Floor(Math.Max(inner.X, left));
+        var to = Math.Min(inner.Right, right);
+        Services.WaveChunk? chunk = null;
+        long chunkIndex = long.MinValue;
+        using (context.PushClip(inner))
+        {
+            for (var x = from; x < to; x++)
+            {
+                var s0 = clip.SourceInSamples + (long)Math.Floor((x - raw.X) * perPixel);
+                var s1 = clip.SourceInSamples + (long)Math.Floor((x + 1 - raw.X) * perPixel);
+                s0 = Math.Max(s0, clip.SourceInSamples);
+                s1 = Math.Min(Math.Max(s1, s0 + 1), clip.SourceEndSamples);
+                if (s1 <= s0) continue;
+                var lo = float.PositiveInfinity;
+                var hi = float.NegativeInfinity;
+                var pending = false;
+                var bucketFrames = chunk?.BucketFrames is > 0 and var f ? f : 256;
+                for (var b = FloorDiv(s0, bucketFrames); b <= FloorDiv(s1 - 1, bucketFrames); b++)
+                {
+                    var index = FloorDiv(b * bucketFrames, ChunkFrames);
+                    if (index != chunkIndex)
+                    {
+                        chunkIndex = index;
+                        chunk = cache.TryGet(new Services.WaveKey(clip.AudioKey, index), out var found) ? found : null;
+                    }
+                    if (chunk?.Peaks is not { } peaks)
+                    {
+                        pending |= chunk is null;
+                        continue;
+                    }
+                    var bucket = (int)(b - index * chunk.Buckets);
+                    if (bucket < 0 || bucket >= chunk.Buckets) continue;
+                    var (min, max) = (peaks[2 * bucket], peaks[2 * bucket + 1]);
+                    if (min > max) continue; // no decoded samples in this bucket
+                    lo = Math.Min(lo, min);
+                    hi = Math.Max(hi, max);
+                }
+                var cx = x + 0.5;
+                if (hi >= lo)
+                {
+                    var y1 = mid - Math.Clamp(hi, -1, 1) * half;
+                    var y2 = mid - Math.Clamp(lo, -1, 1) * half;
+                    if (y2 - y1 < 1) (y1, y2) = (mid - 0.5, mid + 0.5);
+                    context.DrawLine(WavePen, new Point(cx, y1), new Point(cx, y2));
+                    _waveColumns++;
+                }
+                else if (pending)
+                {
+                    context.DrawLine(WavePendingPen, new Point(cx, mid - 0.5), new Point(cx, mid + 0.5));
+                    _pendingColumns++;
+                }
+            }
         }
     }
 
@@ -605,14 +801,23 @@ public sealed class TimelineLanes : Control
         var raw = TimelineGeometry.ClipRect(scale, clip, TrackHeight);
         var rect = raw.Deflate(new Thickness(0.5, 0.5));
         var ready = clip.SourceReady;
-        var pen = clip.Selected ? ClipSelectedPen : ready ? ClipPen : MissingPen;
-        context.DrawRectangle(ready ? ClipBrush : MissingBrush, null, rect, 3, 3);
+        var audio = clip.IsAudio;
+        var linkedToSelection = !clip.Selected && clip.LinkId is not null && clip.LinkId == _selectedLink;
+        var pen = clip.Selected ? ClipSelectedPen
+            : !ready ? MissingPen
+            : linkedToSelection ? LinkedPen
+            : audio ? AudioPen : ClipPen;
+        context.DrawRectangle(ready ? (audio ? AudioBrush : ClipBrush) : MissingBrush, null, rect, 3, 3);
         var inner = rect.Deflate(new Thickness(1));
         var filmstrip = ready && Thumbnails is not null && clip.SourceKey.Length > 0
             && rect.Width >= FilmstripLayout.MinStripWidth && clip.ThumbAspect > 0;
         if (filmstrip)
         {
             DrawFilmstrip(context, scale, clip, raw, inner, left, right);
+        }
+        if (audio && ready && Waveforms is not null && clip.AudioKey.Length > 0 && clip.AudioRate > 0)
+        {
+            DrawWaveform(context, scale, clip, raw, inner, left, right);
         }
         if (rect.Width >= 14)
         {
@@ -631,8 +836,9 @@ public sealed class TimelineLanes : Control
                 {
                     // A slim translucent name band: the frames stay visible beneath it.
                     var band = Math.Min(inner.Width, title.Width + (showRange ? range.Width + 12 : 0) + 12);
-                    context.FillRectangle(filmstrip ? NameBandBrush : ClipHeaderBrush,
-                        new Rect(textX - 6, inner.Y, filmstrip ? band : inner.Width, 16));
+                    var banded = filmstrip || audio;
+                    context.FillRectangle(banded ? NameBandBrush : ClipHeaderBrush,
+                        new Rect(textX - 6, inner.Y, banded ? band : inner.Width, 16));
                 }
                 context.DrawText(title, new Point(textX, rect.Y + 2));
                 if (showRange)

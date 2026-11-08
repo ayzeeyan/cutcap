@@ -36,6 +36,11 @@ fn document(directory: &Path) -> Document {
             .unwrap();
         project
             .insert_clip(Clip {
+                stream: match kind {
+                    TrackKind::Video => cutcap_core::ClipStream::Video,
+                    TrackKind::Audio => cutcap_core::ClipStream::Audio { index: 0 },
+                },
+                link: None,
                 id: ClipId::new(),
                 media_id: id,
                 track_id,
@@ -332,4 +337,150 @@ fn killed_writer_preserves_previous_project() {
             .project,
         doc.project
     );
+}
+
+/// A linked audiovisual pair on V1/A1 from one source with saved metadata.
+fn linked_document(directory: &Path) -> Document {
+    let mut project = Project::new("Linked", Timebase::DEFAULT_TIMELINE).unwrap();
+    let (video, audio) = (TrackId::new(), TrackId::new());
+    for (id, kind, name) in [
+        (video, TrackKind::Video, "Video 1"),
+        (audio, TrackKind::Audio, "Audio 1"),
+    ] {
+        project
+            .add_track(Track {
+                id,
+                name: name.into(),
+                kind,
+            })
+            .unwrap();
+    }
+    let media = MediaId::new();
+    let path = directory.join("take.mp4");
+    fs::write(&path, b"owned synthetic fixture").unwrap();
+    project
+        .add_media(MediaAsset {
+            id: media,
+            path: fs::canonicalize(path).unwrap(),
+            kind: TrackKind::Video,
+        })
+        .unwrap();
+    let link = Some(LinkId::new());
+    let base = Clip {
+        id: ClipId::new(),
+        media_id: media,
+        track_id: video,
+        start: TimelineTime(720_000),
+        duration: TimelineDuration::new(3_600_000).unwrap(),
+        source_in: SourceTime {
+            ticks: 1234,
+            timebase: Timebase::new(1, 15360).unwrap(),
+        },
+        stream: cutcap_core::ClipStream::Video,
+        link,
+    };
+    let audio_clip = Clip {
+        id: ClipId::new(),
+        track_id: audio,
+        stream: cutcap_core::ClipStream::Audio { index: 1 },
+        ..base.clone()
+    };
+    project
+        .replace_clips(&[], &[(0, base), (1, audio_clip)])
+        .unwrap();
+    Document::new(
+        project,
+        vec![SavedSource {
+            id: media,
+            metadata: None,
+            fingerprint: None,
+        }],
+    )
+    .unwrap()
+}
+
+#[test]
+fn linked_pairs_round_trip_with_streams_links_and_exact_timing() {
+    let directory = tempfile::tempdir().unwrap();
+    let doc = linked_document(directory.path());
+    let path = directory.path().join("linked.cutcap");
+    save(&doc, &path, &Cancellation::default()).unwrap();
+    let text = fs::read_to_string(&path).unwrap();
+    let stored: serde_json::Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(stored["project"]["schema_version"], 2);
+    assert_eq!(stored["project"]["clips"][1]["stream"]["kind"], "audio");
+    assert_eq!(stored["project"]["clips"][1]["stream"]["index"], 1);
+    assert_eq!(
+        stored["project"]["clips"][0]["link"],
+        stored["project"]["clips"][1]["link"]
+    );
+    let loaded = open(&fs::canonicalize(&path).unwrap(), &Cancellation::default()).unwrap();
+    assert_eq!(
+        loaded.project, doc.project,
+        "ids, streams, links and source in-points are exact"
+    );
+}
+
+#[test]
+fn schema_one_files_open_migrated_and_refused_migrations_leave_the_file_untouched() {
+    let directory = tempfile::tempdir().unwrap();
+    // A Phase 4A document: schema 1, no stream/link fields, video clips only.
+    let doc = document(directory.path());
+    let mut value = serde_json::to_value(&doc).unwrap();
+    value["project"]["schema_version"] = 1.into();
+    let clips = value["project"]["clips"].as_array_mut().unwrap();
+    clips.retain(|c| c["stream"]["kind"] == "video");
+    for clip in clips.iter_mut() {
+        clip.as_object_mut().unwrap().remove("stream");
+    }
+    // Keep the manifest consistent with the remaining media.
+    let kept: Vec<_> = clips.iter().map(|c| c["media_id"].clone()).collect();
+    value["project"]["media"]
+        .as_array_mut()
+        .unwrap()
+        .retain(|m| kept.contains(&m["id"]));
+    value["sources"]
+        .as_array_mut()
+        .unwrap()
+        .retain(|s| kept.contains(&s["id"]));
+    for media in value["project"]["media"].as_array_mut().unwrap() {
+        let name = std::path::Path::new(media["path"].as_str().unwrap())
+            .file_name()
+            .unwrap()
+            .to_owned();
+        media["path"] = name.to_string_lossy().into_owned().into();
+    }
+    let old = directory.path().join("phase4a.cutcap");
+    let bytes = serde_json::to_vec_pretty(&value).unwrap();
+    fs::write(&old, &bytes).unwrap();
+    let loaded = open(&fs::canonicalize(&old).unwrap(), &Cancellation::default()).unwrap();
+    assert_eq!(loaded.project.clips().len(), 1);
+    assert_eq!(
+        loaded.project.clips()[0].stream,
+        cutcap_core::ClipStream::Video
+    );
+    assert_eq!(
+        fs::read(&old).unwrap(),
+        bytes,
+        "opening never rewrites the file"
+    );
+    // A schema 1 clip on an audio track cannot be migrated: refused, file intact.
+    let audio_track = value["project"]["tracks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|t| t["kind"] == "Audio")
+        .unwrap()["id"]
+        .clone();
+    value["project"]["clips"][0]["track_id"] = audio_track;
+    let bad = directory.path().join("unmigratable.cutcap");
+    let bytes = serde_json::to_vec_pretty(&value).unwrap();
+    fs::write(&bad, &bytes).unwrap();
+    let error = open(&fs::canonicalize(&bad).unwrap(), &Cancellation::default()).unwrap_err();
+    assert!(
+        error.message.contains("cannot be migrated"),
+        "{}",
+        error.message
+    );
+    assert_eq!(fs::read(&bad).unwrap(), bytes);
 }

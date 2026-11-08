@@ -120,6 +120,8 @@ fn ticks(t: i64) -> TimelineSeek {
 
 fn core(c: &ClipSummary) -> Clip {
     Clip {
+        stream: c.stream,
+        link: c.link,
         id: c.id,
         media_id: c.media_id,
         track_id: c.track_id,

@@ -1,6 +1,36 @@
-# UI–engine and media contracts, version 8
+# UI–engine and media contracts, version 9
 
-## Phase 4A filmstrip contract (current authority)
+## Phase 4B audio and waveform contract (current authority)
+
+ABI/CONTRACT_VERSION are 9 (ADR 025); core schema 2, envelope 1. Exports and
+layouts: NATIVE_ABI.md.
+
+- **Ownership.** Rust owns every audio decision: stream identity, link
+  invariants, the joint source grid (one ceiling rounding of the shared
+  `source_in` to samples), decoding, the output device, the audio-master clock
+  and all A/V timing. C# never converts time, decodes or mixes audio; it shows
+  the state and draws cached peaks.
+- **Linked edits.** Placement inserts the primary audio stream as a linked pair
+  on the first free audio track or rejects the whole placement. Move, trim,
+  split and remove from either member are one transaction and one undo step;
+  C# sends one edit for the member under the pointer and draws the partner's
+  ghost from the same delta.
+- **Clock.** With an audio endpoint the timeline position is the device's
+  played position (padding excluded); starvation freezes it; late video never
+  stops it; pause reports the frozen position. Without a device, with
+  `CUTCAP_AUDIO=off`, or after a device failure, the system clock drives video
+  and the audio view says why. `CUTCAP_AUDIO_LATENCY_MS` holds the clock back by
+  a measured device latency (default 0). Only the first audio track is heard.
+- **Waveforms.** Presentation data only: never in the Project, views of it,
+  history or revision; requesting peaks never dirties a document. C# plans
+  visible chunks first (≤64 per plan) on a debounce, caches peaks by
+  `(audio_key, chunk)` in a byte-bounded LRU (16 MiB default) and copies ≤8
+  chunks per pump. Render draws cached peaks or a pending baseline, never
+  invented peaks. Stale keys (relink, replacement) are dropped in Rust.
+- **Shutdown.** Audio decoders and the waveform batch are cancelled and reaped
+  before the session ends; the WASAPI stream is stopped and released.
+
+## Phase 4A filmstrip contract (ABI 8, retained)
 
 ABI/CONTRACT_VERSION are 8 (ADR 024); schema/envelope remain 1. Exports and
 layouts: NATIVE_ABI.md. Thumbnails are presentation data: they never enter the

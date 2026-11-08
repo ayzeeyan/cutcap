@@ -222,7 +222,17 @@ impl Project {
                     .ok_or(ProjectError::MissingReference)?;
                 change.inserted.push((at, clip.clone()));
             }
-            Ok(())
+            // Link groups are checked once the whole transaction is in place:
+            // a pair is removed and re-inserted member by member.
+            let touched = change
+                .removed
+                .iter()
+                .chain(&change.inserted)
+                .filter_map(|(_, c)| c.link);
+            let touched: Vec<_> = touched
+                .filter(|link| self.clips().iter().any(|c| c.link == Some(*link)))
+                .collect();
+            self.validate_links(touched)
         })();
         match result {
             Ok(()) => Ok(change),

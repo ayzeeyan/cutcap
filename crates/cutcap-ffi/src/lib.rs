@@ -4,6 +4,8 @@
 //! (`media`); `view` derives display DTOs; `abi` is the only module with
 //! `unsafe` and the only one the frontend links against.
 pub mod abi;
+mod audio_output;
+mod audio_transport;
 mod bridge;
 mod edits;
 mod engine;
@@ -17,6 +19,7 @@ mod timeline_plan;
 mod timeline_playback;
 mod timeline_preview;
 pub mod view;
+mod waveforms;
 
 #[cfg(test)]
 mod tests;

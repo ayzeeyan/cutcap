@@ -1,5 +1,17 @@
 # Licensing and distribution review
 
+Phase 4B update (2026-11-07): audio output adds the Rust crate `wasapi 0.27.0`
+(MIT, Windows targets only) and its new transitive `num-integer 0.1.47` (MIT OR
+Apache-2.0); it also uses `windows`/`windows-core 0.62.2` (MIT OR Apache-2.0)
+and `log` (MIT OR Apache-2.0), already present. `tempfile` (MIT OR Apache-2.0)
+is a test-only dev-dependency of the media crate. All are permissive and
+statically linked into CutCap's own DLL; their notices must accompany any
+distribution. Audio decoding and waveform analysis use the same external
+development FFmpeg 9.0.1 executable (`aresample`/swr, `aformat`, PCM muxers),
+still not bundled; subprocess isolation is not treated as resolving
+distribution obligations, and no application-wide licence is chosen here.
+Test media are generated (tones, clicks, testsrc2); no third-party audio.
+
 Phase 4A update (2026-11-07): filmstrip thumbnails are extracted by the same
 external development FFmpeg 9.0.1 executable (filters `select`, `scale`,
 `showinfo`, `trim`, `concat`, all in that build). No package, crate, DLL, codec

@@ -30,6 +30,10 @@ pub struct SessionView {
     pub editing: EditingView,
     /// Filmstrip worker diagnostics (queue depths, batches, counters).
     pub thumbnails: crate::thumbnails::ThumbnailStats,
+    /// Phase 4B audio output and master-clock state.
+    pub audio: Option<crate::audio_transport::AudioView>,
+    /// Phase 4B waveform worker diagnostics.
+    pub waveforms: crate::waveforms::WaveformStats,
     pub preview_mode: PreviewMode,
     pub timeline_preview: crate::timeline_preview::TimelinePreviewView,
     pub timeline_playback: crate::timeline_playback::TimelinePlaybackView,
@@ -86,6 +90,20 @@ pub struct ClipView {
     pub source_in_us: i64,
     pub source_end_us: i64,
     pub thumb_aspect: f64,
+    /// Phase 4B stream identity: "video" or "audio", the audio stream index,
+    /// and the linked pair this clip belongs to (both members share it).
+    pub stream: &'static str,
+    pub audio_stream: Option<u32>,
+    pub link_id: Option<String>,
+    /// Phase 4B waveform inputs for audio clips (presentation only):
+    /// `audio_key` names the verified source and stream (empty when not
+    /// Ready); the clip covers native-rate samples
+    /// `[source_in_samples, source_end_samples)`, mapped from the shared
+    /// `source_in` with one ceiling rounding, exactly as playback maps it.
+    pub audio_key: String,
+    pub audio_rate: u32,
+    pub source_in_samples: i64,
+    pub source_end_samples: i64,
 }
 
 /// Identity of a verified, Ready source for thumbnail caching: media id plus a
@@ -106,13 +124,50 @@ pub fn source_key(snapshot: &ProjectSnapshot, media: &MediaSummary) -> String {
     format!("{}:{hash:016x}:{}", media.id, media.metadata.stream_index)
 }
 
+/// Identity of a verified, Ready source's audio stream for waveform caching
+/// (empty when the source is not Ready): like [`source_key`], per stream.
+pub fn audio_key(snapshot: &ProjectSnapshot, media: &MediaSummary, stream: u32) -> String {
+    let key = source_key(snapshot, media);
+    if key.is_empty() || media.metadata.audio_stream(stream).is_none() {
+        return String::new();
+    }
+    let (identity, _) = key.rsplit_once(':').unwrap_or((&key, ""));
+    format!("{identity}:a{stream}")
+}
+
+/// Waveform timing for an audio clip: key, native rate and the exact sample
+/// interval `[in, end)`. `None` for video clips or without verified metadata.
+fn waveform(
+    snapshot: &ProjectSnapshot,
+    clip: &cutcap_core::Clip,
+    media: Option<&MediaSummary>,
+) -> Option<(String, u32, i64, i64)> {
+    let ClipStream::Audio { index } = clip.stream else {
+        return None;
+    };
+    let media = media?;
+    let audio = media.metadata.audio_stream(index)?;
+    let samples = Timebase::new(1, audio.sample_rate).ok()?;
+    let mapping =
+        cutcap_core::map_clip_source(clip, clip.start, snapshot.timebase, samples).ok()?;
+    Some((
+        audio_key(snapshot, media, index),
+        audio.sample_rate,
+        mapping.requested.ticks,
+        mapping.end_exclusive.ticks,
+    ))
+}
+
 /// Filmstrip timing for one clip: exact stream-tick interval, microsecond axis
-/// bounds and aspect. `None` without verified metadata.
+/// bounds and aspect. `None` for audio clips or without verified metadata.
 fn filmstrip(
     snapshot: &ProjectSnapshot,
     clip: &cutcap_core::Clip,
     media: Option<&MediaSummary>,
 ) -> Option<(String, i64, i64, i64, i64, f64)> {
+    if clip.stream != ClipStream::Video {
+        return None;
+    }
     let media = media?;
     let meta = &media.metadata;
     if meta.timebase != clip.source_in.timebase {
@@ -414,6 +469,8 @@ pub fn clip_views(snapshot: &ProjectSnapshot) -> Vec<ClipView> {
             let duration_ms = timeline_ms(duration, tb);
             let end_ms = timeline_ms(start.saturating_add(duration), tb);
             let core = cutcap_core::Clip {
+                stream: clip.stream,
+                link: clip.link,
                 id: clip.id,
                 media_id: clip.media_id,
                 track_id: clip.track_id,
@@ -435,6 +492,8 @@ pub fn clip_views(snapshot: &ProjectSnapshot) -> Vec<ClipView> {
                 source_end_us,
                 thumb_aspect,
             ) = filmstrip(snapshot, &core, media).unwrap_or_default();
+            let (audio_key, audio_rate, source_in_samples, source_end_samples) =
+                waveform(snapshot, &core, media).unwrap_or_default();
             ClipView {
                 id: clip.id.to_string(),
                 track_id: clip.track_id.to_string(),
@@ -469,6 +528,19 @@ pub fn clip_views(snapshot: &ProjectSnapshot) -> Vec<ClipView> {
                 source_in_us,
                 source_end_us,
                 thumb_aspect,
+                stream: match clip.stream {
+                    ClipStream::Video => "video",
+                    ClipStream::Audio { .. } => "audio",
+                },
+                audio_stream: match clip.stream {
+                    ClipStream::Audio { index } => Some(index),
+                    ClipStream::Video => None,
+                },
+                link_id: clip.link.map(|l| l.to_string()),
+                audio_key,
+                audio_rate,
+                source_in_samples,
+                source_end_samples,
             }
         })
         .collect()
@@ -734,6 +806,62 @@ pub fn source_sections(asset: &MediaSummary) -> Vec<SectionView> {
         section("Timing", timing),
         section("File", file),
     ];
+    // Phase 4B: the decodable audio streams, each on its own clock.
+    let primary = info.primary_audio().map(|a| a.stream_index);
+    let mut audio = Vec::new();
+    for stream in &info.audio {
+        let layout = stream
+            .channel_layout
+            .clone()
+            .unwrap_or_else(|| format!("{} ch", stream.channels));
+        let duration = stream.duration_ticks.map_or_else(unknown, |ticks| {
+            SourceTime {
+                ticks,
+                timebase: stream.timebase,
+            }
+            .rescale(Timebase::new(1, 1000).expect("constant"), Rounding::Floor)
+            .map_or_else(|_| unknown(), |ms| precise_duration(ms.ticks))
+        });
+        audio.push(field(
+            &format!(
+                "Stream #{}{}",
+                stream.stream_index,
+                if primary == Some(stream.stream_index) {
+                    " (timeline)"
+                } else {
+                    ""
+                }
+            ),
+            format!(
+                "{} · {} Hz · {}{}",
+                stream.codec.to_uppercase(),
+                stream.sample_rate,
+                layout,
+                stream
+                    .sample_format
+                    .as_deref()
+                    .map_or_else(String::new, |f| format!(" · {f}"))
+            ),
+        ));
+        audio.push(field(
+            "Audio timing",
+            format!(
+                "start PTS {} @ {} · {}{}",
+                stream.start_pts,
+                clock(stream.timebase),
+                duration,
+                stream
+                    .initial_padding
+                    .map_or_else(String::new, |p| format!(" · {p} priming samples"))
+            ),
+        ));
+    }
+    if audio.is_empty() && !info.audio_streams.is_empty() {
+        audio.push(field("Audio", "Present but not decodable here".to_owned()));
+    }
+    if !audio.is_empty() {
+        sections.insert(1, section("Audio", audio));
+    }
     let color: Vec<&str> = [&info.color_space, &info.color_transfer, &info.color_range]
         .into_iter()
         .filter_map(|value| value.as_deref())

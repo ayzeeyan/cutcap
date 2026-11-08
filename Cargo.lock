@@ -166,6 +166,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "uuid",
+ "wasapi",
  "wgpu",
 ]
 
@@ -175,6 +176,7 @@ version = "0.3.0"
 dependencies = [
  "cutcap-contracts",
  "serde_json",
+ "tempfile",
  "thiserror",
  "win-custody",
 ]
@@ -447,6 +449,15 @@ dependencies = [
  "indexmap",
  "rustc-hash",
  "thiserror",
+]
+
+[[package]]
+name = "num-integer"
+version = "0.1.47"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7ce2d95d4b3734dc35aa2f45e1aa22cd416814592a4f9d9205e11affd5b8e10b"
+dependencies = [
+ "num-traits",
 ]
 
 [[package]]
@@ -851,6 +862,19 @@ dependencies = [
  "js-sys",
  "serde_core",
  "wasm-bindgen",
+]
+
+[[package]]
+name = "wasapi"
+version = "0.27.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "58b35dbcb6fae6fbaba9f6f52a22686bb405978ee112ed6eb33d98bd63c97583"
+dependencies = [
+ "log",
+ "num-integer",
+ "thiserror",
+ "windows",
+ "windows-core",
 ]
 
 [[package]]

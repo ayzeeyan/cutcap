@@ -48,6 +48,10 @@ pub struct VideoMetadata {
     pub stream_index: u32,
     pub stream_id: Option<String>,
     pub audio_streams: Vec<u32>,
+    /// Validated details of the decodable audio streams (Phase 4B). Absent in
+    /// metadata saved before Phase 4B, which deserializes as empty.
+    #[serde(default)]
+    pub audio: Vec<AudioStreamMetadata>,
     pub color_space: Option<String>,
     pub color_transfer: Option<String>,
     pub color_range: Option<String>,
@@ -129,6 +133,26 @@ impl VideoMetadata {
                 ));
             }
         }
+        if self.audio.len() > self.audio_streams.len() {
+            return Err(MetadataError::Invalid(
+                "audio details exceed the audio streams",
+            ));
+        }
+        for audio in &self.audio {
+            audio.validate()?;
+            if !self.audio_streams.contains(&audio.stream_index)
+                || self
+                    .audio
+                    .iter()
+                    .filter(|a| a.stream_index == audio.stream_index)
+                    .count()
+                    != 1
+            {
+                return Err(MetadataError::Invalid(
+                    "audio details do not match the streams",
+                ));
+            }
+        }
         if matches!(
             self.color_transfer.as_deref(),
             Some("smpte2084" | "arib-std-b67")
@@ -146,6 +170,21 @@ impl VideoMetadata {
             ticks: self.start_pts,
             timebase: self.timebase,
         }
+    }
+
+    /// The audio stream a linked placement uses: the first stream marked as
+    /// the container's default, otherwise the lowest stream index. Only
+    /// streams with validated details are eligible.
+    pub fn primary_audio(&self) -> Option<&AudioStreamMetadata> {
+        self.audio
+            .iter()
+            .filter(|a| a.default)
+            .min_by_key(|a| a.stream_index)
+            .or_else(|| self.audio.iter().min_by_key(|a| a.stream_index))
+    }
+
+    pub fn audio_stream(&self, index: u32) -> Option<&AudioStreamMetadata> {
+        self.audio.iter().find(|a| a.stream_index == index)
     }
 
     /// Oriented square-pixel preview, bounded at 1280 x 720 (portrait included).
@@ -184,6 +223,96 @@ impl VideoMetadata {
                     .map_err(|_| MetadataError::Invalid("aspect overflow"))?,
                 height as u32,
             ))
+        }
+    }
+}
+
+/// One decodable audio stream as FFprobe reported it. Audio and video keep
+/// independent clocks: `timebase` and `start_pts` belong to this stream only.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AudioStreamMetadata {
+    pub stream_index: u32,
+    pub stream_id: Option<String>,
+    pub codec: String,
+    pub timebase: Timebase,
+    pub start_pts: i64,
+    pub duration_ticks: Option<i64>,
+    pub duration_is_estimate: bool,
+    pub sample_rate: u32,
+    pub channels: u16,
+    pub channel_layout: Option<String>,
+    pub sample_format: Option<String>,
+    /// Encoder priming samples the decoder discards (for example AAC's 1024).
+    pub initial_padding: Option<u32>,
+    /// The container marks this stream as its default.
+    pub default: bool,
+}
+
+/// Decoding limits for audio: rates FFmpeg's resampler accepts and at most
+/// eight channels (downmixed to the output's two).
+pub const MAX_AUDIO_RATE: u32 = 384_000;
+pub const MAX_AUDIO_CHANNELS: u16 = 8;
+
+impl AudioStreamMetadata {
+    pub fn validate(&self) -> Result<(), MetadataError> {
+        if self.stream_index >= 64
+            || self.sample_rate == 0
+            || self.sample_rate > MAX_AUDIO_RATE
+            || self.channels == 0
+            || self.channels > MAX_AUDIO_CHANNELS
+        {
+            return Err(MetadataError::Invalid(
+                "unsupported audio stream index, rate or channel count",
+            ));
+        }
+        if self.codec.is_empty() {
+            return Err(MetadataError::Invalid("missing audio codec"));
+        }
+        for text in [
+            Some(&self.codec),
+            self.stream_id.as_ref(),
+            self.channel_layout.as_ref(),
+            self.sample_format.as_ref(),
+        ]
+        .into_iter()
+        .flatten()
+        {
+            if text.len() > 256 || text.chars().any(char::is_control) {
+                return Err(MetadataError::Invalid("invalid audio metadata text"));
+            }
+        }
+        const MAX_PTS: i64 = 1_i64 << 52;
+        if self.start_pts.unsigned_abs() > MAX_PTS as u64
+            || self.timebase.numerator() > 1_000_000_000
+            || self.timebase.denominator() > 1_000_000_000
+        {
+            return Err(MetadataError::Invalid(
+                "audio clock exceeds the supported timestamp budget",
+            ));
+        }
+        if let Some(duration) = self.duration_ticks {
+            let seconds_numerator = i128::from(duration) * i128::from(self.timebase.numerator());
+            if duration <= 0
+                || seconds_numerator
+                    > i128::from(MAX_MEDIA_SECONDS) * i128::from(self.timebase.denominator())
+                || self
+                    .start_pts
+                    .checked_add(duration)
+                    .is_none_or(|end| end.unsigned_abs() > MAX_PTS as u64)
+            {
+                return Err(MetadataError::Invalid(
+                    "invalid audio duration or longer than 24 hours",
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    pub fn start(&self) -> SourceTime {
+        SourceTime {
+            ticks: self.start_pts,
+            timebase: self.timebase,
         }
     }
 }
