@@ -248,6 +248,17 @@ impl AudioTransport {
         }
     }
 
+    /// Test helper: waits until the feeder has written the whole epoch and
+    /// told the output so (the feed lock is held across both).
+    #[cfg(test)]
+    pub fn wait_finished(&self) {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while !self.feed().finished {
+            assert!(Instant::now() < deadline, "feeder did not finish the epoch");
+            thread::sleep(Duration::from_millis(1));
+        }
+    }
+
     pub fn view(&self) -> AudioView {
         let feed = self.feed();
         let output = self.output.status();
