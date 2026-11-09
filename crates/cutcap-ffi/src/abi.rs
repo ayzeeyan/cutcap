@@ -39,7 +39,7 @@ use std::{
 /// filmstrip clip-row and thumbnail-diagnostics view fields.
 /// ABI 9 (Phase 4B): waveform demand/next/copy exports; clip rows add stream,
 /// link and waveform fields; the view adds audio-output and waveform state.
-pub const ABI_VERSION: u32 = 10;
+pub const ABI_VERSION: u32 = 11;
 
 pub const CUTCAP_OK: i32 = 0;
 pub const CUTCAP_INVALID_ARGUMENT: i32 = 1;
@@ -519,6 +519,55 @@ pub unsafe extern "C" fn cutcap_session_unlink_clip(
         // SAFETY: forwarded caller contract.
         let id = unsafe { clip_id(clip, clip_len) }?;
         with_session(handle, |s| Ok(s.unlink_clip(id)?))
+    })
+}
+
+/// Phase 5A (ABI 11): accepts an export of the current project. Acceptance
+/// is not completion: `export.job` in the view reports the rest. `track_len`
+/// 0 means no video track. Flag 1: an existing file may be replaced. Flag 2:
+/// omitted occupied video tracks are acknowledged.
+///
+/// # Safety
+/// `path` is valid for `path_len` aligned UTF-16 units; `track` for `track_len`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn cutcap_session_start_export(
+    handle: u64,
+    path: *const u16,
+    path_len: usize,
+    track: *const u8,
+    track_len: usize,
+    flags: u32,
+) -> i32 {
+    guard(|| {
+        // SAFETY: forwarded caller contract; the helper validates bounds/alignment.
+        let path = unsafe { input_path(path, path_len) }?;
+        let track = if track_len == 0 {
+            None
+        } else {
+            // SAFETY: forwarded caller contract.
+            Some(unsafe { track_id(track, track_len) }?)
+        };
+        with_session(handle, |s| {
+            Ok(s.start_export(path, track, flags & 1 != 0, flags & 2 != 0)?)
+        })
+    })
+}
+
+/// Phase 5A (ABI 11): asks export `job` to stop. Never waits for it; a job
+/// that is no longer current is refused.
+///
+/// # Safety
+/// `job` must be valid for reads of `job_len` bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn cutcap_session_cancel_export(
+    handle: u64,
+    job: *const u8,
+    job_len: usize,
+) -> i32 {
+    guard(|| {
+        // SAFETY: forwarded caller contract.
+        let job = unsafe { input_str(job, job_len) }?;
+        with_session(handle, |s| Ok(s.cancel_export(job)?))
     })
 }
 

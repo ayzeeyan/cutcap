@@ -10,6 +10,7 @@ mod audio_transport;
 mod bridge;
 mod edits;
 mod engine;
+pub mod export;
 mod history;
 pub mod media;
 mod persistence;

@@ -220,6 +220,15 @@ impl Slot {
             &chunk.samples[at..at + frames * 2]
         })
     }
+    /// Waits briefly for the next chunk (offline mixing only; live playback
+    /// never blocks here).
+    pub(crate) fn wait_chunk(&mut self, timeout: std::time::Duration) {
+        if self.pending.is_none()
+            && let Ok(chunk) = self.rx.recv_timeout(timeout)
+        {
+            self.pending = Some(chunk);
+        }
+    }
     pub(crate) fn stop(&mut self) {
         self.cancel.cancel();
         // Dropping the receiver unblocks a decoder waiting to send.

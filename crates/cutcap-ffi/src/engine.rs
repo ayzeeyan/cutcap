@@ -3,7 +3,7 @@ use crate::history::{Change, Edit, History, bump};
 use crate::persistence::{Document, FileJob, FileOutput, SavedSource};
 use cutcap_contracts::*;
 use cutcap_core::{Clip, Project, ProjectError, TimelineIndex, Track, map_clip_source};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 #[derive(Default)]
@@ -551,6 +551,140 @@ impl Engine {
             self.evaluation_generation = RequestId::new();
         }
         self.snapshot()
+    }
+
+    /// Phase 5A: an immutable plan of the project as it is now. Mutates
+    /// nothing: no revision, no history, no evaluation generation.
+    pub fn export_plan(
+        &mut self,
+        scope: Option<ProjectId>,
+        video_track: Option<TrackId>,
+        acknowledge_omitted: bool,
+    ) -> Result<crate::export::ExportPlan, EngineError> {
+        let invalid = |message: String| EngineError::new(ErrorCode::InvalidInput, message);
+        let project = self
+            .project
+            .as_ref()
+            .ok_or_else(|| EngineError::new(ErrorCode::NotFound, "No project is open."))?;
+        if scope != Some(project.id()) {
+            return Err(EngineError::new(
+                ErrorCode::StaleProject,
+                "This export request belongs to another project.",
+            ));
+        }
+        if self.file_job.as_ref().is_some_and(|job| !job.saving) {
+            return Err(EngineError::new(
+                ErrorCode::Busy,
+                "Project opening is in progress.",
+            ));
+        }
+        let index = self
+            .evaluation_index
+            .get_or_insert_with(|| Arc::new(TimelineIndex::new(project)))
+            .clone();
+        let selected = match video_track {
+            Some(id) => Some(
+                index
+                    .track(id)
+                    .filter(|t| t.kind == TrackKind::Video)
+                    .ok_or_else(|| invalid("Choose a video track to export.".to_owned()))?
+                    .clone(),
+            ),
+            None => None,
+        };
+        let omitted_tracks: Vec<String> = project
+            .tracks()
+            .iter()
+            .filter(|t| t.kind == TrackKind::Video)
+            .filter(|t| selected.as_ref().map(|s| s.id) != Some(t.id))
+            .filter(|t| !index.clips(t.id).is_empty())
+            .map(|t| t.name.clone())
+            .collect();
+        if !omitted_tracks.is_empty() && !acknowledge_omitted {
+            return Err(invalid(format!(
+                "{} also holds clips and would be left out. Confirm that first.",
+                omitted_tracks.join(", ")
+            )));
+        }
+        // Committed controls only, read from the project: the index can be
+        // older for controls, and a slider preview lives in the session.
+        let controls: Vec<(TrackId, TrackControls)> = project
+            .tracks()
+            .iter()
+            .filter(|t| t.kind == TrackKind::Audio)
+            .map(|t| (t.id, t.controls))
+            .collect();
+        let any_solo = controls.iter().any(|(_, c)| c.solo);
+        let audible = |id: TrackId| {
+            controls
+                .iter()
+                .any(|(track, c)| *track == id && c.audible(any_solo))
+        };
+        let mut extent = TimelineTime::ZERO;
+        let time = |e: TimeError| invalid(e.to_string());
+        if let Some(track) = &selected {
+            extent = extent.max(index.end(track.id).map_err(time)?);
+        }
+        for (track, _) in controls.iter().filter(|(id, _)| audible(*id)) {
+            extent = extent.max(index.end(*track).map_err(time)?);
+        }
+        let preset = ExportPreset::STANDARD;
+        let grid = cutcap_core::output_grid(extent, project.timebase(), preset)
+            .map_err(|e| invalid(e.to_string()))?;
+        let mut audio = crate::audio_mix::audio_plan(
+            project.timebase(),
+            extent,
+            &index,
+            &self.media_details,
+            &self.availability,
+        );
+        audio.clips.retain(|c| audible(c.clip.track_id));
+        let mut used: BTreeSet<MediaId> = audio.clips.iter().map(|c| c.clip.media_id).collect();
+        if let Some(track) = &selected {
+            used.extend(index.clips(track.id).iter().map(|c| c.media_id));
+        }
+        let mut sources = BTreeMap::new();
+        for media_id in used {
+            let available = self
+                .availability
+                .get(&media_id)
+                .filter(|a| a.state == Availability::Ready);
+            let (Some(media), Some(_)) = (self.media_details.get(&media_id), available) else {
+                let name = self
+                    .availability
+                    .get(&media_id)
+                    .and_then(|a| a.path.file_name())
+                    .map_or_else(String::new, |n| n.to_string_lossy().into_owned());
+                return Err(invalid(format!(
+                    "\u{201c}{name}\u{201d} is missing or changed. Relink it before exporting."
+                )));
+            };
+            sources.insert(
+                media_id,
+                crate::export::ExpectedSource {
+                    media: media.clone(),
+                    fingerprint: self
+                        .sources
+                        .get(&media_id)
+                        .and_then(|s| s.fingerprint.clone()),
+                },
+            );
+        }
+        Ok(crate::export::ExportPlan {
+            project: project.id(),
+            project_name: project.name().to_owned(),
+            revision: self.document.revision,
+            timebase: project.timebase(),
+            video_track: selected.as_ref().map(|t| t.id),
+            video_track_name: selected.map(|t| t.name),
+            omitted_tracks,
+            index,
+            sources,
+            audio,
+            controls,
+            grid,
+            preset,
+        })
     }
 
     pub fn playback_plan(

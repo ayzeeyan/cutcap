@@ -8,7 +8,7 @@ use crate::{
     TrackControls, TrackId, VerifiedMedia,
 };
 
-pub const CONTRACT_VERSION: u32 = 10;
+pub const CONTRACT_VERSION: u32 = 11;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TrackKind {
@@ -47,6 +47,13 @@ pub enum Command {
         track_id: Option<TrackId>,
     },
     /// Private host response carries a shared read-only core index, never pixels.
+    /// Phase 5A: captures an immutable export plan. Changes nothing, and never
+    /// goes through the edit path. `acknowledge_omitted`: the user knows other
+    /// occupied video tracks will not be rendered.
+    PrepareExport {
+        video_track: Option<TrackId>,
+        acknowledge_omitted: bool,
+    },
     PrepareTimelinePlayback {
         position: crate::TimelineSeek,
     },
@@ -162,9 +169,6 @@ pub enum Command {
     /// Reverses the newest clip edit. Selection is never an undo step.
     Undo,
     Redo,
-    StartExport {
-        destination: PathBuf,
-    },
     Cancel {
         target: RequestId,
     },

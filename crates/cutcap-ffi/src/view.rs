@@ -37,6 +37,7 @@ pub struct SessionView {
     pub preview_mode: PreviewMode,
     pub timeline_preview: crate::timeline_preview::TimelinePreviewView,
     pub timeline_playback: crate::timeline_playback::TimelinePlaybackView,
+    pub export: crate::export::ExportView,
 }
 
 /// The clip list, serialized separately from [`SessionView`] and fetched by the

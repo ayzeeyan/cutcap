@@ -18,6 +18,10 @@ pub enum HostEvent {
         request_id: RequestId,
         result: Result<crate::timeline_plan::TimelinePlan, EngineError>,
     },
+    ExportPlan {
+        request_id: RequestId,
+        result: Box<Result<crate::export::ExportPlan, EngineError>>,
+    },
 }
 
 /// UI-thread owner. Channel endpoints and the worker have one explicit lifecycle.
@@ -48,15 +52,25 @@ impl EngineBridge {
                     };
                     match command {
                         Ok(command) => {
-                            let event = if let Command::PrepareTimelinePlayback { position } =
-                                command.command
-                            {
-                                HostEvent::TimelinePlan {
-                                    request_id: command.request_id,
-                                    result: engine.playback_plan(command.project_id, position),
+                            let event = match command.command {
+                                Command::PrepareTimelinePlayback { position } => {
+                                    HostEvent::TimelinePlan {
+                                        request_id: command.request_id,
+                                        result: engine.playback_plan(command.project_id, position),
+                                    }
                                 }
-                            } else {
-                                HostEvent::Engine(Box::new(engine.handle(command)))
+                                Command::PrepareExport {
+                                    video_track,
+                                    acknowledge_omitted,
+                                } => HostEvent::ExportPlan {
+                                    request_id: command.request_id,
+                                    result: Box::new(engine.export_plan(
+                                        command.project_id,
+                                        video_track,
+                                        acknowledge_omitted,
+                                    )),
+                                },
+                                _ => HostEvent::Engine(Box::new(engine.handle(command))),
                             };
                             if results.send(event).is_err() {
                                 break;

@@ -83,6 +83,44 @@ pub trait MediaBackend: Send + Sync + 'static {
             "waveform analysis is unavailable for this backend".into(),
         ))
     }
+    /// Phase 5A: finished output frames of one source from `request.start` on,
+    /// in presentation order with real timestamps. `emit` applies back-pressure.
+    fn render_frames(
+        &self,
+        _request: &crate::RenderRequest,
+        _cancellation: &Cancellation,
+        _emit: &mut (dyn FnMut(crate::RenderFrame) -> Result<(), MediaError> + Send),
+    ) -> Result<(), MediaError> {
+        Err(MediaError::Unsupported(
+            "export decoding is unavailable for this backend".into(),
+        ))
+    }
+    /// Phase 5A: `Ok` when this backend can encode the export preset.
+    fn check_export_encoders(&self, _cancellation: &Cancellation) -> Result<(), MediaError> {
+        Err(MediaError::Unsupported(
+            "export is unavailable for this backend".into(),
+        ))
+    }
+    /// Phase 5A: starts the one encoder process for an export.
+    fn open_encoder(
+        &self,
+        _spec: &crate::EncodeSpec,
+        _cancellation: &Cancellation,
+    ) -> Result<Box<dyn crate::FrameEncoder>, MediaError> {
+        Err(MediaError::Unsupported(
+            "export encoding is unavailable for this backend".into(),
+        ))
+    }
+    /// Phase 5A: what a finished file really contains.
+    fn inspect_output(
+        &self,
+        _path: &Path,
+        _cancellation: &Cancellation,
+    ) -> Result<crate::OutputReport, MediaError> {
+        Err(MediaError::Unsupported(
+            "export inspection is unavailable for this backend".into(),
+        ))
+    }
     /// Continuous interval mode: retain the last eligible real PTS <= target,
     /// then successors. `minimum` is the clip's inclusive source bound.
     fn stream_interval(
@@ -126,6 +164,9 @@ impl FfmpegBackend {
             ffprobe,
             ..Self::default()
         }
+    }
+    pub(crate) fn ffprobe(&self) -> &Path {
+        &self.ffprobe
     }
     pub(crate) fn input(path: &Path) -> Result<PathBuf, MediaError> {
         let raw = path.as_os_str().to_string_lossy();
@@ -182,6 +223,31 @@ pub(crate) fn input_limits(command: &mut Command) {
 }
 
 impl MediaBackend for FfmpegBackend {
+    fn render_frames(
+        &self,
+        request: &crate::RenderRequest,
+        cancellation: &Cancellation,
+        emit: &mut (dyn FnMut(crate::RenderFrame) -> Result<(), MediaError> + Send),
+    ) -> Result<(), MediaError> {
+        crate::render::run_frames(self, request, cancellation, emit)
+    }
+    fn check_export_encoders(&self, cancellation: &Cancellation) -> Result<(), MediaError> {
+        crate::render::check_encoders(self, cancellation)
+    }
+    fn open_encoder(
+        &self,
+        spec: &crate::EncodeSpec,
+        cancellation: &Cancellation,
+    ) -> Result<Box<dyn crate::FrameEncoder>, MediaError> {
+        crate::render::open_encoder(self, spec, cancellation)
+    }
+    fn inspect_output(
+        &self,
+        path: &Path,
+        cancellation: &Cancellation,
+    ) -> Result<crate::OutputReport, MediaError> {
+        crate::render::inspect_output(self, path, cancellation)
+    }
     fn thumbnails(
         &self,
         media: &MediaSummary,

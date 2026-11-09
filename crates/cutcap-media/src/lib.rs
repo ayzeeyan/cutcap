@@ -9,6 +9,7 @@ mod latest;
 mod persistent;
 mod probe;
 mod process;
+mod render;
 mod stream;
 mod thumbnail;
 
@@ -20,6 +21,7 @@ pub use frame::*;
 pub use latest::*;
 pub use persistent::*;
 pub use probe::{audio_only_supported, parse_probe, parse_source_probe};
+pub use render::*;
 pub use thumbnail::*;
 
 #[derive(Debug, thiserror::Error)]
