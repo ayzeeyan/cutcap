@@ -187,14 +187,14 @@ impl VideoMetadata {
         self.audio.iter().find(|a| a.stream_index == index)
     }
 
-    /// Oriented square-pixel preview, bounded at 1280 x 720 (portrait included).
-    pub fn preview_dimensions(&self) -> Result<(u32, u32), MetadataError> {
-        self.validate()?;
+    /// Width-to-height of the picture as displayed: stored aspect, or size and
+    /// sample aspect, turned by the rotation.
+    pub(crate) fn oriented_aspect(&self) -> (u64, u64) {
         let sar = self.sample_aspect.unwrap_or(Ratio {
             numerator: 1,
             denominator: 1,
         });
-        let (mut n, mut d) = if let Some(dar) = self.display_aspect {
+        let (n, d) = if let Some(dar) = self.display_aspect {
             (u64::from(dar.numerator), u64::from(dar.denominator))
         } else {
             (
@@ -203,8 +203,16 @@ impl VideoMetadata {
             )
         };
         if matches!(self.rotation, 90 | 270) {
-            std::mem::swap(&mut n, &mut d);
+            (d, n)
+        } else {
+            (n, d)
         }
+    }
+
+    /// Oriented square-pixel preview, bounded at 1280 x 720 (portrait included).
+    pub fn preview_dimensions(&self) -> Result<(u32, u32), MetadataError> {
+        self.validate()?;
+        let (n, d) = self.oriented_aspect();
         let height = u64::from(if matches!(self.rotation, 90 | 270) {
             self.width
         } else {

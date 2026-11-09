@@ -2,6 +2,8 @@
 //! every output frame is checked against the exact source sample it must
 //! carry (or silence), across cuts, gaps, source holes, seeks and missing media.
 use super::*;
+use cutcap_core::Clip;
+use cutcap_media::{Cancellation, MediaError, PcmChunk, PcmRequest};
 use cutcap_media::{DecodeRequest, DecodedFrame, ProbeResult};
 use std::path::Path;
 
