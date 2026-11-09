@@ -29,6 +29,10 @@ use std::{
     time::{Duration, Instant},
 };
 
+#[cfg(test)]
+#[path = "tests.rs"]
+mod tests;
+
 /// Share of the progress bar each stage of output work earns.
 const AUDIO_SHARE: f64 = 0.10;
 const VIDEO_SHARE: f64 = 0.88;
