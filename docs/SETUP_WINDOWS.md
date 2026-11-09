@@ -90,7 +90,7 @@ The optional diagnostic uses wgpu 30/DX12, enumerates adapters and prints name/b
 
 ## External media runtime
 
-Install/configure FFmpeg **and FFprobe** explicitly; CutCap never installs, copies or packages them. The tested development build is 9.0.1-essentials_build-www.gyan.dev (GPLv3/static). Distribution is not cleared; read LICENSE_REVIEW.md before packaging.
+Install/configure FFmpeg **and FFprobe** explicitly; CutCap never installs, copies or packages them. Export needs a build that lists both `libx264` and `aac` under `ffmpeg -encoders`; without them the Export button stays disabled and says why. The tested development build is 9.0.1-essentials_build-www.gyan.dev (GPLv3/static). Distribution is not cleared; read LICENSE_REVIEW.md before packaging.
 
 ```powershell
 Get-Command ffmpeg, ffprobe

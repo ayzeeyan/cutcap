@@ -1,5 +1,16 @@
 # CutCap architecture — Avalonia frontend over the Rust engine
 
+Phase 5A current addition: **ABI/contract 11**, offline MP4 export. The command owner
+captures an immutable `ExportPlan` (`ffi/export/plan.rs`), and `ExportHost`
+(`ffi/export/mod.rs`) runs one job per session on its own thread: preflight including
+a fresh fingerprint of every source, an offline mix to a reserved scratch PCM file
+(`export/audio.rs`, sharing `audio_mix.rs` with live playback), then frame-by-frame
+evaluation on the exact output grid (`export/video.rs`) with at most two decoders
+feeding one FFmpeg encoder process (`cutcap-media/src/render.rs`). The result is
+validated by FFprobe and only then renamed into place (`export/output.rs`). Grid
+arithmetic is in `cutcap-core/src/export.rs`. The Avalonia `ExportWindow` is non-modal
+and shows only what the engine reports. See `PHASE_5A_EXPORT_CONTRACT.md`.
+
 Phase 4C current addition: **ABI/contract 10, core schema 3**, multi-track audio.
 `ffi/audio_transport.rs` is now a bounded mixer: one feeder thread lays out every
 audio track's clips as sample spans, schedules at most 24 decoder processes, and

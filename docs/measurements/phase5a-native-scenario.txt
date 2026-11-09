@@ -1,0 +1,63 @@
+21:10:39.040 scale=1.5
+21:10:56.813 1 video A placed: 212 ms
+21:11:22.666 4 trimmed: lanes='Track lanes, 2 clips. Selected clip scene a.mp4, 00:02.000 to 00:08.000'
+21:11:31.717 5 video B placed: 269 ms
+21:11:35.615 6 split B: 226 ms
+21:11:38.770 7 moved: lanes='Track lanes, 6 clips. Selected clip scene b.mp4, 00:15.000 to 00:19.000'
+21:11:48.961 8 audio-only placed: 326 ms
+21:11:50.133 9 gain: Volume −5.5 dB, from −60 to +6 dB. Esc cancels a drag.
+21:12:00.767 10 tone placed: 336 ms
+21:12:14.826 11 saved schema 3; video clips: scene a.mp4 2..8 in 30720/15360 ; scene b.mp4 11..13 in 0/12288 ; scene b.mp4 15..19 in 24576/12288
+21:12:14.837    ok: three video clips after trim, split and move
+21:12:27.547    export finished in 3076 ms: Export finished; temporary files left: 0
+21:12:28.321    ok: the file exists
+21:12:28.428    ok: H.264, 1280x720, yuv420p, 30 fps
+21:12:28.430    ok: BT.709 limited range tags
+21:12:28.431    ok: AAC, 48 kHz, stereo
+21:12:28.432    ffprobe: 570 frames, 19 s
+21:12:28.578    ok: at 2.15 s the picture is lime (clip from scene a.mp4)
+21:12:28.724    ok: at 5 s the picture is blue (clip from scene a.mp4)
+21:12:28.992    ok: at 7.85 s the picture is white (clip from scene a.mp4)
+21:12:29.128    ok: at 11.15 s the picture is yellow (clip from scene b.mp4)
+21:12:29.266    ok: at 12 s the picture is yellow (clip from scene b.mp4)
+21:12:29.386    ok: at 12.85 s the picture is yellow (clip from scene b.mp4)
+21:12:29.496    ok: at 15.15 s the picture is cyan (clip from scene b.mp4)
+21:12:29.605    ok: at 17 s the picture is magenta (clip from scene b.mp4)
+21:12:29.728    ok: at 18.85 s the picture is magenta (clip from scene b.mp4)
+21:12:29.872    ok: the gap at 9.5 s is black
+21:12:29.993    ok: the gap at 14 s is black
+21:12:30.274    ok: 400 Hz is present in 2..8 (0.2498)
+21:12:30.332    ok: 800 Hz is present in 11..13 (0.2499)
+21:12:30.448    ok: 800 Hz is present in 15..19 (0.2499)
+21:12:30.567    ok: the independent audio clip is present (0.1326)
+21:12:30.601    ok: and absent before it starts (0)
+21:12:31.105    ok: the muted track is not heard (0)
+21:12:33.463 21 Windows Media Foundation: opened, 19.000 s, 1280x720, position after 1.2 s of play 1265 ms, state Playing
+21:12:48.556    export finished in 3200 ms: Export finished; temporary files left: 0
+21:12:49.174    ok: unmuting reaches the new export (0.238)
+21:12:49.175    ok: the first export is untouched
+21:12:59.067 24 cancelled in 711 ms
+21:12:59.844    ok: the earlier completed file is preserved
+21:12:59.848    ok: no temporary files remain
+21:12:59.860    ok: no FFmpeg process remains after cancelling
+21:13:11.342 26 long source added: 278 ms
+21:13:26.397    ok: closing asks before stopping the export
+21:13:29.195 26 closed during export with 2 FFmpeg running: exited=True in 2795 ms, leftover=0
+21:13:29.195    ok: no process remains after closing
+21:13:29.195    ok: no partial file was published
+21:13:29.197    ok: no temporary files remain after closing
+21:13:55.845    export finished in 3629 ms: Export finished; temporary files left: 0
+21:13:55.914 27 schema 1: lanes='Track lanes, 2 clips'; exported 720 frames; project file unchanged: True
+21:13:55.915    ok: exporting did not rewrite the schema 1 project
+21:13:55.915    ok: the schema 1 project exported
+21:13:57.555 close schema 1 | exited=True, exit 411 ms after the discard prompt (prompt at  ms) leftover=0
+21:14:24.533    export finished in 3979 ms: Export finished; temporary files left: 0
+21:14:24.594 27 schema 2: lanes='Track lanes, 4 clips'; exported 660 frames; project file unchanged: True
+21:14:24.595    ok: exporting did not rewrite the schema 2 project
+21:14:24.595    ok: the schema 2 project exported
+21:14:26.214 close schema 2 | exited=True, exit 413 ms after the discard prompt (prompt at  ms) leftover=0
+21:14:52.059    export finished in 2665 ms: Export finished; temporary files left: 0
+21:14:52.109 27 schema 3: lanes='Track lanes, 8 clips'; exported 570 frames; project file unchanged: True
+21:14:52.110    ok: exporting did not rewrite the schema 3 project
+21:14:52.110    ok: the schema 3 project exported
+21:14:53.718 close schema 3 | exited=True, exit 406 ms after the discard prompt (prompt at  ms) leftover=0

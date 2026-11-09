@@ -1,0 +1,54 @@
+{
+  "video_clips": [
+    {
+      "media": "scene a.mp4",
+      "start": 2.0,
+      "end": 8.0,
+      "source_in": 2
+    },
+    {
+      "media": "scene b.mp4",
+      "start": 11.0,
+      "end": 13.0,
+      "source_in": 0
+    },
+    {
+      "media": "scene b.mp4",
+      "start": 15.0,
+      "end": 19.0,
+      "source_in": 2
+    }
+  ],
+  "first": {
+    "frames": 570,
+    "duration": 19.0,
+    "bytes": 340079,
+    "levels": {
+      "400 Hz 2..8": 0.2498,
+      "800 Hz 11..13": 0.2499,
+      "800 Hz 15..19": 0.2499,
+      "1200 Hz": 0.1326
+    }
+  },
+  "windows_player": "opened, 19.000 s, 1280x720, position after 1.2 s of play 1265 ms, state Playing",
+  "cancel_ms": 710,
+  "close_during_export": {
+    "ffmpeg_before": 2,
+    "exited": true,
+    "ms": 2788,
+    "leftover": 0
+  },
+  "schema1": {
+    "frames": 720,
+    "lanes": "Track lanes, 2 clips"
+  },
+  "schema2": {
+    "frames": 660,
+    "lanes": "Track lanes, 4 clips"
+  },
+  "schema3": {
+    "frames": 570,
+    "lanes": "Track lanes, 8 clips"
+  },
+  "leftover_processes": 0
+}

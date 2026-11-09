@@ -1,6 +1,25 @@
-# CutCap native engine ABI, version 10
+# CutCap native engine ABI, version 11
 
-## Phase 4C additions (current authority)
+## Phase 5A additions (current authority)
+
+Rust `ABI_VERSION`, managed `NativeMethods.AbiVersion` and `CONTRACT_VERSION` are
+**11** (ADR 027). The project envelope stays 1 and the core schema stays 3. Every
+ABI 10 export, status number, layout and handle rule is unchanged.
+
+| New export | Semantics |
+|---|---|
+| `cutcap_session_start_export(u64, u16* path, usize, u8* track, usize, u32 flags)` | Accepts an export of the current project. `track` length 0 means no video track. Flag 1: replacing an existing file is allowed. Flag 2: omitted occupied video tracks are acknowledged. Acceptance is not completion. |
+| `cutcap_session_cancel_export(u64, u8* job, usize)` | Asks that job to stop. Never waits. A job that is no longer current is refused. |
+
+The view gains `export`: `available` (null until FFmpeg has been asked),
+`unavailable_reason`, `summary` and `job`. `summary` has the preset text, each video
+track's `id`, `name`, `clips`, `duration_text`, `frames` and `blocked` reason,
+`default_track`, and the audio track counts. It is rebuilt once per snapshot. `job`
+has `id`, `state`, `running`, `progress`, the frame and sample counts, `elapsed_text`,
+`speed`, the output path, project revision, track name, `error` and `result`. No
+pixels, samples or encoded data cross the ABI.
+
+## Phase 4C additions (ABI 10, retained)
 
 Rust `ABI_VERSION`, managed `NativeMethods.AbiVersion` and `CONTRACT_VERSION` are
 **10** (ADR 026). Project envelope `format_version` remains 1; the core schema is

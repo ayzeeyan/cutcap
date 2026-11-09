@@ -51,6 +51,18 @@ The header column is 176 DIP and must not grow.
 - A selected clip shows Unlink when it is linked and Link only when the engine
   found one exact partner.
 
+## Export
+
+The Export button is the one cyan primary action in the title bar. It is enabled once
+FFmpeg has confirmed both encoders, and shows `Exporting N%` while a job runs.
+
+The dialog is not modal: the editor stays usable, and later edits are not included.
+It states the file, the one video track, the preset, length, heard audio tracks and
+project revision. If other video tracks hold clips it says so in amber and needs a
+check before Start. Reasons an export cannot run are red text, never a silently
+disabled button. The bar moves only with work the engine reports, and reaches 100%
+only when the finished file is in place.
+
 ## Layout floor
 
 Usable at 960×600 DIP: every transport, editing and mixer control stays reachable.
