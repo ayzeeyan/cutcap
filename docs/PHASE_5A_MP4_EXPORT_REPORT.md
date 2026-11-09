@@ -340,11 +340,47 @@ No crate, DLL, codec or font was added. The items below remain open for the owne
 
 ## 19. Commit hashes
 
-Recorded by the follow-up commit that also records the pull request.
+On branch `claude/phase-5a-mp4-export`, on top of `16fb04a`:
+
+| Commit | Subject |
+|---|---|
+| `147d8ce` | test(ci): stabilize viewport filmstrip regression |
+| `698bb74` | feat(export): add deterministic timeline render plan |
+| `36d4b00` | feat(export): encode H264 video and mixed AAC audio |
+| `7583597` | feat(ui): enable real MP4 export with progress and cancellation |
+| `ec64d1b` | test(export): verify encoded timeline against independent media oracles |
+| `d616719` | docs: report Phase 5A MP4 export |
+
+A final commit, "docs: record the Phase 5A pull request", adds this section and §20.
+
+Each commit was checked on its own in a clean worktree, with `--all-features --locked` and
+no audio device, as CI runs it:
+
+| Commit | Format, clippy | `cargo test` | .NET build | `dotnet test` |
+|---|---|---|---|---|
+| `147d8ce` | clean | 220 passed | 0 errors | Desktop 64, Interop 57 passed |
+| `698bb74` | clean | 231 passed | 0 errors | Desktop 64, Interop 57 passed |
+| `36d4b00` | clean | 234 passed | 0 errors | Desktop 64, Interop 57 passed |
+| `7583597` | clean | 234 passed | 0 errors | Desktop 64, Interop 57 passed |
+| `ec64d1b` | clean | 278 passed | 0 errors | Desktop 77, Interop 62 passed |
+| `d616719` | clean | 278 passed | 0 errors | Desktop 77, Interop 62 passed |
+
+The ABI bump and the interop layer travel together in `36d4b00`, as they must.
+
+**Excluded from the commits:** generated media, recordings, screenshots and exported files
+(`.artifacts/`, git-ignored), build outputs and the publish folder, and caches. Measurement
+logs were copied into `docs/measurements` after checking that they contain no user paths.
 
 ## 20. GitHub PR URL and number
 
-Recorded by the same follow-up commit.
+- **PR:** [#7](https://github.com/ayzeeyan/cutcap/pull/7) "feat: export edited timelines to
+  real H.264/AAC MP4 files (Phase 5A)": base `main`, head `claude/phase-5a-mp4-export`.
+- **State at creation:** open, not a draft, auto-merge off, head `d616719`.
+- **Push:** `git push -u` without force. The remote head was verified equal to the local
+  one, and `origin/main` (`16fb04a`) is an ancestor.
+- **CI:** the GitHub workflow was still running when this was written. Its result is on the
+  pull request. The runner has no FFmpeg, so real-media tests are skipped or ignored there.
+- **For the owner:** left open for review. Neither `main` nor the feature branch is deleted.
 
 ## 21. Recommended Phase 5B
 
