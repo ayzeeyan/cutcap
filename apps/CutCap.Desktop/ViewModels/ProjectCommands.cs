@@ -13,6 +13,17 @@ public sealed partial class MainWindowViewModel
     public Func<Task<string?>>? PickRelinkSource { get; set; }
     public Func<string?, Task<string?>>? PickSaveProject { get; set; }
     public Func<Task<UnsavedChoice>>? ConfirmUnsaved { get; set; }
+    /// <summary>Set by the shell: asks whether a running export may be stopped.</summary>
+    public Func<Task<bool>>? ConfirmStopExport { get; set; }
+    /// <summary>Set by the shell: shows the export window.</summary>
+    public Action? ShowExport { get; set; }
+
+    public ExportViewModel Export { get; }
+
+    [RelayCommand(CanExecute = nameof(CanOpenExport))]
+    private void OpenExport() => ShowExport?.Invoke();
+
+    private bool CanOpenExport() => Export.CanOpen;
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(SaveProjectCommand), nameof(SaveProjectAsCommand), nameof(OpenProjectCommand), nameof(NewProjectCommand), nameof(RelinkMediaCommand), nameof(ImportCommand))]
@@ -120,7 +131,11 @@ public sealed partial class MainWindowViewModel
     {
         if (DocumentBusy) { ShowRejection("Finish the project dialog or file operation before closing."); return false; }
         DocumentBusy = true;
-        try { return await ConfirmReplacementAsync(); }
+        try
+        {
+            if (Export.Running && (ConfirmStopExport is null || !await ConfirmStopExport())) { return false; }
+            return await ConfirmReplacementAsync();
+        }
         finally { DocumentBusy = false; }
     }
 

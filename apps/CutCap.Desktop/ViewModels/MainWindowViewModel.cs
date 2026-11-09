@@ -25,6 +25,8 @@ public sealed partial class MainWindowViewModel : ObservableObject
         Player = new PlayerViewModel(engine) { ImportCommand = ImportCommand };
         Timeline = new TimelineViewModel(engine);
         Inspector = new InspectorViewModel(engine, Timeline);
+        Export = new ExportViewModel(engine);
+        Export.StateChanged += (_, _) => OpenExportCommand.NotifyCanExecuteChanged();
         Categories =
         [
             new("Media", "Import", true, "", ""),
@@ -137,6 +139,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
             StatusText = fileError;
             StatusIsError = true;
         }
+        Export.Apply(view);
         var changes = ViewChanges.Between(_lastView, view);
         _lastView = view;
         if (changes.Library)

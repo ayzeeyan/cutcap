@@ -1,0 +1,14 @@
+<Window xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="CutCap.Desktop.Views.ExportRunningWindow"
+        Title="Export in progress — CutCap" Width="440" Height="190" CanResize="False"
+        WindowStartupLocation="CenterOwner" Background="{StaticResource Surface}">
+  <Grid Margin="24" RowDefinitions="Auto,*,Auto" RowSpacing="12">
+    <TextBlock Text="Stop the export and close CutCap?" FontSize="16" FontWeight="SemiBold" />
+    <TextBlock Grid.Row="1" Text="The export will be cancelled and its unfinished file removed."
+               TextWrapping="Wrap" Foreground="{StaticResource Muted}" />
+    <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+      <Button Content="Keep exporting" Click="Keep" IsCancel="True" IsDefault="True" AutomationProperties.Name="Keep exporting" />
+      <Button Content="Stop and close" Click="Stop" AutomationProperties.Name="Stop export and close" />
+    </StackPanel>
+  </Grid>
+</Window>

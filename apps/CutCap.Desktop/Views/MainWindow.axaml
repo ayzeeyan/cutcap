@@ -115,11 +115,11 @@
             </Button.Flyout>
           </Button>
           <Border Classes="vrule" Height="18" />
-          <Button Classes="primary" IsEnabled="False" AutomationProperties.Name="Export"
-                  ToolTip.Tip="Export is not available yet. It arrives with the render pipeline.">
+          <Button Classes="primary" Command="{Binding OpenExportCommand}" AutomationProperties.Name="Export"
+                  ToolTip.Tip="{Binding Export.ButtonTip}" ToolTip.ShowOnDisabled="True">
             <StackPanel Orientation="Horizontal" Spacing="6">
               <c:IconView Glyph="Export" />
-              <TextBlock Text="Export" VerticalAlignment="Center" />
+              <TextBlock Text="{Binding Export.ButtonText}" VerticalAlignment="Center" />
             </StackPanel>
           </Button>
         </StackPanel>
