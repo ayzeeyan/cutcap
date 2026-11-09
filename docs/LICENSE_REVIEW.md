@@ -1,5 +1,21 @@
 # Licensing and distribution review
 
+Phase 5A update (2026-11-09): export invokes the external FFmpeg's `libx264` and `aac`
+encoders; no crate, DLL, codec or font is added. These review items remain open for
+the owner, and none of them is settled by the fact that an MP4 was produced:
+
+- `libx264` is GPL. The development FFmpeg build is GPL-enabled and stays external and
+  unbundled. Bundling it, or shipping a build that links it, would bring GPL
+  obligations that the undecided application license would have to accommodate.
+- Invoking FFmpeg as a subprocess does not by itself resolve distribution questions.
+- H.264 and AAC are covered by patent licensing programs. Whether distributing an
+  encoder, or distributing encoded content commercially, needs a license is a legal
+  question that has not been reviewed here.
+- CutCap's own files carry no such encoder output. Users create exports on their own
+  machines with their own FFmpeg.
+
+No application license is chosen by this change, and none of this is legal advice.
+
 Phase 4C update (2026-11-08): no crate, DLL, codec or font is added. Audio-only
 import decodes WAV, MP3, AAC/M4A and FLAC through the same external development
 FFmpeg 9.0.1 executable; the installed build's MP3 and AAC decoders are not

@@ -359,6 +359,29 @@ public sealed class EngineSession : IDisposable
         fixed (byte* t = track) { Check(NativeMethods.SetTrackMute(Handle, t, (nuint)track.Length, muted ? 1u : 0u)); }
     }
 
+    /// <summary>
+    /// Phase 5A: accepts an export of the project as it is now. Acceptance is
+    /// not completion; <c>Export.Job</c> in the view reports the rest.
+    /// </summary>
+    public unsafe void StartExport(string path, string? trackId, bool allowOverwrite, bool acknowledgeOmitted)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(path);
+        var track = trackId is null ? [] : Ids(trackId);
+        var flags = (allowOverwrite ? 1u : 0u) | (acknowledgeOmitted ? 2u : 0u);
+        fixed (char* p = path)
+        fixed (byte* t = track)
+        {
+            Check(NativeMethods.StartExport(Handle, p, (nuint)path.Length, t, (nuint)track.Length, flags));
+        }
+    }
+
+    /// <summary>Asks the named export to stop. Never waits for it.</summary>
+    public unsafe void CancelExport(string jobId)
+    {
+        var job = Ids(jobId);
+        fixed (byte* j = job) { Check(NativeMethods.CancelExport(Handle, j, (nuint)job.Length)); }
+    }
+
     /// <summary>One undo step; timeline playback continues.</summary>
     public unsafe void SetTrackSolo(string trackId, bool soloed)
     {

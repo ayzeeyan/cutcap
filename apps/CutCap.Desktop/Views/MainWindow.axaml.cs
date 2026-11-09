@@ -12,6 +12,8 @@ public partial class MainWindow : Window
     private bool _allowClose;
     private bool _confirmingClose;
     private static readonly FilePickerFileType Projects = new("CutCap project") { Patterns = ["*.cutcap"] };
+    private static readonly FilePickerFileType Mp4 = new("MP4 video") { Patterns = ["*.mp4"] };
+    private ExportWindow? _exportWindow;
     private static readonly FilePickerFileType Audio = new("Audio")
     {
         Patterns = ["*.wav", "*.mp3", "*.m4a", "*.flac", "*.mka"],
@@ -81,6 +83,10 @@ public partial class MainWindow : Window
             _viewModel.PickProject = null;
             _viewModel.PickSaveProject = null;
             _viewModel.ConfirmUnsaved = null;
+            _viewModel.ConfirmStopExport = null;
+            _viewModel.ShowExport = null;
+            _viewModel.Export.PickOutput = null;
+            _viewModel.Export.OpenFile = null;
             _viewModel.LayoutResetRequested -= LayoutReset;
         }
         base.OnDataContextChanged(e);
@@ -93,9 +99,41 @@ public partial class MainWindow : Window
             viewModel.PickSaveProject = PickSaveProjectAsync;
             viewModel.ConfirmUnsaved = async () =>
                 await new UnsavedChangesWindow().ShowDialog<UnsavedChoice?>(this) ?? UnsavedChoice.Cancel;
+            viewModel.ConfirmStopExport = async () => await new ExportRunningWindow().ShowDialog<bool?>(this) == true;
+            viewModel.ShowExport = ShowExport;
+            viewModel.Export.PickOutput = PickExportAsync;
+            viewModel.Export.OpenFile = OpenWithDefaultApp;
             viewModel.LayoutResetRequested += LayoutReset;
         }
     }
+
+    /// <summary>Not modal: the editor stays usable while a captured export runs.</summary>
+    private void ShowExport()
+    {
+        if (_exportWindow is { } open)
+        {
+            open.Activate();
+            return;
+        }
+        if (_viewModel is null) { return; }
+        _exportWindow = new ExportWindow { DataContext = _viewModel.Export };
+        _exportWindow.Closed += (_, _) => _exportWindow = null;
+        _exportWindow.Show(this);
+    }
+
+    private async Task<string?> PickExportAsync(string? suggested)
+    {
+        var owner = (TopLevel?)_exportWindow ?? this;
+        var file = await owner.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+        {
+            Title = "Export MP4", FileTypeChoices = [Mp4], DefaultExtension = "mp4",
+            SuggestedFileName = suggested, ShowOverwritePrompt = true,
+        });
+        return file?.TryGetLocalPath();
+    }
+
+    private static void OpenWithDefaultApp(string path) =>
+        System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(path) { UseShellExecute = true })?.Dispose();
 
     private void LayoutReset(object? sender, EventArgs e) => ResetLayout();
 

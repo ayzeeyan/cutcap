@@ -11,7 +11,7 @@
     </StackPanel>
     <TextBlock Text="Version 0.3.0 (development build)" Classes="label muted" />
     <TextBlock Classes="label muted" TextWrapping="Wrap"
-               Text="An offline video editor in development. Importing and stepping through real source frames works today; playback, editing and export are not available yet." />
+               Text="An offline video editor in development. It imports video and audio, edits a multi-track timeline, plays it back with sound, and exports MP4 files." />
     <TextBlock Classes="fine faint" TextWrapping="Wrap"
                Text="Interface: Avalonia UI (MIT). Typeface: Inter (SIL Open Font License 1.1). Media: your separately installed FFmpeg/FFprobe, which CutCap does not bundle." />
   </StackPanel>

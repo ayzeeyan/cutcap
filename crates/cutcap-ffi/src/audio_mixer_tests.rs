@@ -4,6 +4,8 @@
 //! the assertions are exact.
 use super::*;
 use crate::audio_output::CHANNELS;
+use cutcap_core::Clip;
+use cutcap_media::{Cancellation, MediaError, PcmChunk, PcmRequest};
 use cutcap_media::{DecodeRequest, DecodedFrame, ProbeResult};
 use std::path::Path;
 use std::sync::atomic::{AtomicI64, AtomicUsize, Ordering};

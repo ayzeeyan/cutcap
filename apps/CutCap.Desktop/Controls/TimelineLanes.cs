@@ -765,11 +765,13 @@ public sealed class TimelineLanes : Control
         var visible = new List<ThumbnailWant>();
         var overscan = new List<ThumbnailWant>();
         var seen = new HashSet<ThumbKey>();
+        var examined = 0;
         for (var lane = firstLane; lane <= lastLane; lane++)
         {
             if (!lanes[lane].IsVideo) continue;
             foreach (var clip in _geometry.Visible(lane, scale, left - margin, right + margin))
             {
+                examined++;
                 if (!clip.SourceReady || clip.SourceKey.Length == 0) continue;
                 var rect = TimelineGeometry.ClipRect(scale, clip, TrackHeight);
                 var cellWidth = FilmstripLayout.CellWidth(StripHeight, clip.ThumbAspect);
@@ -788,12 +790,16 @@ public sealed class TimelineLanes : Control
         var wants = visible.Concat(overscan).Take(MaxDemand).ToArray();
         cache.RetainPending(wants.Select(w => w.Token).ToHashSet());
         LastPlannedVisible = visible.Count;
+        LastPlannedClipsExamined = examined;
         Services.ThumbnailTrace.Line($"plan visible={visible.Count} overscan={overscan.Count} sent={wants.Length} plan_us={(Services.ThumbnailTrace.Enabled ? System.Diagnostics.Stopwatch.GetElapsedTime(planStarted).TotalMicroseconds : 0):F0}");
         return wants;
     }
 
     /// <summary>Visible samples still missing at the last plan (tests, diagnostics).</summary>
     public int LastPlannedVisible { get; private set; }
+
+    /// <summary>Clips the last plan looked at: the viewport's reach, whatever the project's size.</summary>
+    public int LastPlannedClipsExamined { get; private set; }
 
     private int _renderHeightPx;
 

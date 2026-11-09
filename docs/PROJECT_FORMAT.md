@@ -1,5 +1,8 @@
 # CutCap project documents — format 1, core schema 3
 
+**Phase 5A adds nothing to this format.** Export reads a captured plan and writes no
+settings, results or paths to the project, and opening or exporting never rewrites it.
+
 **Phase 4C: core schema 3.** A track may carry `controls` —
 `{"gain_cdb": -600, "mute": true, "solo": false}` — on audio tracks only.
 `gain_cdb` is hundredths of a decibel, `-6000..=600`; absent means default and

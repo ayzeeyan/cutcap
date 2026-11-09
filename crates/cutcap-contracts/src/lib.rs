@@ -3,12 +3,14 @@
 mod document;
 pub use document::*;
 
+mod export;
 mod ids;
 mod media;
 mod messages;
 mod time;
 mod timeline;
 
+pub use export::*;
 pub use ids::*;
 pub use media::*;
 pub use messages::*;

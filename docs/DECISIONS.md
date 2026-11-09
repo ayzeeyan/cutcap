@@ -1,5 +1,52 @@
 # Architecture decisions
 
+## ADR 027 — Offline export from an immutable plan, one encoder, scratch PCM (Phase 5A)
+
+The binding detail is `docs/PHASE_5A_EXPORT_CONTRACT.md`.
+
+**One immutable plan.** The command owner builds an `ExportPlan` holding the
+existing immutable `TimelineIndex` by `Arc`, the committed track controls and the
+expected source fingerprints. Later edits, New and Open cannot reach it. Rejected:
+borrowing the live project (it changes under the job) and a parallel export model
+(a second place to get timing wrong).
+
+**The offline clock is the output grid.** Frame `n` owns `floor(n / (fps * clock))`
+and everything else follows from exact rationals. Neither the preview clock nor
+WASAPI is involved.
+
+**Raw video on stdin, mixed PCM from a scratch file, one encoder.** Windows gives a
+child one standard input. A second raw stream needs either a named pipe (new
+handwritten `unsafe` or a new crate, plus an open-order deadlock to manage), a
+loopback socket (any local process can connect first), or a hand-written muxer. The
+mix is small, produced far faster than real time, and written first, which also
+means audio and video decoders never run together. Raw video never reaches disk.
+The scratch file is reserved up front, so a full disk fails at once.
+
+**Reserving by `set_len`.** Setting a file's length allocates its clusters on NTFS,
+so one standard-library call both proves the folder is writable and detects a disk
+that is clearly too small, without a new dependency or `unsafe`.
+
+**Export decodes straight to the output format.** Each decoder produces finished
+1280×720 YUV 4:2:0, avoiding a YUV→RGB→YUV round trip and 2.7× the bytes per frame.
+Rejected: reusing the preview path, which is RGBA at preview size.
+
+**Clip heads use the first eligible frame, within 100 ms.** Trims land on source
+ticks, so a clip head usually falls between two frames. Phase 3D shows blank until
+the first eligible PTS, which is invisible on a live clock but would be a permanent
+black flash on about half of all cuts in a CFR file. The frame shown still belongs
+to the clip. Past 100 ms the head stays black. Rejected: showing the preceding frame
+(outside the clip's interval) and copying the preview's blank.
+
+**Untagged sources follow the preview.** They use FFmpeg's default matrix, as the
+preview's scale filter does. An earlier rule treating untagged HD as BT.709 made
+exports look different from what the editor showed, and the native oracle caught it.
+
+**Below-normal children.** The encoder and decoders run below normal priority, so
+the editor keeps priority over an export.
+
+**No project writes.** Export results, progress and output paths are session state.
+The schema and envelope are unchanged.
+
 ## ADR 026 — Bounded multi-track mixer, schema 3 and independent audio (Phase 4C)
 
 The binding detail is `docs/PHASE_4C_AUDIO_MIXING_CONTRACT.md`.

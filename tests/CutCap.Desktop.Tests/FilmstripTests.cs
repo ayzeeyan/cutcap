@@ -195,24 +195,60 @@ public sealed class FilmstripTests
         Assert.Equal(scrolled[1].Token, again.First(w => w.SampleUs == scrolled[1].SampleUs).Token);
     }
 
+    /// <summary>A lane of adjacent 3 s clips, scrolled well inside it (clip 2000 at 100% zoom).</summary>
+    private static TimelineLanes LaneOfThreeSecondClips(int count) => new()
+    {
+        Lanes = [new LaneInfo(true, false, "", "t0")],
+        Viewport = new Size(1600, 200),
+        Thumbnails = new ThumbnailCache(ThumbnailCache.DefaultBudgetBytes),
+        Clips = Enumerable.Range(0, count).Select(i => Clip($"c{i}", i * 3000L, 0, 3_000_000)).ToArray(),
+        ScrollOffset = new Vector(120_000, 0),
+    };
+
     [Fact]
     public void FiveThousandClipsPlanOnlyTheViewport()
     {
-        var clips = Enumerable.Range(0, 5000).Select(i => Clip($"c{i}", i * 3000L, 0, 3_000_000)).ToArray();
-        var lanes = new TimelineLanes
-        {
-            Lanes = [new LaneInfo(true, false, "", "t0")],
-            Viewport = new Size(1600, 200),
-            Thumbnails = new ThumbnailCache(ThumbnailCache.DefaultBudgetBytes),
-            Clips = clips,
-            ScrollOffset = new Vector(120_000, 0),
-        };
-        var watch = System.Diagnostics.Stopwatch.StartNew();
+        var lanes = LaneOfThreeSecondClips(5000);
         var wants = lanes.PlanThumbnails();
-        watch.Stop();
         // 3 s clips share samples 0 and the in-point: the viewport needs only a handful of distinct samples.
         Assert.InRange(wants.Count, 1, 8);
-        Assert.True(watch.ElapsedMilliseconds < 50, $"{watch.ElapsedMilliseconds} ms");
-        TestContext.Current.TestOutputHelper?.WriteLine($"plan 5000 clips: {watch.Elapsed.TotalMicroseconds:F0} us, {wants.Count} wants");
+        // The viewport and its overscan span 2400 px, and each clip is 60 px wide at 100%
+        // zoom: 40 clips, plus one partly visible at each edge and the culling allowance.
+        Assert.InRange(lanes.LastPlannedClipsExamined, 40, 44);
+    }
+
+    [Fact]
+    public void PlanningWorkFollowsTheViewportNotTheProject()
+    {
+        var modest = LaneOfThreeSecondClips(5_000);
+        var huge = LaneOfThreeSecondClips(100_000);
+        var wants = modest.PlanThumbnails();
+        Assert.Equal(wants.Select(w => w.SampleUs), huge.PlanThumbnails().Select(w => w.SampleUs));
+        Assert.Equal(modest.LastPlannedClipsExamined, huge.LastPlannedClipsExamined);
+    }
+
+    /// <summary>
+    /// Opt-in measurement (dotnet test --filter ... -- xUnit.Explicit=on). A single cold
+    /// call times the JIT and the machine's load, so this warms up and reports a
+    /// distribution, and it never fails on a duration.
+    /// </summary>
+    [Fact(Explicit = true)]
+    public void MeasureThumbnailPlanningAtFiveThousandClips()
+    {
+        var lanes = LaneOfThreeSecondClips(5000);
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+        lanes.PlanThumbnails();
+        var cold = watch.Elapsed;
+        for (var i = 0; i < 2000; i++) { lanes.PlanThumbnails(); }
+        var samples = new double[2000];
+        for (var i = 0; i < samples.Length; i++)
+        {
+            watch.Restart();
+            lanes.PlanThumbnails();
+            samples[i] = watch.Elapsed.TotalMicroseconds;
+        }
+        Array.Sort(samples);
+        TestContext.Current.TestOutputHelper?.WriteLine(
+            $"plan 5000 clips: cold={cold.TotalMicroseconds:F0} us warm median={samples[samples.Length / 2]:F1} us p99={samples[samples.Length * 99 / 100]:F1} us max={samples[^1]:F1} us examined={lanes.LastPlannedClipsExamined}");
     }
 }

@@ -1,0 +1,90 @@
+<Window xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:CutCap.Desktop.ViewModels"
+        x:Class="CutCap.Desktop.Views.ExportWindow" x:DataType="vm:ExportViewModel"
+        Title="Export — CutCap" Width="560" SizeToContent="Height" CanResize="False"
+        WindowStartupLocation="CenterOwner" Background="{StaticResource Surface}">
+  <StackPanel Margin="24" Spacing="14">
+    <StackPanel Spacing="2">
+      <TextBlock Text="Export" FontSize="18" FontWeight="SemiBold" />
+      <TextBlock Text="{Binding PresetName}" Foreground="{StaticResource Muted}" />
+    </StackPanel>
+
+    <TextBlock IsVisible="{Binding ShowUnavailable}" Text="{Binding UnavailableText}" TextWrapping="Wrap"
+               Foreground="{StaticResource Error}" AutomationProperties.Name="Export unavailable" />
+
+    <!-- Destination -->
+    <StackPanel Spacing="6">
+      <TextBlock Text="File" Classes="label faint" />
+      <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+        <TextBox IsReadOnly="True" Text="{Binding OutputHint}" AutomationProperties.Name="Output file"
+                 ToolTip.Tip="{Binding OutputHint}" />
+        <Button Grid.Column="1" Content="Choose…" Command="{Binding ChooseOutputCommand}"
+                AutomationProperties.Name="Choose output file" />
+      </Grid>
+    </StackPanel>
+
+    <!-- What gets rendered -->
+    <StackPanel Spacing="6">
+      <TextBlock Text="Video track" Classes="label faint" />
+      <ComboBox ItemsSource="{Binding Tracks}" SelectedItem="{Binding SelectedTrack}" IsEnabled="{Binding CanEditChoices}"
+                HorizontalAlignment="Stretch" AutomationProperties.Name="Video track to export"
+                ToolTip.Tip="CutCap exports one video track. Tracks are not composited.">
+        <ComboBox.ItemTemplate>
+          <DataTemplate x:DataType="vm:ExportTrackItem">
+            <TextBlock Text="{Binding Label}" />
+          </DataTemplate>
+        </ComboBox.ItemTemplate>
+      </ComboBox>
+      <StackPanel IsVisible="{Binding NeedsAcknowledgment}" Spacing="6">
+        <TextBlock Text="{Binding OmissionText}" TextWrapping="Wrap" Foreground="{StaticResource SoloOn}" />
+        <CheckBox IsChecked="{Binding OmissionAcknowledged}" IsEnabled="{Binding CanEditChoices}"
+                  Content="Export only the chosen track" AutomationProperties.Name="Export only the chosen track" />
+      </StackPanel>
+      <TextBlock IsVisible="{Binding ShowPictureNote}" Text="{Binding PictureNote}" TextWrapping="Wrap"
+                 Foreground="{StaticResource Muted}" />
+      <TextBlock IsVisible="{Binding ShowBlocked}" Text="{Binding BlockedText}" TextWrapping="Wrap"
+                 Foreground="{StaticResource Error}" AutomationProperties.Name="Export blocked" />
+    </StackPanel>
+
+    <!-- Exactly what will be written -->
+    <Grid ColumnDefinitions="96,*" RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="4">
+      <TextBlock Text="Format" Foreground="{StaticResource Muted}" />
+      <TextBlock Grid.Column="1" Text="{Binding PresetText}" TextWrapping="Wrap" />
+      <TextBlock Grid.Row="1" Text="Length" Foreground="{StaticResource Muted}" />
+      <TextBlock Grid.Row="1" Grid.Column="1" TextWrapping="Wrap" AutomationProperties.Name="Export length">
+        <Run Text="{Binding DurationText}" /><Run Text=" · " /><Run Text="{Binding FramesText}" />
+      </TextBlock>
+      <TextBlock Grid.Row="2" Text="Audio" Foreground="{StaticResource Muted}" />
+      <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding AudioText}" TextWrapping="Wrap"
+                 AutomationProperties.Name="Export audio tracks" />
+      <TextBlock Grid.Row="3" Text="Captured" Foreground="{StaticResource Muted}" />
+      <TextBlock Grid.Row="3" Grid.Column="1" TextWrapping="Wrap">
+        <Run Text="{Binding RevisionText}" /><Run Text=" · later edits are not included" />
+      </TextBlock>
+    </Grid>
+
+    <!-- Progress: only real output work moves this bar. -->
+    <StackPanel IsVisible="{Binding ShowProgress}" Spacing="6">
+      <Grid ColumnDefinitions="*,Auto">
+        <TextBlock Text="{Binding StateText}" FontWeight="SemiBold" AutomationProperties.Name="Export state" />
+        <TextBlock Grid.Column="1" Text="{Binding ProgressText}" FontFeatures="tnum" AutomationProperties.Name="Export percent" />
+      </Grid>
+      <ProgressBar Minimum="0" Maximum="100" Value="{Binding ProgressPercent}" Height="6"
+                   AutomationProperties.Name="Export progress" />
+      <TextBlock Text="{Binding TimingText}" Classes="fine muted" FontFeatures="tnum" AutomationProperties.Name="Export timing" />
+      <TextBlock IsVisible="{Binding ShowResult}" Text="{Binding ResultText}" TextWrapping="Wrap" AutomationProperties.Name="Export result" />
+      <TextBlock IsVisible="{Binding ShowError}" Text="{Binding ErrorText}" TextWrapping="Wrap"
+                 Foreground="{StaticResource Error}" AutomationProperties.Name="Export error" />
+    </StackPanel>
+
+    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+      <Button Content="Open file" Command="{Binding OpenResultCommand}" AutomationProperties.Name="Open exported file"
+              ToolTip.Tip="Open the finished file in your default video player" />
+      <Button Content="Close" Click="CloseWindow" IsCancel="True" AutomationProperties.Name="Close export window"
+              ToolTip.Tip="Closes this window. A running export keeps going." />
+      <Button Content="Cancel export" Command="{Binding CancelCommand}" AutomationProperties.Name="Cancel export" />
+      <Button Content="Start export" Command="{Binding StartCommand}" Classes="primary" IsDefault="True"
+              AutomationProperties.Name="Start export" />
+    </StackPanel>
+  </StackPanel>
+</Window>

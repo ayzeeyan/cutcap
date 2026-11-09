@@ -1,5 +1,11 @@
 # Claude onboarding
 
+Phase 5A current handoff: ABI/contract 11 add real MP4 export
+(docs/PHASE_5A_EXPORT_CONTRACT.md and report, ADR 027). A job renders an immutable
+plan offline: audio to a scratch PCM file first, then frames on the exact output grid
+into one FFmpeg encoder. Schema and envelope are unchanged. Native checks use
+scripts/native-ui/export-ui.ps1 and export-bench.ps1.
+
 Phase 4C current handoff: ABI/contract 10, core schema 3 add a bounded multi-track
 mixer (docs/PHASE_4C_AUDIO_MIXING_CONTRACT.md and report, ADR 026). All audio tracks
 sum in project order into one WASAPI stream with one device clock; volume, mute and

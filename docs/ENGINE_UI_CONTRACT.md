@@ -1,6 +1,21 @@
-# UI–engine and media contracts, version 10
+# UI–engine and media contracts, version 11
 
-## Phase 4C mixing contract (current authority)
+## Phase 5A export contract (current authority)
+
+ABI/CONTRACT_VERSION are 11 (ADR 027); core schema 3, envelope 1. The binding text is
+`PHASE_5A_EXPORT_CONTRACT.md`; exports are in NATIVE_ABI.md.
+
+- **Ownership.** Rust owns the plan, frame and sample positions, the mix, the encoder
+  and every file. C# holds only the chosen path, track and acknowledgment.
+- **Acceptance is not completion.** A start is acknowledged immediately; the job
+  reports every later step through `export.job` in the view.
+- **Immutable capture.** The job renders the plan taken at the start. Later edits, New
+  and Open do not reach it, and it changes neither dirty state, history nor a playhead.
+- **Progress** counts mixed samples and frames the encoder has reported. Only a
+  finished, validated, published file reaches 100%.
+- **Cancellation** names the job. It never waits; the UI thread does not block on it.
+
+## Phase 4C mixing contract (ABI 10, retained)
 
 ABI/CONTRACT_VERSION are 10 (ADR 026); core schema 3, envelope 1. The binding text
 is `PHASE_4C_AUDIO_MIXING_CONTRACT.md`; exports are in NATIVE_ABI.md.

@@ -84,7 +84,19 @@ pub struct Session {
     gain_commit: Option<RequestId>,
     /// The exact partner the selected clip can be linked with (per snapshot).
     link_candidate: Option<ClipId>,
+    /// Phase 5A: the one export job, independent of both monitors.
+    export: crate::export::ExportHost,
+    /// A start waiting for the command owner to capture its plan.
+    export_pending: Option<PendingExport>,
+    /// Built once per snapshot, so an idle or playing view never recomputes it.
+    export_summary: crate::export::ExportSummary,
     closed: bool,
+}
+
+struct PendingExport {
+    request_id: RequestId,
+    job: String,
+    output: crate::export::OutputRequest,
 }
 
 /// One waveform chunk the frontend wants (wire form of the demand list).
@@ -192,6 +204,9 @@ impl Session {
             thumbnails: crate::thumbnails::ThumbnailService::start(backend.clone())?,
             thumbnail_slot: None,
             thumbnail_stats_seen: Default::default(),
+            export: crate::export::ExportHost::start(backend.clone())?,
+            export_pending: None,
+            export_summary: crate::export::ExportSummary::default(),
             waveforms: crate::waveforms::WaveformService::start(backend)?,
             waveform_slot: None,
             waveform_stats_seen: Default::default(),
@@ -957,7 +972,81 @@ impl Session {
     }
 
     /// Drains bounded worker results. Returns true when the view changed.
+    /// Phase 5A: accepts an export. Acceptance is not completion: the job
+    /// reports every later step in the view. `track` of `None` means no
+    /// video track. Works from a captured plan, so editing may continue.
+    pub fn start_export(
+        &mut self,
+        output: PathBuf,
+        track: Option<TrackId>,
+        allow_overwrite: bool,
+        acknowledge_omitted: bool,
+    ) -> Result<(), SessionError> {
+        if self.closed {
+            return Err(SessionError::Invalid("The session is shut down."));
+        }
+        if self.export.running() || self.export_pending.is_some() {
+            return Err(SessionError::Invalid("An export is already running."));
+        }
+        let Some(project) = self.current_project() else {
+            return Err(SessionError::Invalid(
+                "The project is not ready yet. Try again in a moment.",
+            ));
+        };
+        let request_id = RequestId::new();
+        self.bridge.submit(CommandEnvelope {
+            request_id,
+            project_id: Some(project),
+            command: Command::PrepareExport {
+                video_track: track,
+                acknowledge_omitted,
+            },
+        })?;
+        let job = self.export.announce(&output);
+        self.export_pending = Some(PendingExport {
+            request_id,
+            job,
+            output: crate::export::OutputRequest {
+                path: output,
+                allow_overwrite,
+            },
+        });
+        self.dirty = true;
+        Ok(())
+    }
+
+    /// Asks the named export job to stop. Never waits for it.
+    pub fn cancel_export(&mut self, job: &str) -> Result<(), SessionError> {
+        self.export.cancel(job).map_err(SessionError::Invalid)?;
+        self.dirty = true;
+        Ok(())
+    }
+
+    fn receive_export_plan(
+        &mut self,
+        request_id: RequestId,
+        result: Result<crate::export::ExportPlan, EngineError>,
+    ) {
+        let Some(pending) = self
+            .export_pending
+            .take_if(|pending| pending.request_id == request_id)
+        else {
+            return;
+        };
+        match result {
+            Ok(plan) => {
+                if let Err(error) = self.export.begin(&pending.job, plan, pending.output) {
+                    self.export.refuse(&pending.job, error.to_string());
+                }
+            }
+            Err(error) => self.export.refuse(&pending.job, error.message),
+        }
+    }
+
     pub fn pump(&mut self) -> bool {
+        if self.export.take_changed() {
+            self.dirty = true;
+        }
         // Playback has priority: thumbnails and waveforms take smaller batches.
         let playing = self.media.playback.active() || self.timeline_playback.active();
         self.thumbnails.set_throttled(playing);
@@ -981,6 +1070,9 @@ impl Session {
             self.dirty = true;
             match event {
                 HostEvent::Engine(event) => self.apply(*event),
+                HostEvent::ExportPlan { request_id, result } => {
+                    self.receive_export_plan(request_id, *result);
+                }
                 HostEvent::TimelinePlan { request_id, result } => {
                     if self.timeline_inflight == Some(request_id) {
                         self.timeline_inflight = None;
@@ -1346,6 +1438,7 @@ impl Session {
     }
 
     fn set_snapshot(&mut self, snapshot: ProjectSnapshot) {
+        self.export_summary = crate::export::summarize(&snapshot);
         if self.project_id() != Some(snapshot.id) {
             // Old asynchronous thumbnails must never reach a replacement project.
             self.thumbnails.clear();
@@ -1537,6 +1630,7 @@ impl Session {
             editing: self.editing_view(),
             thumbnails: self.thumbnail_stats_seen.clone(),
             waveforms: self.waveform_stats_seen.clone(),
+            export: self.export.view(&self.export_summary),
             audio: self.timeline_playback.audio_view(),
             preview_mode: self.preview_mode,
             timeline_preview,
@@ -1805,6 +1899,7 @@ impl Session {
             return Ok(());
         }
         self.closed = true;
+        self.export.shutdown();
         self.thumbnails.shutdown();
         self.waveforms.shutdown();
         let timeline = self.timeline_playback.shutdown();

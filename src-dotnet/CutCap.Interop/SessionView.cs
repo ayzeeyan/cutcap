@@ -28,7 +28,38 @@ public sealed record SessionView(
     EditingView? Editing = null,
     ThumbnailStats? Thumbnails = null,
     AudioView? Audio = null,
-    WaveformStats? Waveforms = null);
+    WaveformStats? Waveforms = null,
+    ExportView? Export = null);
+
+/// <summary>Phase 5A (ABI 11): what Export can do and how the current job is going.</summary>
+public sealed record ExportView(bool? Available, string? UnavailableReason, ExportSummary Summary, ExportJobView? Job);
+
+public sealed record ExportSummary(
+    string PresetName, string PresetText, IReadOnlyList<ExportTrackChoice> VideoTracks, string? DefaultTrack,
+    int AudioTracks, int AudioTracksWithClips, ulong Revision)
+{
+    public bool Equals(ExportSummary? other) =>
+        other is not null && PresetName == other.PresetName && PresetText == other.PresetText
+        && DefaultTrack == other.DefaultTrack && AudioTracks == other.AudioTracks
+        && AudioTracksWithClips == other.AudioTracksWithClips && Revision == other.Revision
+        && VideoTracks.SequenceEqual(other.VideoTracks);
+    public override int GetHashCode() => HashCode.Combine(PresetName, DefaultTrack, AudioTracks, Revision, VideoTracks.Count);
+}
+
+public sealed record ExportTrackChoice(
+    string Id, string Name, int Clips, long DurationMs, string DurationText, ulong Frames, string? Blocked);
+
+public sealed record ExportJobView(
+    string Id, string State, bool Running, double Progress, string Detail, string OutputPath, string FileName,
+    string ProjectName, ulong Revision, string? TrackName, ulong FramesTotal, ulong FramesSubmitted, ulong FramesEncoded,
+    ulong SamplesTotal, ulong SamplesMixed, ulong ElapsedMs, string ElapsedText, double? Speed, string? Error,
+    ExportResultView? Result);
+
+public sealed record ExportResultView(
+    string Path, ulong Bytes, ulong Frames, ulong DurationMs, ulong ClippedSamples, double Peak, ulong SourceSilenceMs,
+    ulong GapFrames, ulong NoPictureFrames, ulong HeadFrames, ulong DecodedFrames, ulong ReusedFrames,
+    ulong VideoDecoderStarts, ulong ClipChanges, ulong CutWaitMaxUs, ulong CutWaitTotalUs, ulong AudioDecoderStarts,
+    int AudioDecodersPeak, ulong MixUs, ulong EncodeUs, ulong TotalUs);
 
 /// <summary>
 /// Phase 4B audio output and master-clock state (ABI 9). <c>Clock</c> is
