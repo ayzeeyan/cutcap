@@ -57,7 +57,7 @@ impl Bench {
         let media = MediaSummary {
             id: MediaId::new(),
             path: "C:/clips/take.mp4".into(),
-            metadata: cutcap_media::parse_probe(probe).unwrap(),
+            metadata: cutcap_media::parse_probe(probe).unwrap().into(),
         };
         let id = media.id;
         send(
@@ -268,7 +268,9 @@ fn moving_either_member_moves_the_pair_and_blocked_partners_reject_atomically() 
     let silent = MediaSummary {
         id: MediaId::new(),
         path: "C:/clips/other.mkv".into(),
-        metadata: cutcap_media::parse_probe(&video_only_probe()).unwrap(),
+        metadata: cutcap_media::parse_probe(&video_only_probe())
+            .unwrap()
+            .into(),
     };
     let silent_id = silent.id;
     b.send(Command::RegisterMedia {

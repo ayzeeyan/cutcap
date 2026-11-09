@@ -155,6 +155,8 @@ impl Playback {
         let origin = request
             .media
             .metadata
+            .video()
+            .ok_or(MediaError::Worker)?
             .start()
             .rescale(time.timebase, Rounding::Floor)
             .map_err(|_| MediaError::Invalid("source clock overflow".into()))?;
@@ -336,7 +338,7 @@ mod tests {
         let media = MediaSummary {
             id: MediaId::new(),
             path: "fixture.mkv".into(),
-            metadata,
+            metadata: metadata.into(),
         };
         let request = DecodeRequest {
             ticket: PreviewTicket {
@@ -344,7 +346,7 @@ mod tests {
                 media_id: media.id,
                 request_id: RequestId::new(),
             },
-            position: media.metadata.start(),
+            position: media.metadata.video().unwrap().start(),
             media,
         };
         let mut p = Playback::start(Arc::new(Idle)).unwrap();

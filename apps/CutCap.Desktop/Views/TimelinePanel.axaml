@@ -33,6 +33,10 @@
                   ToolTip.Tip="{Binding RemoveClipTip}" ToolTip.ShowOnDisabled="True">
             <c:IconView Glyph="Trash" />
           </Button>
+          <Button Classes="tool" Command="{Binding UnlinkCommand}" AutomationProperties.Name="Unlink audio and video"
+                  ToolTip.Tip="{Binding UnlinkTip}" ToolTip.ShowOnDisabled="True">
+            <c:IconView Glyph="Unlink" />
+          </Button>
           <Border Classes="vrule" Height="18" />
           <Button Classes="tool" Command="{Binding AddVideoTrackCommand}" AutomationProperties.Name="Add video track"
                   ToolTip.Tip="Add an empty video track">
@@ -54,6 +58,9 @@
                    HorizontalAlignment="Right" Margin="12,0,14,0" TextTrimming="CharacterEllipsis"
                    AutomationProperties.AutomationId="TimelineEditHint" AutomationProperties.LiveSetting="Polite" />
         <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="2" VerticalAlignment="Center">
+          <TextBlock Text="CLIP" Classes="fine error" FontWeight="Bold" VerticalAlignment="Center" Margin="0,0,10,0"
+                     IsVisible="{Binding Clipping}" ToolTip.Tip="{Binding ClippingTip}"
+                     AutomationProperties.Name="Mix clipping" AutomationProperties.AutomationId="MixClipping" />
           <TextBlock Text="{Binding ClipCountText}" Classes="fine faint" VerticalAlignment="Center" Margin="0,0,10,0" />
           <TextBlock Text="{Binding PlayheadText}" Classes="mono muted" VerticalAlignment="Center" Margin="0,0,6,0"
                      AutomationProperties.Name="Timeline playhead position" AutomationProperties.AutomationId="TimelinePlayhead"
@@ -89,28 +96,47 @@
                    AutomationProperties.Name="Tracks">
             <ListBox.ItemTemplate>
               <DataTemplate x:DataType="vm:TrackViewModel">
-                <Grid ColumnDefinitions="Auto,*,Auto" AutomationProperties.Name="{Binding AccessibleName}">
-                  <Panel Width="26" Height="18">
-                    <Border CornerRadius="3" Background="{StaticResource VideoFill}" IsVisible="{Binding IsVideo}" />
-                    <Border CornerRadius="3" Background="{StaticResource AudioFill}" IsVisible="{Binding IsAudio}" />
-                    <TextBlock Text="{Binding Badge}" FontSize="11" FontWeight="Bold" Foreground="White"
-                               HorizontalAlignment="Center" VerticalAlignment="Center" />
-                  </Panel>
-                  <TextBlock Grid.Column="1" Text="{Binding Name}" Classes="label muted track-name" Margin="8,0"
-                             VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
-                  <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="2" Opacity="0.55">
-                    <Border Background="Transparent" Padding="3" IsVisible="{Binding IsVideo}"
-                            ToolTip.Tip="Track visibility arrives with the editing engine.">
-                      <c:IconView Glyph="Eye" Width="14" Height="14" Foreground="{StaticResource Muted}" />
-                    </Border>
-                    <Border Background="Transparent" Padding="3" IsVisible="{Binding IsAudio}"
-                            ToolTip.Tip="Track mute arrives with the editing engine.">
-                      <c:IconView Glyph="Volume" Width="14" Height="14" Foreground="{StaticResource Muted}" />
-                    </Border>
-                    <Border Background="Transparent" Padding="3" ToolTip.Tip="Track locking arrives with the editing engine.">
-                      <c:IconView Glyph="Lock" Width="14" Height="14" Foreground="{StaticResource Muted}" />
-                    </Border>
-                  </StackPanel>
+                <Grid RowDefinitions="*,Auto" AutomationProperties.Name="{Binding AccessibleName}">
+                  <Grid ColumnDefinitions="Auto,*,Auto" VerticalAlignment="Center">
+                    <Panel Width="26" Height="18">
+                      <Border CornerRadius="3" Background="{StaticResource VideoFill}" IsVisible="{Binding IsVideo}" />
+                      <Border CornerRadius="3" Background="{StaticResource AudioFill}" IsVisible="{Binding IsAudio}" />
+                      <TextBlock Text="{Binding Badge}" FontSize="11" FontWeight="Bold" Foreground="White"
+                                 HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Panel>
+                    <TextBlock Grid.Column="1" Text="{Binding Name}" Classes="label muted track-name" Margin="8,0"
+                               VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                    <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="2" Opacity="0.55">
+                      <Border Background="Transparent" Padding="3" IsVisible="{Binding IsVideo}"
+                              ToolTip.Tip="Track visibility arrives with the editing engine.">
+                        <c:IconView Glyph="Eye" Width="14" Height="14" Foreground="{StaticResource Muted}" />
+                      </Border>
+                      <Border Background="Transparent" Padding="3" ToolTip.Tip="Track locking arrives with the editing engine.">
+                        <c:IconView Glyph="Lock" Width="14" Height="14" Foreground="{StaticResource Muted}" />
+                      </Border>
+                    </StackPanel>
+                  </Grid>
+                  <!-- Mixer row: every control here changes the engine's mix. -->
+                  <Grid Grid.Row="1" ColumnDefinitions="Auto,Auto,*,Auto" IsVisible="{Binding IsAudio}" Margin="0,0,0,3">
+                    <Button Classes="track-toggle" Classes.mute-on="{Binding Muted}" Command="{Binding ToggleMuteCommand}"
+                            AutomationProperties.Name="{Binding MuteName}" ToolTip.Tip="{Binding MuteTip}">
+                      <Panel>
+                        <c:IconView Glyph="Volume" Width="14" Height="14" IsVisible="{Binding !Muted}" />
+                        <c:IconView Glyph="VolumeOff" Width="14" Height="14" IsVisible="{Binding Muted}" />
+                      </Panel>
+                    </Button>
+                    <Button Grid.Column="1" Classes="track-toggle" Classes.solo-on="{Binding Soloed}" Margin="2,0,0,0"
+                            Command="{Binding ToggleSoloCommand}"
+                            AutomationProperties.Name="{Binding SoloName}" ToolTip.Tip="{Binding SoloTip}">
+                      <TextBlock Text="S" FontSize="11" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Button>
+                    <Slider Grid.Column="2" Minimum="-60" Maximum="6" TickFrequency="0.5" IsSnapToTickEnabled="True"
+                            SmallChange="0.5" LargeChange="3" Value="{Binding GainDb}" VerticalAlignment="Center"
+                            Margin="2,-8,2,-8" MinWidth="36"
+                            AutomationProperties.Name="{Binding VolumeName}" ToolTip.Tip="{Binding VolumeTip}" />
+                    <TextBlock Grid.Column="3" Text="{Binding GainText}" Classes="fine muted" FontFeatures="tnum" Width="56"
+                               TextAlignment="Right" VerticalAlignment="Center" />
+                  </Grid>
                 </Grid>
               </DataTemplate>
             </ListBox.ItemTemplate>

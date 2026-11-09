@@ -318,6 +318,71 @@ public sealed class EngineSession : IDisposable
         fixed (byte* pointer = bytes) { Check(NativeMethods.RemoveClip(Handle, pointer, (nuint)bytes.Length)); }
     }
 
+    /// <summary>
+    /// Places one chosen audio stream as an independent clip. Without a track,
+    /// Rust uses the first audio track free for the whole interval.
+    /// </summary>
+    public unsafe void PlaceAudioStream(string mediaId, uint stream, string? trackId, TimelinePosition position)
+    {
+        var media = Ids(mediaId);
+        var track = trackId is null ? [] : Ids(trackId);
+        fixed (byte* m = media)
+        fixed (byte* t = track)
+        {
+            Check(NativeMethods.PlaceAudioStream(Handle, m, (nuint)media.Length, stream, t, (nuint)track.Length, position.Value, position.Unit));
+        }
+    }
+
+    /// <summary>Removes the link of a linked pair (one undo step, no timing change).</summary>
+    public unsafe void UnlinkClip(string clipId)
+    {
+        var clip = Ids(clipId);
+        fixed (byte* c = clip) { Check(NativeMethods.UnlinkClip(Handle, c, (nuint)clip.Length)); }
+    }
+
+    /// <summary>Links two compatible unlinked clips; Rust validates them.</summary>
+    public unsafe void LinkClips(string clipId, string partnerId)
+    {
+        var clip = Ids(clipId);
+        var partner = Ids(partnerId);
+        fixed (byte* c = clip)
+        fixed (byte* p = partner)
+        {
+            Check(NativeMethods.LinkClips(Handle, c, (nuint)clip.Length, p, (nuint)partner.Length));
+        }
+    }
+
+    /// <summary>One undo step; timeline playback continues.</summary>
+    public unsafe void SetTrackMute(string trackId, bool muted)
+    {
+        var track = Ids(trackId);
+        fixed (byte* t = track) { Check(NativeMethods.SetTrackMute(Handle, t, (nuint)track.Length, muted ? 1u : 0u)); }
+    }
+
+    /// <summary>One undo step; timeline playback continues.</summary>
+    public unsafe void SetTrackSolo(string trackId, bool soloed)
+    {
+        var track = Ids(trackId);
+        fixed (byte* t = track) { Check(NativeMethods.SetTrackSolo(Handle, t, (nuint)track.Length, soloed ? 1u : 0u)); }
+    }
+
+    /// <summary>A volume drag in hundredths of a dB: heard live, never in history.</summary>
+    public unsafe void PreviewTrackGain(string trackId, int cdb)
+    {
+        var track = Ids(trackId);
+        fixed (byte* t = track) { Check(NativeMethods.PreviewTrackGain(Handle, t, (nuint)track.Length, cdb)); }
+    }
+
+    /// <summary>Ends a volume drag with one undoable change.</summary>
+    public unsafe void CommitTrackGain(string trackId, int cdb)
+    {
+        var track = Ids(trackId);
+        fixed (byte* t = track) { Check(NativeMethods.CommitTrackGain(Handle, t, (nuint)track.Length, cdb)); }
+    }
+
+    /// <summary>Abandons a volume drag; the stored value applies again.</summary>
+    public void CancelTrackGain() => Check(NativeMethods.CancelTrackGain(Handle));
+
     /// <summary>Transient selection; never dirties the document or enters history.</summary>
     public unsafe void SelectClip(string id)
     {

@@ -71,7 +71,7 @@ internal static unsafe partial class NativeMethods
     private const string Library = "cutcap_engine";
 
     /// <summary>The ABI this frontend was written against.</summary>
-    public const uint AbiVersion = 9;
+    public const uint AbiVersion = 10;
     public const uint PixelRgba8Opaque = 1;
 
     [LibraryImport(Library, EntryPoint = "cutcap_abi_version")]
@@ -206,6 +206,31 @@ internal static unsafe partial class NativeMethods
 
     [LibraryImport(Library, EntryPoint = "cutcap_session_remove_clip")]
     public static partial NativeStatus RemoveClip(SessionSafeHandle session, byte* id, nuint length);
+
+    [LibraryImport(Library, EntryPoint = "cutcap_session_place_audio_stream")]
+    public static partial NativeStatus PlaceAudioStream(SessionSafeHandle session, byte* media, nuint mediaLength, uint stream,
+        byte* track, nuint trackLength, long position, uint unit);
+
+    [LibraryImport(Library, EntryPoint = "cutcap_session_unlink_clip")]
+    public static partial NativeStatus UnlinkClip(SessionSafeHandle session, byte* clip, nuint length);
+
+    [LibraryImport(Library, EntryPoint = "cutcap_session_link_clips")]
+    public static partial NativeStatus LinkClips(SessionSafeHandle session, byte* clip, nuint clipLength, byte* partner, nuint partnerLength);
+
+    [LibraryImport(Library, EntryPoint = "cutcap_session_set_track_mute")]
+    public static partial NativeStatus SetTrackMute(SessionSafeHandle session, byte* track, nuint length, uint muted);
+
+    [LibraryImport(Library, EntryPoint = "cutcap_session_set_track_solo")]
+    public static partial NativeStatus SetTrackSolo(SessionSafeHandle session, byte* track, nuint length, uint soloed);
+
+    [LibraryImport(Library, EntryPoint = "cutcap_session_preview_track_gain")]
+    public static partial NativeStatus PreviewTrackGain(SessionSafeHandle session, byte* track, nuint length, int cdb);
+
+    [LibraryImport(Library, EntryPoint = "cutcap_session_commit_track_gain")]
+    public static partial NativeStatus CommitTrackGain(SessionSafeHandle session, byte* track, nuint length, int cdb);
+
+    [LibraryImport(Library, EntryPoint = "cutcap_session_cancel_track_gain")]
+    public static partial NativeStatus CancelTrackGain(SessionSafeHandle session);
 
     [LibraryImport(Library, EntryPoint = "cutcap_session_select_clip")]
     public static partial NativeStatus SelectClip(SessionSafeHandle session, byte* id, nuint length);

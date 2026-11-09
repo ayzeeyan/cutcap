@@ -260,7 +260,7 @@ impl TimelinePreview {
             .track
             .as_ref()
             .map_or_else(|| "No video track".into(), |t| t.name.clone());
-        self.view.title = format!("Timeline · {} · single video track", self.view.track_name);
+        self.view.title = format!("Timeline · picture from {}", self.view.track_name);
         self.view.evaluation_generation = Some(result.generation.to_string());
         self.view.evaluation_us = Some(result.evaluation_us);
         self.view.requested = None;
@@ -391,10 +391,8 @@ impl TimelinePreview {
                     frame.actual.timebase.numerator(),
                     frame.actual.timebase.denominator()
                 );
-                self.view.detail = format!(
-                    "{} · video only · one monitored track",
-                    self.view.source_name
-                );
+                self.view.detail =
+                    format!("{} · still frame of one video track", self.view.source_name);
                 self.view.decode_us = Some(frame.decode_us);
                 self.view.process_id = Some(frame.process_id);
                 self.view.request_to_ready_us =

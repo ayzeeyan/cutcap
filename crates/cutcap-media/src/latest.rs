@@ -190,7 +190,7 @@ mod tests {
         let media = MediaSummary {
             id: MediaId::new(),
             path: "fixture.mp4".into(),
-            metadata,
+            metadata: metadata.into(),
         };
         DecodeRequest {
             ticket: PreviewTicket {
@@ -200,7 +200,7 @@ mod tests {
             },
             position: SourceTime {
                 ticks,
-                timebase: media.metadata.timebase,
+                timebase: media.metadata.video().unwrap().timebase,
             },
             media,
         }

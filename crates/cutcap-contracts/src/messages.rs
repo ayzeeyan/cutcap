@@ -5,10 +5,10 @@ use serde::{Deserialize, Serialize};
 use crate::{
     ClipId, ClipStream, DocumentStatus, LinkId, MediaAvailability, MediaId, MediaSummary,
     ProjectId, RequestId, SourceFingerprint, SourceTime, Timebase, TimelineDuration, TimelineTime,
-    TrackId, VerifiedMedia,
+    TrackControls, TrackId, VerifiedMedia,
 };
 
-pub const CONTRACT_VERSION: u32 = 9;
+pub const CONTRACT_VERSION: u32 = 10;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TrackKind {
@@ -98,6 +98,39 @@ pub enum Command {
         track_id: TrackId,
         position: crate::TimelineSeek,
     },
+    /// Places one chosen audio stream of a Ready source as an independent clip
+    /// at `position`, on the given audio track or, with none, on the first
+    /// audio track free for the whole interval. Undoable.
+    PlaceAudioStream {
+        media_id: MediaId,
+        stream: u32,
+        track_id: Option<TrackId>,
+        position: crate::TimelineSeek,
+    },
+    /// Removes the link between the members of a linked pair. Undoable; no
+    /// timing changes.
+    UnlinkClip {
+        clip_id: ClipId,
+    },
+    /// Links one unlinked video clip and one unlinked audio clip with the same
+    /// media, start, duration and source in-point. Undoable.
+    LinkClips {
+        clip_id: ClipId,
+        partner_id: ClipId,
+    },
+    /// Audio track controls. Each is one undo step and never stops playback.
+    SetTrackGain {
+        track_id: TrackId,
+        gain_cdb: i32,
+    },
+    SetTrackMute {
+        track_id: TrackId,
+        mute: bool,
+    },
+    SetTrackSolo {
+        track_id: TrackId,
+        solo: bool,
+    },
     /// Moves a clip to `position` on a video track, keeping identity, media,
     /// source in-point and duration. `anchor` says which edge `position` names.
     MoveClip {
@@ -144,6 +177,7 @@ pub struct TrackSummary {
     pub name: String,
     pub kind: TrackKind,
     pub clip_count: usize,
+    pub controls: TrackControls,
 }
 
 /// One timeline clip as stored in the project (exact ticks, never pixels).
@@ -177,6 +211,9 @@ pub struct HistoryStatus {
     pub undo: Option<String>,
     pub redo: Option<String>,
     pub depth: usize,
+    /// The next undo/redo only changes track controls, so playback continues.
+    pub undo_track: bool,
+    pub redo_track: bool,
 }
 
 /// Small view DTO, never the mutable project or a decoded frame buffer.

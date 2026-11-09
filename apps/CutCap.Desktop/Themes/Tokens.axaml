@@ -54,6 +54,11 @@
   <SolidColorBrush x:Key="VideoFill" Color="{StaticResource VideoFillColor}" />
   <SolidColorBrush x:Key="Audio" Color="{StaticResource AudioColor}" />
   <SolidColorBrush x:Key="AudioFill" Color="{StaticResource AudioFillColor}" />
+  <!-- Track mixer states: amber solo, the error red for mute (no purple). -->
+  <SolidColorBrush x:Key="MuteOn" Color="#FF8F84" />
+  <SolidColorBrush x:Key="MuteOnWash" Color="#4A2926" />
+  <SolidColorBrush x:Key="SoloOn" Color="#F2C14E" />
+  <SolidColorBrush x:Key="SoloOnWash" Color="#4A3C18" />
   <SolidColorBrush x:Key="Success" Color="{StaticResource SuccessColor}" />
   <SolidColorBrush x:Key="Error" Color="{StaticResource ErrorColor}" />
   <SolidColorBrush x:Key="Overlay" Color="#E00C0D0F" />

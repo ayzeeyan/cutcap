@@ -1,5 +1,53 @@
 # Architecture decisions
 
+## ADR 026 — Bounded multi-track mixer, schema 3 and independent audio (Phase 4C)
+
+The binding detail is `docs/PHASE_4C_AUDIO_MIXING_CONTRACT.md`.
+
+**One output, one clock, many tracks.** The feeder sums every audio track, in
+project order, into one float32 stereo ring and one WASAPI stream. The device
+position stays the timeline clock. Rejected: one output per track (no shared
+clock, one endpoint client per track) and mixing on the render thread (it would
+wait on per-track PCM on a realtime thread; the render thread stays copy-only).
+
+**Mix-ahead, not ring size, bounds control latency.** The ring remains 400 ms but
+the mixer keeps only 150 ms ahead of the device. Controls act on what has not been
+mixed, read once per 10 ms block. Decoded PCM queues, not the ring, absorb decoder
+jitter. Rejected: filling the ring (controls up to 400 ms late).
+
+**Controls.** Track gain is an integer `gain_cdb` (hundredths of a dB, −60 to +6)
+so documents compare and round-trip exactly; linear amplitude is
+`10^(gain_cdb/2000)`. Mute wins over solo. A control change is a 10 ms linear ramp
+from the next block, with no epoch change, so it never restarts the clock. Volume
+drags are transient previews ended by one commit, one history entry. History gains
+a second entry kind rather than a second stack. Rejected: a float gain in the
+document (equality and round-trip), and history per slider tick.
+
+**Clipping.** The final sum is hard-clipped and counted. No limiter or
+normalization: both change the mix invisibly, and neither is needed to protect the
+output path.
+
+**Decoders.** Inaudible tracks keep warm decoders inside the budget so unmuting is
+immediate; a track unmuted past the budget joins late without disturbing the
+others. Limits: 16 audible overlapping tracks, 24 decoders. Exceeding 16 at Play
+is an explicit failure with the position; rejected: silently dropping the excess.
+
+**Audio-only sources.** `MediaSummary.metadata` becomes
+`Video(Box<VideoMetadata>) | Audio(AudioOnlyMetadata)`, deserialized untagged so
+existing files keep their shape. Rejected: a `VideoMetadata` with invented
+dimensions, or a parallel media registry. Containers and codecs are an allowlist,
+each exercised by a real FFmpeg test.
+
+**`source_in` is a rational instant.** Linked and unlinked-from-linked audio keeps
+the video clock value; independently placed audio uses `1/sample_rate`. The value
+is never rewritten by Unlink, so playback is unchanged by it. An independent clip
+is bounded by its own stream, while one that already reaches outside it stays
+valid and cannot grow further. Rejected: converting at Unlink (it changes sample
+mapping by up to a sample at some seek positions).
+
+**Schema 3.** Tracks gain optional `controls`. Earlier schemas migrate in memory;
+a document claiming controls before schema 3 is refused. The envelope stays 1.
+
 ## ADR 025 — Linked audio clips, schema 2, WASAPI audio-master clock, waveforms and ABI 9 (Phase 4B)
 
 **Stream identity and links (schema 2).** A clip names the stream it presents

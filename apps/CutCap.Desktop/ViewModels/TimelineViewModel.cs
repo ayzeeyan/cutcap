@@ -7,9 +7,14 @@ using CutCap.Interop;
 
 namespace CutCap.Desktop.ViewModels;
 
-public sealed partial class TrackViewModel(TrackView track) : ObservableObject
+public sealed partial class TrackViewModel(TrackView track, EngineHost? engine = null) : ObservableObject
 {
     public string Id { get; } = track.Id;
+
+    // A volume drag: the slider follows the pointer while Rust hears the
+    // previews; the value shown beside it is always the engine's.
+    private bool _dragging;
+    private double _dragDb;
 
     [ObservableProperty]
     public partial TrackView Track { get; set; } = track;
@@ -21,6 +26,80 @@ public sealed partial class TrackViewModel(TrackView track) : ObservableObject
     // Lanes with clips carry no label (the clips are drawn instead).
     public string AccessibleName => Track.LaneLabel.Length == 0 ? Track.Name : $"{Track.Name}, {Track.LaneLabel}";
 
+    public bool Muted => Track.Muted;
+    public bool Soloed => Track.Soloed;
+    public bool Audible => Track.Audible;
+    public string GainText => Track.GainText;
+    public string MuteName => Muted ? $"Unmute {Name}" : $"Mute {Name}";
+    public string SoloName => Soloed ? $"Remove solo from {Name}" : $"Solo {Name}";
+    public string VolumeName => $"{Name} volume";
+    public string MuteTip => Muted ? "Muted: this track is silent. Click to unmute." : "Mute this track";
+    public string SoloTip => Soloed
+        ? "Soloed: only soloed tracks play. Mute still wins. Click to remove."
+        : "Solo: play only soloed tracks";
+    public string VolumeTip => $"Volume {GainText}, from −60 to +6 dB. Esc cancels a drag.";
+
+    /// <summary>Slider position in dB. Rust owns the value; this forwards a drag as previews.</summary>
+    public double GainDb
+    {
+        get => _dragging ? _dragDb : Track.GainCdb / 100.0;
+        set
+        {
+            var db = Math.Clamp(Math.Round(value * 2) / 2, -60, 6);
+            if (Math.Abs(db - GainDb) < 0.001)
+            {
+                return;
+            }
+            _dragging = true;
+            _dragDb = db;
+            OnPropertyChanged();
+            var cdb = Cdb(db);
+            engine?.Run(session => session.PreviewTrackGain(Id, cdb));
+        }
+    }
+
+    private static int Cdb(double db) => (int)Math.Round(db * 100);
+
+    /// <summary>Ends a volume gesture with one undoable change. No-op outside a drag.</summary>
+    public void CommitGain()
+    {
+        if (!_dragging)
+        {
+            return;
+        }
+        _dragging = false;
+        var cdb = Cdb(_dragDb);
+        engine?.Run(session => session.CommitTrackGain(Id, cdb));
+        OnPropertyChanged(nameof(GainDb));
+    }
+
+    /// <summary>Abandons a volume gesture; the stored value applies again.</summary>
+    public bool CancelGain()
+    {
+        if (!_dragging)
+        {
+            return false;
+        }
+        _dragging = false;
+        engine?.Run(session => session.CancelTrackGain());
+        OnPropertyChanged(nameof(GainDb));
+        return true;
+    }
+
+    [RelayCommand]
+    private void ToggleMute()
+    {
+        var muted = !Muted;
+        engine?.Run(session => session.SetTrackMute(Id, muted));
+    }
+
+    [RelayCommand]
+    private void ToggleSolo()
+    {
+        var soloed = !Soloed;
+        engine?.Run(session => session.SetTrackSolo(Id, soloed));
+    }
+
     partial void OnTrackChanged(TrackView value)
     {
         OnPropertyChanged(nameof(Name));
@@ -28,6 +107,20 @@ public sealed partial class TrackViewModel(TrackView track) : ObservableObject
         OnPropertyChanged(nameof(IsVideo));
         OnPropertyChanged(nameof(IsAudio));
         OnPropertyChanged(nameof(AccessibleName));
+        OnPropertyChanged(nameof(Muted));
+        OnPropertyChanged(nameof(Soloed));
+        OnPropertyChanged(nameof(Audible));
+        OnPropertyChanged(nameof(GainText));
+        OnPropertyChanged(nameof(MuteName));
+        OnPropertyChanged(nameof(SoloName));
+        OnPropertyChanged(nameof(VolumeName));
+        OnPropertyChanged(nameof(MuteTip));
+        OnPropertyChanged(nameof(SoloTip));
+        OnPropertyChanged(nameof(VolumeTip));
+        if (!_dragging)
+        {
+            OnPropertyChanged(nameof(GainDb));
+        }
     }
 }
 
@@ -41,7 +134,8 @@ public sealed partial class TrackViewModel(TrackView track) : ObservableObject
 /// <para>Insertion policy (explicit, append-to-end): the whole selected ready
 /// source is placed after the last clip of the target video track. The target
 /// is the selected track if it is a video track, else the track of the selected
-/// clip, else the first video track.</para>
+/// clip, else the first video track. An audio-only source uses audio tracks by
+/// the same rule.</para>
 /// </summary>
 public sealed partial class TimelineViewModel : ObservableObject
 {
@@ -88,7 +182,7 @@ public sealed partial class TimelineViewModel : ObservableObject
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(AddVideoTrackCommand), nameof(AddAudioTrackCommand), nameof(AddClipCommand),
-        nameof(RemoveClipCommand), nameof(UndoCommand), nameof(RedoCommand), nameof(SplitCommand))]
+        nameof(RemoveClipCommand), nameof(UndoCommand), nameof(RedoCommand), nameof(SplitCommand), nameof(UnlinkCommand))]
     public partial bool EngineReady { get; set; }
 
     /// <summary>Clips in project order, as the engine presents them.</summary>
@@ -96,14 +190,14 @@ public sealed partial class TimelineViewModel : ObservableObject
     public partial IReadOnlyList<ClipView> Clips { get; set; } = [];
 
     [ObservableProperty]
-    [NotifyCanExecuteChangedFor(nameof(RemoveClipCommand), nameof(SplitCommand))]
+    [NotifyCanExecuteChangedFor(nameof(RemoveClipCommand), nameof(SplitCommand), nameof(UnlinkCommand))]
     [NotifyPropertyChangedFor(nameof(RemoveClipTip))]
     public partial ClipView? SelectedClip { get; set; }
 
     /// <summary>Rust's split availability for the selected clip at the playhead.</summary>
     [ObservableProperty]
-    [NotifyCanExecuteChangedFor(nameof(SplitCommand))]
-    [NotifyPropertyChangedFor(nameof(SplitTip))]
+    [NotifyCanExecuteChangedFor(nameof(SplitCommand), nameof(UnlinkCommand), nameof(LinkCommand))]
+    [NotifyPropertyChangedFor(nameof(SplitTip), nameof(UnlinkTip), nameof(ShowUnlink), nameof(ShowLink))]
     public partial EditingView Editing { get; set; } = new(false, "Select a clip, then place the playhead inside it to split (Ctrl+B).");
 
     /// <summary>The live gesture hint while dragging, otherwise the editing help.</summary>
@@ -113,6 +207,24 @@ public sealed partial class TimelineViewModel : ObservableObject
     public const string DefaultHint = "Drag clips to move · drag edges to trim · Shift: no snapping · Esc: cancel";
 
     public string SplitTip => Editing.SplitDetail;
+    public string UnlinkTip => Editing.CanUnlink
+        ? "Unlink this clip's video and audio so each can be edited alone"
+        : "Select a linked clip to unlink its video and audio";
+    public bool ShowUnlink => Editing.CanUnlink;
+    public bool ShowLink => Editing.LinkCandidate is not null;
+
+    /// <summary>The mix hit the output limit in this playback (Rust's counter).</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ClippingTip))]
+    public partial ulong ClippedSamples { get; set; }
+
+    public bool Clipping => ClippedSamples > 0;
+    public string ClippingTip => $"The mix exceeded full scale: {ClippedSamples:N0} samples were clipped. Lower a track.";
+
+    partial void OnClippedSamplesChanged(ulong value) => OnPropertyChanged(nameof(Clipping));
+
+    /// <summary>Mixer diagnostics change every block; only the clip indicator is shown.</summary>
+    public void ApplyAudio(AudioView? audio) => ClippedSamples = audio?.Mix?.ClippedSamples ?? 0;
 
     /// <summary>The library's selected source, the candidate for insertion.</summary>
     [ObservableProperty]
@@ -137,6 +249,7 @@ public sealed partial class TimelineViewModel : ObservableObject
     {
         (null, _) => "Select a source video in Media to add it to the timeline",
         ({ Availability: not "ready" } source, _) => $"{source.Name} is unavailable; relink it first",
+        ({ AudioOnly: true }, null) => "Add an audio track first",
         (_, null) => "Add a video track first",
         var (source, track) => $"Add {source.Name} to the end of {track.Name}",
     };
@@ -173,6 +286,39 @@ public sealed partial class TimelineViewModel : ObservableObject
     public void ShowGestureHint(string? hint) => EditHint = hint ?? DefaultHint;
 
     private bool CanSplit() => EngineReady && SelectedClip is not null && Editing.SplitEnabled;
+
+    private bool CanUnlink() => EngineReady && SelectedClip is not null && Editing.CanUnlink;
+
+    [RelayCommand(CanExecute = nameof(CanUnlink))]
+    private void Unlink()
+    {
+        if (SelectedClip is { } clip)
+        {
+            _engine.Run(session => session.UnlinkClip(clip.Id));
+        }
+    }
+
+    private bool CanLink() => EngineReady && SelectedClip is not null && Editing.LinkCandidate is not null;
+
+    [RelayCommand(CanExecute = nameof(CanLink))]
+    private void Link()
+    {
+        if (SelectedClip is { } clip && Editing.LinkCandidate is { } partner)
+        {
+            _engine.Run(session => session.LinkClips(clip.Id, partner));
+        }
+    }
+
+    /// <summary>
+    /// Places one chosen stream at the playhead, on the selected audio track
+    /// or (Rust's rule) the first audio track free for its whole interval.
+    /// </summary>
+    public void PlaceAudioStream(string mediaId, uint stream)
+    {
+        var track = Tracks.FirstOrDefault(t => t.Track.Selected && t.IsAudio)?.Id;
+        var position = TimelinePosition.Ticks(PlayheadTicks);
+        _engine.Run(session => session.PlaceAudioStream(mediaId, stream, track, position));
+    }
 
     [RelayCommand(CanExecute = nameof(CanSplit))]
     private void Split()
@@ -272,10 +418,10 @@ public sealed partial class TimelineViewModel : ObservableObject
     }
 
     /// <summary>The insertion target named in the class summary.</summary>
-    public static TrackViewModel? ChooseTarget(IReadOnlyList<TrackViewModel> tracks, ClipView? selectedClip) =>
-        tracks.FirstOrDefault(t => t.Track.Selected && t.IsVideo)
-        ?? (selectedClip is null ? null : tracks.FirstOrDefault(t => t.Id == selectedClip.TrackId && t.IsVideo))
-        ?? tracks.FirstOrDefault(t => t.IsVideo);
+    public static TrackViewModel? ChooseTarget(IReadOnlyList<TrackViewModel> tracks, ClipView? selectedClip, bool audioOnly = false) =>
+        tracks.FirstOrDefault(t => t.Track.Selected && t.IsAudio == audioOnly)
+        ?? (selectedClip is null ? null : tracks.FirstOrDefault(t => t.Id == selectedClip.TrackId && t.IsAudio == audioOnly))
+        ?? tracks.FirstOrDefault(t => t.IsAudio == audioOnly);
 
     private bool CanZoomIn() => Zoom < TimelineScale.MaxZoom;
     private bool CanZoomOut() => Zoom > TimelineScale.MinZoom;
@@ -303,14 +449,14 @@ public sealed partial class TimelineViewModel : ObservableObject
         try
         {
             EngineReady = view.EngineReady;
-            Sync.Items(Tracks, view.Tracks, t => t.Id, t => t.Id, t => new TrackViewModel(t), (item, t) => item.Track = t);
-            Lanes = view.Tracks.Select(t => new LaneInfo(t.IsVideo, t.Selected, t.LaneLabel, t.Id)).ToArray();
+            Sync.Items(Tracks, view.Tracks, t => t.Id, t => t.Id, t => new TrackViewModel(t, _engine), (item, t) => item.Track = t);
+            Lanes = view.Tracks.Select(t => new LaneInfo(t.IsVideo, t.Selected, t.LaneLabel, t.Id, t.IsVideo || t.Audible)).ToArray();
             SelectedTrack = Tracks.FirstOrDefault(t => t.Track.Selected);
             var clips = timeline?.Clips ?? [];
             if (!ReferenceEquals(clips, Clips)) { Clips = clips; }
             SelectedClip = clips.FirstOrDefault(c => c.Selected);
             Source = view.Media.FirstOrDefault(m => m.Selected);
-            TargetTrack = ChooseTarget(Tracks, SelectedClip);
+            TargetTrack = ChooseTarget(Tracks, SelectedClip, Source?.AudioOnly ?? false);
             History = view.History ?? new HistoryStatus(false, false, null, null, 0);
             ApplyEditing(view.Editing);
         }

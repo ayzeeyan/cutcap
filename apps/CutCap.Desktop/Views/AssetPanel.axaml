@@ -42,7 +42,7 @@
                 </TextBox.InnerLeftContent>
               </TextBox>
               <Button Grid.Column="1" Classes="filled" Margin="6,0,0,0" Command="{Binding ImportCommand}"
-                      AutomationProperties.Name="Import media" ToolTip.Tip="Import a local video (Ctrl+I)">
+                      AutomationProperties.Name="Import media" ToolTip.Tip="Import a local video or audio file (Ctrl+I)">
                 <StackPanel Orientation="Horizontal" Spacing="6">
                   <c:IconView Glyph="Import" />
                   <TextBlock Text="Import" VerticalAlignment="Center" />
@@ -82,12 +82,12 @@
                       <c:IconView Glyph="Plus" Foreground="{StaticResource AccentInk}" Width="18" Height="18" HorizontalAlignment="Center" />
                     </Border>
                     <TextBlock Text="Import" FontWeight="SemiBold" FontSize="14" HorizontalAlignment="Center" />
-                    <TextBlock Text="Choose a local video · Ctrl+I" Classes="fine faint" HorizontalAlignment="Center" />
+                    <TextBlock Text="Choose a local video or audio file · Ctrl+I" Classes="fine faint" HorizontalAlignment="Center" />
                   </StackPanel>
                 </Button>
                 <TextBlock Text="No media yet" FontWeight="SemiBold" />
                 <TextBlock Classes="label faint" TextWrapping="Wrap"
-                           Text="Imported videos appear here with their real duration and format. CutCap never changes the original file." />
+                           Text="Imported media appears here with its real duration and format. CutCap never changes the original file." />
               </StackPanel>
 
               <TextBlock IsVisible="{Binding Library.HasNoMatches}" Text="{Binding Library.NoMatchesText}"
@@ -112,7 +112,7 @@
                       <Border Classes="thumb" Height="63" CornerRadius="6" BorderThickness="2"
                               Background="{StaticResource TileGradient}" ClipToBounds="True">
                         <Panel>
-                          <c:IconView Glyph="Film" Width="20" Height="20" HorizontalAlignment="Center" Foreground="{StaticResource Faint}" />
+                          <c:IconView Glyph="{Binding TileGlyph}" Width="20" Height="20" HorizontalAlignment="Center" Foreground="{StaticResource Faint}" />
                           <Border IsVisible="{Binding HasAudio}" HorizontalAlignment="Left" VerticalAlignment="Top"
                                   Margin="4" Padding="3,2" CornerRadius="3" Background="#A0000000">
                             <c:IconView Glyph="AudioBadge" Width="11" Height="11" Foreground="{StaticResource Audio}" />

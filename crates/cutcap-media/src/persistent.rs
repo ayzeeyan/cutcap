@@ -250,7 +250,7 @@ mod tests {
         let media = MediaSummary {
             id: MediaId::new(),
             path: "fixture.mp4".into(),
-            metadata,
+            metadata: metadata.into(),
         };
         DecodeRequest {
             ticket: PreviewTicket {
@@ -258,7 +258,7 @@ mod tests {
                 media_id: media.id,
                 request_id: RequestId::new(),
             },
-            position: media.metadata.start(),
+            position: media.metadata.video().unwrap().start(),
             media,
         }
     }

@@ -1,0 +1,46 @@
+13:07:45.620 scale=1.5
+13:08:02.962 1-2 linked pair placed: 178 ms
+13:08:11.094 3 audio-only tile, inspector: 'Stream #0 · PCM_S16LE · 48000 Hz · 2 ch · primary' source monitor: True
+13:08:22.664 4 audio-only placed on Audio 2: 226 ms
+13:08:27.927 4 waveform pixels: Audio 1 1400, Audio 2 840
+13:09:00.162 drag result: 'Volume −11.5 dB, from −60 to +6 dB. Esc cancels a drag.'; undo offers: 'Undo set Audio 2 volume to −11.5 dB (Ctrl+Z)'; playback state unchanged by controls
+13:09:00.176 6 both tracks : 400 Hz 0.22604  800 Hz 0.17884  1200 Hz 2E-05
+13:09:00.177 7 Audio 2 lowered : 400 Hz 0.23215  800 Hz 0.055  1200 Hz 2E-05
+13:09:00.181 7 Audio 2 change measured -10.24 dB (engine: Volume −11.5 dB, from −60 to +6 dB. Esc cancels a drag.); Audio 1 change 0.23 dB
+13:09:00.182 8 Audio 1 muted : 400 Hz 0  800 Hz 0.06043  1200 Hz 0
+13:09:00.183 9 Audio 1 muted and soloed (mute wins, others silenced) : 400 Hz 0  800 Hz 0  1200 Hz 0
+13:09:00.184 9 Audio 1 soloed : 400 Hz 0.23105  800 Hz 1E-05  1200 Hz 2E-05
+13:09:00.186 10 restored : 400 Hz 0.20374  800 Hz 0.1672  1200 Hz 2E-05
+13:09:00.196 control latency (press to loopback tap): mute 289 ms, unmute 300 ms, solo 301 ms, volume 151 ms
+13:09:00.197 first audio latency: play to 400 Hz at loopback 683 ms
+13:09:01.676 11 before unlink, button enabled: True
+13:09:03.738 11 after unlink, button enabled: False; undo offers 'Undo unlink mix film.mp4 (Ctrl+Z)'; re-link offered: True
+13:09:06.721 12 audio moved alone: 178 ms
+13:09:09.128 13 trimmed: 216 ms
+13:09:12.850 13 split: 186 ms
+13:09:15.926 14 undo split: 196 ms
+13:09:16.537 14 undo trim: 170 ms
+13:09:17.124 14 redo trim: 180 ms
+13:09:17.756 14 redo split: 217 ms
+13:09:31.129 15 alternate stream placed: 196 ms
+13:09:35.222 15 Audio 3 waveform pixels: 1400
+13:09:44.028 15 all three streams mixed : 400 Hz 0.2337  800 Hz 0.15965  1200 Hz 0.12496
+13:09:46.565 15 settings before save: Volume −5.5 dB, from −60 to +6 dB. Esc cancels a drag., Audio 3 muted: True
+13:09:54.773 15 mix before save (12 s on) : 400 Hz 0.2193  800 Hz 0.11276  1200 Hz 2E-05
+13:10:02.611 16 saved schema 3: Video 1:null ; Audio 1:null ; Audio 2:{"gain_cdb":-550,"mute":false,"solo":false} ; Audio 3:{"gain_cdb":0,"mute":true,"solo":false}
+13:10:02.626 16 clips: video@0+21600000 ; audio#1@2160000+5040000 ; audio#1@7200000+15840000 ; audio@0+21600000 ; audio#2@0+21600000
+13:10:03.331 close after save | exited=True in 694 ms code=0 leftover=0
+13:10:14.596 17 reopened: 238 ms
+13:10:23.375 18 waveforms after reopen: Audio 1 800, Audio 2 840, Audio 3 (muted, dimmed) 840; settings: Volume −5.5 dB, from −60 to +6 dB. Esc cancels a drag., Audio 3 muted: True
+13:10:32.126 18 mix after reopen : 400 Hz 0.22016  800 Hz 0.1129  1200 Hz 2E-05
+13:10:32.127 18 level change after reopen: 400 Hz 0.03 dB, 800 Hz 0.01 dB; 1200 Hz (muted) 2E-05; file unchanged: True
+13:10:32.812 close after reopen | exited=True in 684 ms code=0 leftover=0
+13:10:44.201 19 schema 1 project: 168 ms
+13:10:53.276 19 schema 1: played, playhead 00:02.632, output rms 0; file unchanged by opening: True
+13:10:53.935 close schema 1 | exited=True in 658 ms code=0 leftover=0
+13:11:05.327 19 schema 2 project: 228 ms
+13:11:14.390 19 schema 2: played, playhead 00:02.464, output rms 0.15693; file unchanged by opening: True
+13:11:15.047 close schema 2 | exited=True in 656 ms code=0 leftover=0
+13:11:32.670 20 decoders running before close: 4 FFmpeg processes
+13:11:33.334 close during multi-track decoding | exited=True in 663 ms code=0 leftover=0
+13:11:35.681 21 after close: CutCap/FFmpeg/FFprobe processes=0, output rms=0 (silent: endpoint released)

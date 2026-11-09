@@ -77,7 +77,7 @@ fn audio_media() -> MediaSummary {
     MediaSummary {
         id: MediaId::new(),
         path: "C:/clips/tone.mkv".into(),
-        metadata: cutcap_media::parse_probe(probe).unwrap(),
+        metadata: cutcap_media::parse_probe(probe).unwrap().into(),
     }
 }
 
@@ -265,6 +265,9 @@ fn starvation_freezes_the_clock_and_counts_underruns() {
     };
     t.begin(plan, TimelineTime::ZERO);
     t.wait_buffered(14_400);
+    // The ring holding the last frames does not yet mean the output knows the
+    // epoch is over; padding before that would count as an underrun.
+    t.wait_finished();
     t.play();
     let now = Instant::now();
     // The device asks for more than exists in the epoch: the remainder is

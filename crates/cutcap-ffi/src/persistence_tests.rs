@@ -16,6 +16,7 @@ fn document(directory: &Path) -> Document {
                 id,
                 name: format!("{kind:?}"),
                 kind,
+                controls: Default::default(),
             })
             .unwrap();
     }
@@ -352,6 +353,7 @@ fn linked_document(directory: &Path) -> Document {
                 id,
                 name: name.into(),
                 kind,
+                controls: Default::default(),
             })
             .unwrap();
     }
@@ -407,7 +409,7 @@ fn linked_pairs_round_trip_with_streams_links_and_exact_timing() {
     save(&doc, &path, &Cancellation::default()).unwrap();
     let text = fs::read_to_string(&path).unwrap();
     let stored: serde_json::Value = serde_json::from_str(&text).unwrap();
-    assert_eq!(stored["project"]["schema_version"], 2);
+    assert_eq!(stored["project"]["schema_version"], 3);
     assert_eq!(stored["project"]["clips"][1]["stream"]["kind"], "audio");
     assert_eq!(stored["project"]["clips"][1]["stream"]["index"], 1);
     assert_eq!(
@@ -483,4 +485,154 @@ fn schema_one_files_open_migrated_and_refused_migrations_leave_the_file_untouche
         error.message
     );
     assert_eq!(fs::read(&bad).unwrap(), bytes);
+}
+
+/// A linked-pair document plus an audio-only source and non-default controls.
+fn mixed_document(directory: &Path) -> Document {
+    let doc = linked_document(directory);
+    let mut project = doc.project.clone();
+    let mut sources = doc.sources.clone();
+    let audio_track = project
+        .tracks()
+        .iter()
+        .find(|t| t.kind == TrackKind::Audio)
+        .unwrap()
+        .id;
+    project
+        .set_track_controls(
+            audio_track,
+            TrackControls {
+                gain_cdb: -725,
+                mute: true,
+                solo: true,
+            },
+        )
+        .unwrap();
+    let second = TrackId::new();
+    project
+        .add_track(Track {
+            id: second,
+            name: "Music".into(),
+            kind: TrackKind::Audio,
+            controls: TrackControls {
+                gain_cdb: 150,
+                mute: false,
+                solo: false,
+            },
+        })
+        .unwrap();
+    let path = directory.join("song.mp3");
+    fs::write(&path, b"mp3").unwrap();
+    let media = MediaId::new();
+    project
+        .add_media(cutcap_core::MediaAsset {
+            id: media,
+            path: fs::canonicalize(&path).unwrap(),
+            kind: TrackKind::Audio,
+        })
+        .unwrap();
+    let probe = br#"{"streams":[{"index":0,"codec_type":"audio","codec_name":"mp3","sample_rate":"44100","channels":2,"time_base":"1/14112000","start_pts":353600,"duration_ts":84672000}],"format":{"format_name":"mp3"}}"#;
+    sources.push(SavedSource {
+        id: media,
+        metadata: Some(cutcap_media::parse_source_probe(probe).unwrap()),
+        fingerprint: None,
+    });
+    project
+        .insert_clip(cutcap_core::Clip {
+            id: ClipId::new(),
+            media_id: media,
+            track_id: second,
+            start: TimelineTime(720),
+            duration: TimelineDuration::new(720_000).unwrap(),
+            source_in: SourceTime {
+                ticks: 1105,
+                timebase: Timebase::new(1, 44_100).unwrap(),
+            },
+            stream: cutcap_core::ClipStream::Audio { index: 0 },
+            link: None,
+        })
+        .unwrap();
+    Document::new(project, sources).unwrap()
+}
+
+#[test]
+fn track_controls_audio_only_sources_and_streams_round_trip_exactly() {
+    let directory = tempfile::tempdir().unwrap();
+    let doc = mixed_document(directory.path());
+    let path = directory.path().join("mixed.cutcap");
+    save(&doc, &path, &Cancellation::default()).unwrap();
+    let text = fs::read_to_string(&path).unwrap();
+    let stored: serde_json::Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(stored["format_version"], 1);
+    assert_eq!(stored["project"]["schema_version"], 3);
+    assert!(!text.contains("\"width\":0"), "no invented picture");
+    let opened = open(&path, &Cancellation::default()).unwrap();
+    assert_eq!(opened.project.tracks(), doc.project.tracks());
+    assert_eq!(opened.project.clips(), doc.project.clips());
+    let audio_only = opened
+        .sources
+        .iter()
+        .find(|s| s.metadata.as_ref().is_some_and(|m| m.is_audio_only()))
+        .unwrap();
+    assert_eq!(
+        audio_only
+            .metadata
+            .as_ref()
+            .unwrap()
+            .primary_audio()
+            .unwrap()
+            .codec,
+        "mp3"
+    );
+}
+
+#[test]
+fn schema_two_files_open_with_default_controls_and_refusals_leave_them_untouched() {
+    let directory = tempfile::tempdir().unwrap();
+    let doc = linked_document(directory.path());
+    let path = directory.path().join("two.cutcap");
+    save(&doc, &path, &Cancellation::default()).unwrap();
+    let mut value: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+    value["project"]["schema_version"] = 2.into();
+    let old = directory.path().join("schema2.cutcap");
+    let bytes = serde_json::to_vec_pretty(&value).unwrap();
+    fs::write(&old, &bytes).unwrap();
+    let opened = open(&old, &Cancellation::default()).unwrap();
+    assert!(
+        opened
+            .project
+            .tracks()
+            .iter()
+            .all(|t| t.controls.is_default())
+    );
+    assert_eq!(opened.project.clips(), doc.project.clips());
+    assert_eq!(
+        fs::read(&old).unwrap(),
+        bytes,
+        "opening never rewrites the file"
+    );
+    // A schema 2 file cannot carry controls: refused, untouched.
+    let index = value["project"]["tracks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .position(|t| t["kind"] == "Audio")
+        .unwrap();
+    value["project"]["tracks"][index]["controls"] = serde_json::json!({"mute": true});
+    let bad = directory.path().join("bad.cutcap");
+    let bytes = serde_json::to_vec_pretty(&value).unwrap();
+    fs::write(&bad, &bytes).unwrap();
+    assert!(open(&bad, &Cancellation::default()).is_err());
+    assert_eq!(fs::read(&bad).unwrap(), bytes);
+}
+
+#[test]
+fn a_video_asset_cannot_claim_audio_only_metadata() {
+    let directory = tempfile::tempdir().unwrap();
+    let doc = linked_document(directory.path());
+    let mut sources = doc.sources.clone();
+    let probe = br#"{"streams":[{"index":0,"codec_type":"audio","codec_name":"mp3","sample_rate":"44100","channels":2,"time_base":"1/14112000","start_pts":0,"duration_ts":84672000}],"format":{"format_name":"mp3"}}"#;
+    sources[0].metadata = Some(cutcap_media::parse_source_probe(probe).unwrap());
+    assert!(Document::new(doc.project.clone(), sources).is_err());
 }

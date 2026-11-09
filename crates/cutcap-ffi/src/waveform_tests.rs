@@ -57,7 +57,7 @@ fn av_media() -> MediaSummary {
     MediaSummary {
         id: MediaId::new(),
         path: "C:/av.mkv".into(),
-        metadata: parse_probe(AV_PROBE).unwrap(),
+        metadata: parse_probe(AV_PROBE).unwrap().into(),
     }
 }
 

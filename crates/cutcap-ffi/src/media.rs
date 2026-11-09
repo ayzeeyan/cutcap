@@ -51,6 +51,8 @@ pub struct MediaHost {
     copy_ticket: Option<PreviewTicket>,
     probe: Option<ProbeJob>,
     selected: Option<(ProjectId, MediaSummary)>,
+    /// The audio-only source shown in the Source monitor (nothing to decode).
+    audio_only: Option<(ProjectId, MediaId)>,
     /// Presentation gate: only this ticket may replace the displayed frame.
     ticket: Option<(PreviewTicket, Instant)>,
     frame: Option<PresentedFrame>,
@@ -80,6 +82,7 @@ impl MediaHost {
             copy_ticket: None,
             probe: None,
             selected: None,
+            audio_only: None,
             ticket: None,
             frame: None,
             generation: 0,
@@ -216,7 +219,7 @@ impl MediaHost {
                     message: if checking {
                         "Checking source content and metadata…"
                     } else {
-                        "Reading video metadata and source fingerprint…"
+                        "Reading media metadata and source fingerprint…"
                     }
                     .into(),
                 };
@@ -257,6 +260,7 @@ impl MediaHost {
         }
         self.clear_preview();
         self.selected = None;
+        self.audio_only = None;
         self.source.status = "Selecting source…".into();
     }
 
@@ -283,22 +287,32 @@ impl MediaHost {
         {
             return;
         }
+        if self.audio_only == Some((project_id, media.id)) {
+            return;
+        }
         self.pending_selection();
-        self.source.ready = true;
         self.source.title = view::file_name(&media);
-        self.source.duration_ms = media
-            .metadata
+        // An audio-only source has no picture to preview: say so and stay idle.
+        let Some(video) = media.metadata.video() else {
+            self.audio_only = Some((project_id, media.id));
+            self.source.ready = false;
+            self.source.status = "Audio-only source".into();
+            self.source.detail = "Place it on an audio track to hear it on the timeline.".into();
+            return;
+        };
+        self.source.ready = true;
+        self.source.duration_ms = video
             .duration_ticks
             .and_then(|ticks| {
                 SourceTime {
                     ticks,
-                    timebase: media.metadata.timebase,
+                    timebase: video.timebase,
                 }
                 .rescale(millis(), Rounding::Ceil)
                 .ok()
             })
             .map_or(0, |time| time.ticks.clamp(0, i64::from(i32::MAX)));
-        self.source.duration_estimated = media.metadata.duration_is_estimate;
+        self.source.duration_estimated = video.duration_is_estimate;
         self.source.position_ms = 0;
         self.metrics.probe_us = self.probe_times.get(&media.id).copied();
         self.selected = Some((project_id, media));
@@ -314,6 +328,10 @@ impl MediaHost {
             .selected
             .as_ref()
             .ok_or_else(|| MediaError::Invalid("Select a source first.".into()))?;
+        let video = media
+            .metadata
+            .video()
+            .ok_or_else(|| MediaError::Unsupported("This source has no video stream.".into()))?;
         if !(0..=MAX_MEDIA_SECONDS * 1000).contains(&milliseconds) {
             return Err(MediaError::Invalid(
                 "Source time must be between 0 and 24 hours.".into(),
@@ -323,10 +341,9 @@ impl MediaHost {
             ticks: milliseconds,
             timebase: millis(),
         }
-        .rescale(media.metadata.timebase, Rounding::Ceil)
+        .rescale(video.timebase, Rounding::Ceil)
         .map_err(|_| MediaError::Invalid("Source time overflow.".into()))?;
-        let ticks = media
-            .metadata
+        let ticks = video
             .start_pts
             .checked_add(offset.ticks)
             .ok_or_else(|| MediaError::Invalid("Source time overflow.".into()))?;
@@ -339,7 +356,7 @@ impl MediaHost {
             media: media.clone(),
             position: SourceTime {
                 ticks,
-                timebase: media.metadata.timebase,
+                timebase: video.timebase,
             },
         })
     }
@@ -491,7 +508,7 @@ impl MediaHost {
             busy: false,
             error: false,
             message: name.map_or_else(
-                || "Video imported.".to_owned(),
+                || "Media imported.".to_owned(),
                 |n| format!("Imported {n}."),
             ),
         };
@@ -643,9 +660,13 @@ impl MediaHost {
         }
         let relative = media
             .metadata
-            .start()
-            .rescale(decoded.actual.timebase, Rounding::Floor)
-            .ok()
+            .video()
+            .and_then(|video| {
+                video
+                    .start()
+                    .rescale(decoded.actual.timebase, Rounding::Floor)
+                    .ok()
+            })
             .and_then(|origin| decoded.actual.ticks.checked_sub(origin.ticks))
             .map(|ticks| SourceTime {
                 ticks,

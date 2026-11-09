@@ -116,6 +116,7 @@ fn fixture(second_start: i64) -> (TimelinePlan, Vec<Clip>) {
         id: TrackId::new(),
         name: "Video 1".into(),
         kind: TrackKind::Video,
+        controls: Default::default(),
     };
     project.add_track(track.clone()).unwrap();
     let mut media = BTreeMap::new();
@@ -137,7 +138,7 @@ fn fixture(second_start: i64) -> (TimelinePlan, Vec<Clip>) {
             MediaSummary {
                 id,
                 path: "controlled.mkv".into(),
-                metadata,
+                metadata: metadata.into(),
             },
         );
         availability.insert(
@@ -457,8 +458,8 @@ fn mixed_source_clocks_and_negative_offsets_map_to_the_same_exact_cut() {
             timebase: clock,
         };
         let media = plan.media.get_mut(&clips[1].media_id).unwrap();
-        media.metadata.timebase = clock;
-        media.metadata.start_pts = origin;
+        media.metadata.video_mut().unwrap().timebase = clock;
+        media.metadata.video_mut().unwrap().start_pts = origin;
         // Build the authoritative index with this exact source-in, keeping identities.
         let mut project = Project::new("Mixed", plan.timebase).unwrap();
         project
@@ -466,6 +467,7 @@ fn mixed_source_clocks_and_negative_offsets_map_to_the_same_exact_cut() {
                 id: clips[0].track_id,
                 name: "Video".into(),
                 kind: TrackKind::Video,
+                controls: Default::default(),
             })
             .unwrap();
         for c in &clips {
@@ -569,6 +571,7 @@ fn av_fixture(cut: i64) -> (TimelinePlan, Vec<Clip>) {
                 id,
                 name: name.into(),
                 kind,
+                controls: Default::default(),
             })
             .unwrap();
     }
@@ -588,7 +591,7 @@ fn av_fixture(cut: i64) -> (TimelinePlan, Vec<Clip>) {
             MediaSummary {
                 id,
                 path: "av.mkv".into(),
-                metadata: parse_probe(probe).unwrap(),
+                metadata: parse_probe(probe).unwrap().into(),
             },
         );
         availability.insert(
@@ -684,7 +687,8 @@ fn audio_is_the_master_clock_and_wall_time_alone_never_advances_playback() {
     let mut slot = p.new_slot(clips[0].clone(), TimelineTime::ZERO, 0).unwrap();
     seed(&mut slot, &[0, 250, 500, 750], true, p.clock.timebase);
     p.active = Some(slot);
-    audio(&p).wait_buffered(6000);
+    // All of what the device will play below, or it would run short.
+    audio(&p).wait_buffered(12_000);
     p.poll(now, &mut m);
     assert_eq!(p.view.state, "playing");
     // Five wall-clock seconds pass but the device has played nothing yet.
@@ -804,5 +808,37 @@ fn audio_runs_through_a_cut_and_the_end_stops_the_device() {
         audio(&p).view().state,
         "idle",
         "the device epoch ends with the timeline"
+    );
+}
+
+#[test]
+fn a_device_failure_stops_playback_with_a_reason_and_the_next_start_is_silent() {
+    let now = Instant::now();
+    let (plan, clips) = av_fixture(1000);
+    let (mut p, mut m) = av_transport(plan, now);
+    let mut slot = p.new_slot(clips[0].clone(), TimelineTime::ZERO, 0).unwrap();
+    seed(&mut slot, &[0, 250, 500, 750], true, p.clock.timebase);
+    p.active = Some(slot);
+    audio(&p).wait_buffered(6000);
+    p.poll(now, &mut m);
+    assert_eq!(p.view.state, "playing");
+    audio(&p).simulate_device_failure("The endpoint was unplugged.");
+    p.poll(now, &mut m);
+    assert_eq!(p.view.state, "failed");
+    assert!(p.view.error.as_deref().unwrap().contains("unplugged"));
+    assert!(
+        !p.audio_master,
+        "the failed device no longer clocks anything"
+    );
+    assert_eq!(p.audio_view().unwrap().clock, "system");
+    let (plan, _) = av_fixture(1000);
+    p.begin(plan, true, false, now).unwrap();
+    assert_eq!(p.view.clock_source, "system", "the next Play falls back");
+    assert!(
+        p.audio_view()
+            .unwrap()
+            .detail
+            .unwrap()
+            .contains("unplugged")
     );
 }

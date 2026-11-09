@@ -23,6 +23,7 @@ public sealed partial class MediaItemViewModel(MediaView media) : ObservableObje
     { "checking" => "Checking…", "missing" => "Missing media", "changed" => "Source changed", "unavailable" => "Unavailable", _ => "" };
     public bool ShowAvailability => Media.Availability != "ready";
     public bool HasAudio => Media.HasAudio;
+    public string TileGlyph => Media.AudioOnly ? "Music" : "Film";
     public string AccessibleName =>
         $"{Media.Name}, {Media.Resolution}, {Media.Format}, {(Media.Estimated ? "about " : "")}{Media.Duration}, {(Media.HasAudio ? "with audio" : "no audio")}";
 
@@ -32,6 +33,7 @@ public sealed partial class MediaItemViewModel(MediaView media) : ObservableObje
         OnPropertyChanged(nameof(Stamp));
         OnPropertyChanged(nameof(Details));
         OnPropertyChanged(nameof(HasAudio));
+        OnPropertyChanged(nameof(TileGlyph));
         OnPropertyChanged(nameof(AccessibleName));
         OnPropertyChanged(nameof(Tooltip));
         OnPropertyChanged(nameof(Unavailable));
@@ -102,6 +104,15 @@ public sealed partial class MediaLibraryViewModel : ObservableObject
         if (!_applying && value is not null && !value.Media.Selected)
         {
             _engine.Run(session => session.SelectMedia(value.Id));
+        }
+    }
+
+    /// <summary>Returns the inspector to the current source without reloading it.</summary>
+    public void ShowSource(MediaItemViewModel item)
+    {
+        if (item.Media.Selected)
+        {
+            _engine.Run(session => session.SelectMedia(item.Id));
         }
     }
 

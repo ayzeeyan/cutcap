@@ -31,6 +31,29 @@
     <Setter Property="Padding" Value="0" />
   </Style>
 
+  <Style Selector="Border.audio">
+    <Setter Property="Background" Value="{StaticResource AudioFill}" />
+  </Style>
+
+  <!-- Compact track-header toggles. -->
+  <Style Selector="Button.track-toggle">
+    <Setter Property="Theme" Value="{StaticResource ToolButton}" />
+    <Setter Property="MinWidth" Value="22" />
+    <Setter Property="MinHeight" Value="22" />
+    <Setter Property="Width" Value="22" />
+    <Setter Property="Height" Value="22" />
+    <Setter Property="Padding" Value="0" />
+    <Setter Property="Foreground" Value="{StaticResource Muted}" />
+  </Style>
+  <Style Selector="Button.track-toggle.mute-on">
+    <Setter Property="Background" Value="{StaticResource MuteOnWash}" />
+    <Setter Property="Foreground" Value="{StaticResource MuteOn}" />
+  </Style>
+  <Style Selector="Button.track-toggle.solo-on">
+    <Setter Property="Background" Value="{StaticResource SoloOnWash}" />
+    <Setter Property="Foreground" Value="{StaticResource SoloOn}" />
+  </Style>
+
   <!-- Panels float on the ground with thin gutters. -->
   <Style Selector="Border.panel">
     <Setter Property="Background" Value="{StaticResource Surface}" />

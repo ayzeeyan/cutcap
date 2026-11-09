@@ -121,7 +121,10 @@ pub fn source_key(snapshot: &ProjectSnapshot, media: &MediaSummary) -> String {
     for byte in media.path.as_os_str().to_string_lossy().bytes() {
         hash = (hash ^ u64::from(byte)).wrapping_mul(0x0100_0000_01b3);
     }
-    format!("{}:{hash:016x}:{}", media.id, media.metadata.stream_index)
+    match media.metadata.video() {
+        Some(video) => format!("{}:{hash:016x}:{}", media.id, video.stream_index),
+        None => format!("{}:{hash:016x}:audio", media.id),
+    }
 }
 
 /// Identity of a verified, Ready source's audio stream for waveform caching
@@ -169,7 +172,7 @@ fn filmstrip(
         return None;
     }
     let media = media?;
-    let meta = &media.metadata;
+    let meta = media.metadata.video()?;
     if meta.timebase != clip.source_in.timebase {
         return None;
     }
@@ -198,6 +201,11 @@ pub struct EditingView {
     pub split_detail: String,
     /// The last edit's source-tick alignment note, if any.
     pub notice: Option<String>,
+    /// The selected clip is a member of a linked pair.
+    pub can_unlink: bool,
+    /// The one clip the selected clip can be linked with, when an exact
+    /// candidate exists (same source, timing and in-point).
+    pub link_candidate: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -226,6 +234,27 @@ pub struct TrackView {
     pub badge: String,
     pub selected: bool,
     pub lane_label: String,
+    /// Audio controls: the effective gain (a drag preview while one runs).
+    pub gain_cdb: i32,
+    pub gain_text: String,
+    pub muted: bool,
+    pub soloed: bool,
+    /// Whether this track contributes to the mix under mute/solo.
+    pub audible: bool,
+}
+
+/// One decodable audio stream of a source, for explicit placement.
+#[derive(Debug, Clone, Serialize)]
+pub struct AudioStreamView {
+    pub index: u32,
+    pub label: String,
+    pub primary: bool,
+}
+
+/// `-6.0 dB`, with a true minus sign; the view never sends a float gain.
+pub fn gain_text(cdb: i32) -> String {
+    let text = format!("{:+.1} dB", f64::from(cdb) / 100.0).replace('-', "\u{2212}");
+    if cdb == 0 { "0.0 dB".into() } else { text }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -238,6 +267,9 @@ pub struct MediaView {
     pub duration_ms: Option<i64>,
     pub estimated: bool,
     pub has_audio: bool,
+    /// No picture stream: it goes on audio tracks only.
+    pub audio_only: bool,
+    pub audio_streams: Vec<AudioStreamView>,
     /// The source shown in the viewer; independent of timeline selection.
     pub selected: bool,
     pub availability: Availability,
@@ -268,6 +300,8 @@ pub const IMPORT_IDLE: &str = "Import a local video.";
 pub struct InspectorView {
     /// "project", "track" or "source".
     pub kind: &'static str,
+    /// Identity badge next to the title: "Video", "Audio" or empty.
+    pub badge: &'static str,
     pub title: String,
     pub detail: String,
     pub sections: Vec<SectionView>,
@@ -348,8 +382,66 @@ pub fn file_name(asset: &MediaSummary) -> String {
         .into_owned()
 }
 
+fn stream_label(stream: &AudioStreamMetadata, primary: bool) -> String {
+    let layout = stream
+        .channel_layout
+        .clone()
+        .unwrap_or_else(|| format!("{} ch", stream.channels));
+    format!(
+        "Stream #{} · {} · {} Hz · {layout}{}",
+        stream.stream_index,
+        stream.codec.to_uppercase(),
+        stream.sample_rate,
+        if primary { " · primary" } else { "" }
+    )
+}
+
+fn audio_stream_views(metadata: &SourceMetadata) -> Vec<AudioStreamView> {
+    let primary = metadata.primary_audio().map(|a| a.stream_index);
+    metadata
+        .audio()
+        .iter()
+        .map(|stream| AudioStreamView {
+            index: stream.stream_index,
+            label: stream_label(stream, primary == Some(stream.stream_index)),
+            primary: primary == Some(stream.stream_index),
+        })
+        .collect()
+}
+
+fn audio_duration_ms(stream: &AudioStreamMetadata) -> Option<i64> {
+    SourceTime {
+        ticks: stream.duration_ticks?,
+        timebase: stream.timebase,
+    }
+    .rescale(Timebase::new(1, 1000).ok()?, Rounding::Floor)
+    .ok()
+    .map(|t| t.ticks)
+}
+
 pub fn media_view(asset: &MediaSummary, selected: bool) -> MediaView {
-    let info = &asset.metadata;
+    let Some(info) = asset.metadata.video() else {
+        let primary = asset.metadata.primary_audio();
+        let duration = primary.and_then(audio_duration_ms);
+        return MediaView {
+            id: asset.id.to_string(),
+            name: file_name(asset),
+            resolution: "Audio only".into(),
+            format: primary.map_or_else(String::new, |a| {
+                format!("{}, {} Hz", a.codec.to_uppercase(), a.sample_rate)
+            }),
+            duration: duration.map_or_else(|| "--:--".to_owned(), short_duration),
+            duration_ms: duration,
+            estimated: primary.is_some_and(|a| a.duration_is_estimate),
+            has_audio: true,
+            audio_only: true,
+            audio_streams: audio_stream_views(&asset.metadata),
+            selected,
+            availability: Availability::Ready,
+            detail: "Source verified".into(),
+            path: asset.path.to_string_lossy().into_owned(),
+        };
+    };
     let mut format = codec_label(&info.codec);
     if let Some(rate) = info.average_rate.or(info.nominal_rate) {
         format.push_str(", ");
@@ -365,6 +457,8 @@ pub fn media_view(asset: &MediaSummary, selected: bool) -> MediaView {
         duration_ms: duration,
         estimated: info.duration_is_estimate,
         has_audio: !info.audio_streams.is_empty(),
+        audio_only: false,
+        audio_streams: audio_stream_views(&asset.metadata),
         selected,
         availability: Availability::Ready,
         detail: "Source verified".into(),
@@ -393,6 +487,8 @@ pub fn media_view_with_state(
             duration_ms: None,
             estimated: false,
             has_audio: false,
+            audio_only: false,
+            audio_streams: Vec::new(),
             selected,
             availability: state.state,
             detail: state.detail.clone(),
@@ -549,11 +645,12 @@ pub fn clip_views(snapshot: &ProjectSnapshot) -> Vec<ClipView> {
 /// Inspector rows for a selected clip: timeline placement and source mapping.
 pub fn clip_sections(snapshot: &ProjectSnapshot, clip: &ClipSummary) -> Vec<SectionView> {
     let tb = snapshot.timebase;
+    let media = snapshot.media.iter().find(|m| m.id == clip.media_id);
     let start = clip.start.0;
     let duration = i64::try_from(clip.duration.ticks()).unwrap_or(i64::MAX);
     let track = snapshot.tracks.iter().find(|t| t.id == clip.track_id);
     let state = snapshot.media_state.iter().find(|s| s.id == clip.media_id);
-    vec![
+    let mut sections = vec![
         section(
             "Timeline",
             vec![
@@ -586,12 +683,65 @@ pub fn clip_sections(snapshot: &ProjectSnapshot, clip: &ClipSummary) -> Vec<Sect
                 ),
             ],
         ),
-    ]
+    ];
+    if let ClipStream::Audio { index } = clip.stream {
+        let mut rows = vec![field("Stream", format!("#{index}"))];
+        if let Some(stream) = media.and_then(|m| m.metadata.audio_stream(index)) {
+            rows.push(field("Codec", stream.codec.to_uppercase()));
+            rows.push(field("Sample rate", format!("{} Hz", stream.sample_rate)));
+            rows.push(field(
+                "Channels",
+                stream
+                    .channel_layout
+                    .clone()
+                    .unwrap_or_else(|| format!("{} ch", stream.channels)),
+            ));
+            let samples = Timebase::new(1, stream.sample_rate).ok();
+            let core = cutcap_core::Clip {
+                stream: clip.stream,
+                link: clip.link,
+                id: clip.id,
+                media_id: clip.media_id,
+                track_id: clip.track_id,
+                start: clip.start,
+                duration: clip.duration,
+                source_in: clip.source_in,
+            };
+            if let Some(mapping) =
+                samples.and_then(|s| cutcap_core::map_clip_source(&core, clip.start, tb, s).ok())
+            {
+                rows.push(field(
+                    "Source interval",
+                    format!(
+                        "samples {} to {}",
+                        mapping.requested.ticks, mapping.end_exclusive.ticks
+                    ),
+                ));
+            }
+        } else {
+            rows.push(field("Decoding", "Details unavailable".to_owned()));
+        }
+        rows.push(field(
+            "Link",
+            if clip.link.is_some() {
+                "Linked to video"
+            } else {
+                "Independent"
+            },
+        ));
+        sections.insert(1, section("Audio", rows));
+    } else if clip.link.is_some() {
+        sections[0]
+            .rows
+            .push(field("Link", "Linked to audio".to_owned()));
+    }
+    sections
 }
 
 /// Track headers; badges number each family in order ("V1", "A1", "V2").
-pub fn track_views(snapshot: &ProjectSnapshot) -> Vec<TrackView> {
+pub fn track_views(snapshot: &ProjectSnapshot, preview: Option<(TrackId, i32)>) -> Vec<TrackView> {
     let (mut video, mut audio) = (0, 0);
+    let any_solo = snapshot.tracks.iter().any(|t| t.controls.solo);
     snapshot
         .tracks
         .iter()
@@ -606,11 +756,19 @@ pub fn track_views(snapshot: &ProjectSnapshot) -> Vec<TrackView> {
                     ("audio", format!("A{audio}"))
                 }
             };
+            let gain_cdb = preview
+                .filter(|(id, _)| *id == track.id)
+                .map_or(track.controls.gain_cdb, |(_, cdb)| cdb);
             TrackView {
                 id: track.id.to_string(),
                 name: track.name.clone(),
                 kind,
                 badge,
+                gain_cdb,
+                gain_text: gain_text(gain_cdb),
+                muted: track.controls.mute,
+                soloed: track.controls.solo,
+                audible: track.kind == TrackKind::Audio && track.controls.audible(any_solo),
                 selected: snapshot.selection == SelectionState::Track(track.id),
                 // Tracks with clips draw the clips themselves instead of a label.
                 lane_label: if track.clip_count == 0 {
@@ -667,14 +825,7 @@ pub fn project_sections(snapshot: &ProjectSnapshot) -> Vec<SectionView> {
         section(
             "Media",
             vec![
-                field(
-                    "Sources",
-                    match snapshot.media_count {
-                        0 => "None imported".to_owned(),
-                        1 => "1 video".to_owned(),
-                        count => format!("{count} videos"),
-                    },
-                ),
+                field("Sources", source_count(snapshot)),
                 field(
                     "Storage",
                     if snapshot.document.dirty {
@@ -686,6 +837,28 @@ pub fn project_sections(snapshot: &ProjectSnapshot) -> Vec<SectionView> {
             ],
         ),
     ]
+}
+
+/// "2 videos, 1 audio file", counting what the sources really are.
+fn source_count(snapshot: &ProjectSnapshot) -> String {
+    let audio = snapshot
+        .media
+        .iter()
+        .filter(|m| m.metadata.is_audio_only())
+        .count();
+    let video = snapshot.media_count - audio;
+    let videos = match video {
+        1 => "1 video".to_owned(),
+        n => format!("{n} videos"),
+    };
+    match (video, audio) {
+        (0, 0) => "None imported".to_owned(),
+        (_, 0) => videos,
+        (0, 1) => "1 audio file".to_owned(),
+        (0, n) => format!("{n} audio files"),
+        (_, 1) => format!("{videos}, 1 audio file"),
+        (_, n) => format!("{videos}, {n} audio files"),
+    }
 }
 
 pub fn track_sections(snapshot: &ProjectSnapshot, track: &TrackSummary) -> Vec<SectionView> {
@@ -709,6 +882,14 @@ pub fn track_sections(snapshot: &ProjectSnapshot, track: &TrackSummary) -> Vec<S
                 ),
                 field("Order", position),
                 field("Clips", track.clip_count.to_string()),
+                field(
+                    "Volume",
+                    if track.kind == TrackKind::Audio {
+                        gain_text(track.controls.gain_cdb)
+                    } else {
+                        "Not applicable".into()
+                    },
+                ),
             ],
         ),
         section(
@@ -721,8 +902,51 @@ pub fn track_sections(snapshot: &ProjectSnapshot, track: &TrackSummary) -> Vec<S
     ]
 }
 
+/// Inspector sections for an audio-only source.
+fn audio_only_sections(asset: &MediaSummary) -> Vec<SectionView> {
+    let primary = asset.metadata.primary_audio().map(|a| a.stream_index);
+    let mut rows = Vec::new();
+    for stream in asset.metadata.audio() {
+        rows.push(field(
+            &format!("Stream #{}", stream.stream_index),
+            stream_label(stream, primary == Some(stream.stream_index)),
+        ));
+        rows.push(field(
+            "Duration",
+            audio_duration_ms(stream).map_or_else(
+                || "Not reported".to_owned(),
+                |ms| {
+                    if stream.duration_is_estimate {
+                        format!("{} (container estimate)", precise_duration(ms))
+                    } else {
+                        precise_duration(ms)
+                    }
+                },
+            ),
+        ));
+    }
+    vec![
+        section("Audio", rows),
+        section(
+            "File",
+            vec![
+                field("Container", asset.metadata.container().to_owned()),
+                field(
+                    "Folder",
+                    asset.path.parent().map_or_else(
+                        || "Not reported".to_owned(),
+                        |folder| display_path(&folder.to_string_lossy()),
+                    ),
+                ),
+            ],
+        ),
+    ]
+}
+
 pub fn source_sections(asset: &MediaSummary) -> Vec<SectionView> {
-    let info = &asset.metadata;
+    let Some(info) = asset.metadata.video() else {
+        return audio_only_sections(asset);
+    };
     let unknown = || "Not reported".to_owned();
     let video = vec![
         field("Resolution", format!("{} × {}", info.width, info.height)),

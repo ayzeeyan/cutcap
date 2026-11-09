@@ -1,7 +1,10 @@
 use crate::{
-    Cancellation, DecodedFrame, MediaError, PreviewTicket, RgbaFrame, parse_probe, process,
+    Cancellation, DecodedFrame, MediaError, PreviewTicket, RgbaFrame, audio_only_supported,
+    parse_source_probe, process,
 };
-use cutcap_contracts::{MediaSummary, Rounding, SourceTime, Timebase};
+use cutcap_contracts::{
+    AudioOnlyMetadata, MediaSummary, Rounding, SourceMetadata, SourceTime, Timebase, VideoMetadata,
+};
 use std::{
     path::{Path, PathBuf},
     process::Command,
@@ -97,7 +100,7 @@ pub trait MediaBackend: Send + Sync + 'static {
 
 pub struct ProbeResult {
     pub path: PathBuf,
-    pub metadata: cutcap_contracts::VideoMetadata,
+    pub metadata: cutcap_contracts::SourceMetadata,
     pub probe_us: u64,
 }
 
@@ -155,6 +158,14 @@ impl FfmpegBackend {
         }
         Ok(path)
     }
+}
+
+/// The picture details a video decode needs; audio-only sources have none.
+pub(crate) fn video_of(media: &MediaSummary) -> Result<&VideoMetadata, MediaError> {
+    media
+        .metadata
+        .video()
+        .ok_or_else(|| MediaError::Unsupported("this source has no video stream".into()))
 }
 
 pub(crate) fn input_limits(command: &mut Command) {
@@ -232,17 +243,37 @@ impl MediaBackend for FfmpegBackend {
             crate::probe::MAX_PROBE_BYTES,
             64 * 1024,
         )?;
-        let metadata = parse_probe(&output.stdout)?;
-        if !metadata
-            .container
-            .split(',')
-            .any(|name| matches!(name, "mov" | "mp4" | "matroska" | "webm" | "avi" | "mpegts"))
-        {
-            return Err(MediaError::Unsupported(format!(
-                "container {} is outside the Phase 1 video set",
-                metadata.container
-            )));
-        }
+        let metadata = match parse_source_probe(&output.stdout)? {
+            SourceMetadata::Video(video) => {
+                if !video.container.split(',').any(|name| {
+                    matches!(name, "mov" | "mp4" | "matroska" | "webm" | "avi" | "mpegts")
+                }) {
+                    return Err(MediaError::Unsupported(format!(
+                        "container {} is outside the Phase 1 video set",
+                        video.container
+                    )));
+                }
+                SourceMetadata::Video(video)
+            }
+            SourceMetadata::Audio(audio) => {
+                // Only container/codec pairs verified against real files.
+                let container = audio.container;
+                let streams: Vec<_> = audio
+                    .audio
+                    .into_iter()
+                    .filter(|s| audio_only_supported(&container, &s.codec))
+                    .collect();
+                if streams.is_empty() {
+                    return Err(MediaError::Unsupported(format!(
+                        "audio format in {container} is not supported yet"
+                    )));
+                }
+                SourceMetadata::Audio(AudioOnlyMetadata {
+                    container,
+                    audio: streams,
+                })
+            }
+        };
         Ok(ProbeResult {
             path,
             metadata,
@@ -255,15 +286,13 @@ impl MediaBackend for FfmpegBackend {
         request: &DecodeRequest,
         cancellation: &Cancellation,
     ) -> Result<DecodedFrame, MediaError> {
-        request
-            .media
-            .metadata
+        let metadata = video_of(&request.media)?;
+        metadata
             .validate()
             .map_err(|e| MediaError::Invalid(e.to_string()))?;
         if request.ticket.media_id != request.media.id {
             return Err(MediaError::Invalid("decode media identity mismatch".into()));
         }
-        let metadata = &request.media.metadata;
         if request.position.timebase != metadata.timebase {
             return Err(MediaError::Invalid(
                 "request must use the selected stream's timebase".into(),

@@ -42,7 +42,7 @@ fn interval_preroll_preserves_covering_real_pts_vfr_offsets_and_bframes() {
             .filter(|pts| *pts >= lower)
             .collect();
         let first = eligible.iter().rposition(|pts| *pts <= target).unwrap_or(0);
-        let clock = media.metadata.timebase;
+        let clock = media.metadata.video().unwrap().timebase;
         let request = DecodeRequest {
             ticket: PreviewTicket {
                 project_id: ProjectId::new(),
@@ -85,14 +85,14 @@ fn interval_preroll_preserves_covering_real_pts_vfr_offsets_and_bframes() {
 fn persistent_interval_cancellation_reaps_the_owned_child_and_rejects_bad_bounds() {
     let _guard = SERIAL.lock().unwrap();
     let media = media("long-gop-bframes.mp4");
-    let clock = media.metadata.timebase;
+    let clock = media.metadata.video().unwrap().timebase;
     let request = DecodeRequest {
         ticket: PreviewTicket {
             project_id: ProjectId::new(),
             media_id: media.id,
             request_id: RequestId::new(),
         },
-        position: media.metadata.start(),
+        position: media.metadata.video().unwrap().start(),
         media,
     };
     let token = Cancellation::default();
@@ -155,7 +155,7 @@ fn persistent_long_gop_bframes_match_independent_frame_pts_and_seek() {
     let frames = json["frames"].as_array().unwrap();
     assert!(frames.iter().any(|f| f["pict_type"] == "B"));
     let expected: Vec<i64> = frames.iter().map(|f| f["pts"].as_i64().unwrap()).collect();
-    for target in [media.metadata.start_pts, 37530] {
+    for target in [media.metadata.video().unwrap().start_pts, 37530] {
         let request = DecodeRequest {
             ticket: PreviewTicket {
                 project_id: ProjectId::new(),
@@ -164,7 +164,7 @@ fn persistent_long_gop_bframes_match_independent_frame_pts_and_seek() {
             },
             position: SourceTime {
                 ticks: target,
-                timebase: media.metadata.timebase,
+                timebase: media.metadata.video().unwrap().timebase,
             },
             media: media.clone(),
         };
@@ -203,7 +203,7 @@ fn persistent_framed_vfr_packets_preserve_pts_and_colors() {
             media_id: media.id,
             request_id: RequestId::new(),
         },
-        position: media.metadata.start(),
+        position: media.metadata.video().unwrap().start(),
         media,
     };
     let mut frames = Vec::new();
@@ -231,7 +231,7 @@ fn persistent_framed_vfr_packets_preserve_pts_and_colors() {
         },
         position: SourceTime {
             ticks: 6250,
-            timebase: offset.metadata.timebase,
+            timebase: offset.metadata.video().unwrap().timebase,
         },
         media: offset,
     };
@@ -274,7 +274,7 @@ fn frame(media: &MediaSummary, ticks: i64) -> DecodedFrame {
                 media: media.clone(),
                 position: SourceTime {
                     ticks,
-                    timebase: media.metadata.timebase,
+                    timebase: media.metadata.video().unwrap().timebase,
                 },
             },
             &Cancellation::default(),
@@ -296,7 +296,13 @@ fn color(frame: &DecodedFrame, channel: usize) {
 fn cfr_seek_colors_beginning_middle_and_last_frame() {
     let _guard = SERIAL.lock().unwrap();
     let media = media("colors-cfr.mkv");
-    assert_eq!((media.metadata.width, media.metadata.height), (320, 180));
+    assert_eq!(
+        (
+            media.metadata.video().unwrap().width,
+            media.metadata.video().unwrap().height
+        ),
+        (320, 180)
+    );
     for (target, pts, channel) in [
         (0, 0, 0),
         (1, 250, 0),
@@ -310,7 +316,7 @@ fn cfr_seek_colors_beginning_middle_and_last_frame() {
             decoded.actual,
             SourceTime {
                 ticks: pts,
-                timebase: media.metadata.timebase
+                timebase: media.metadata.video().unwrap().timebase
             }
         );
         color(&decoded, channel);
@@ -326,7 +332,7 @@ fn cfr_seek_colors_beginning_middle_and_last_frame() {
                 media: media.clone(),
                 position: SourceTime {
                     ticks: 2999,
-                    timebase: media.metadata.timebase
+                    timebase: media.metadata.video().unwrap().timebase
                 }
             },
             &Cancellation::default()
@@ -359,13 +365,13 @@ fn vfr_ceiling_policy_uses_real_pts_not_nominal_frame_rate() {
 fn metadata_audio_orientation_unicode_and_nonzero_start() {
     let _guard = SERIAL.lock().unwrap();
     let av = media("audio-video.mp4");
-    assert_eq!(av.metadata.codec, "h264");
-    assert_eq!(av.metadata.audio_streams.len(), 1);
+    assert_eq!(av.metadata.video().unwrap().codec, "h264");
+    assert_eq!(av.metadata.video().unwrap().audio_streams.len(), 1);
     let rotated = media("rotated.mp4");
-    assert_eq!(rotated.metadata.rotation, 90);
-    let decoded = frame(&rotated, rotated.metadata.start_pts);
+    assert_eq!(rotated.metadata.video().unwrap().rotation, 90);
+    let decoded = frame(&rotated, rotated.metadata.video().unwrap().start_pts);
     assert_eq!((decoded.image.width(), decoded.image.height()), (180, 320));
-    let original = frame(&av, av.metadata.start_pts);
+    let original = frame(&av, av.metadata.video().unwrap().start_pts);
     // The same compressed packets, decoded with a 90-degree CCW display matrix.
     // (x,y) -> (y,width-1-x); verify content as well as portrait dimensions.
     for (x, y) in [(40, 30), (100, 60), (250, 120)] {
@@ -382,7 +388,7 @@ fn metadata_audio_orientation_unicode_and_nonzero_start() {
     let unicode = media("warna 视频 space.mkv");
     color(&frame(&unicode, 1000), 1);
     let offset = media("offset.mkv");
-    assert_eq!(offset.metadata.start_pts, 5000);
+    assert_eq!(offset.metadata.video().unwrap().start_pts, 5000);
     let decoded = frame(&offset, 6250);
     assert_eq!(decoded.actual.ticks, 6250);
     color(&decoded, 1);
@@ -408,8 +414,8 @@ fn executable_failure_and_pre_cancelled_decode_are_typed() {
             request_id: RequestId::new(),
         },
         position: SourceTime {
-            ticks: media.metadata.start_pts + 86400000,
-            timebase: media.metadata.timebase,
+            ticks: media.metadata.video().unwrap().start_pts + 86400000,
+            timebase: media.metadata.video().unwrap().timebase,
         },
         media,
     };
@@ -435,10 +441,12 @@ fn missing_corrupt_unsupported_and_pre_cancelled_inputs() {
         backend.probe(&fixture("no-such-file.mp4"), &Cancellation::default()),
         Err(MediaError::Io { .. })
     ));
-    assert!(matches!(
-        backend.probe(&fixture("audio-only.mkv"), &Cancellation::default()),
-        Err(MediaError::Unsupported(_))
-    ));
+    // Phase 4C: audio-only files are sources in their own right.
+    let audio_only = backend
+        .probe(&fixture("audio-only.mkv"), &Cancellation::default())
+        .unwrap();
+    assert!(audio_only.metadata.is_audio_only());
+    assert!(audio_only.metadata.video().is_none());
     assert!(
         backend
             .probe(&fixture("corrupt.mp4"), &Cancellation::default())
@@ -465,7 +473,7 @@ fn thumbs(
             token: n as u64 + 100,
             position: SourceTime {
                 ticks: *t,
-                timebase: media.metadata.timebase,
+                timebase: media.metadata.video().unwrap().timebase,
             },
         })
         .collect();
@@ -508,7 +516,7 @@ fn batched_thumbnails_return_real_pixels_at_the_first_pts_at_or_after_each_sampl
     for (result, (pts, color)) in results.iter().zip(expected) {
         let t = result.as_ref().unwrap();
         assert_eq!(t.actual.ticks, pts);
-        assert_eq!(t.actual.timebase, media.metadata.timebase);
+        assert_eq!(t.actual.timebase, media.metadata.video().unwrap().timebase);
         assert!(is(centre(t), color), "{pts}: {:?}", centre(t));
         assert_eq!(
             (t.image.width(), t.image.height()),
@@ -545,7 +553,7 @@ fn thumbnails_use_actual_vfr_and_offset_pts_and_keep_rotation() {
     assert!(is(centre(vfr[4].as_ref().unwrap()), "green"));
     // Nonzero start PTS (5000): absolute positions, not relative to zero.
     let (offset, results) = thumbs("offset.mkv", 36, &[5000, 6100]);
-    assert_eq!(offset.metadata.start_pts, 5000);
+    assert_eq!(offset.metadata.video().unwrap().start_pts, 5000);
     assert_eq!(results[0].as_ref().unwrap().actual.ticks, 5000);
     assert!(results[1].as_ref().unwrap().actual.ticks >= 6100);
     // Display-matrix rotation: portrait thumbnail, not stretched landscape.
@@ -569,7 +577,7 @@ fn thumbnail_batches_reject_bad_requests_and_cancel_promptly() {
         token: 1,
         position: SourceTime {
             ticks,
-            timebase: media.metadata.timebase,
+            timebase: media.metadata.video().unwrap().timebase,
         },
     };
     let cancel = Cancellation::default();

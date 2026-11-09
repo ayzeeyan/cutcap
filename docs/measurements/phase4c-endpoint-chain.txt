@@ -1,0 +1,9 @@
+# Phase 4C endpoint chain characterization: known sines written straight to the
+# default output, bypassing the mixer, read back by WASAPI loopback.
+# Test: audio_output::tests::the_endpoint_chain_is_characterized_by_known_tones
+# Device: Speakers (Realtek(R) Audio), shared mode, 48 kHz.
+sent 400 Hz 0.180, 800 Hz 0.180; measured 0.2285 (+2.07 dB), 0.1811 (+0.05 dB)
+sent 400 Hz 0.000, 800 Hz 0.180; measured 0.0000 (-), 0.1947 (+0.68 dB)
+sent 400 Hz 0.180, 800 Hz 0.045; measured 0.2235 (+1.88 dB), 0.0613 (+2.69 dB)
+sent 400 Hz 0.000, 800 Hz 0.045; measured 0.0000 (-), 0.0608 (+2.62 dB)
+sent 400 Hz 0.090, 800 Hz 0.090; measured 0.1426 (+4.00 dB), 0.1119 (+1.89 dB)

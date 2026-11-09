@@ -1,0 +1,37 @@
+13:11:39.106 scale=1.5 audio latency compensation setting CUTCAP_AUDIO_LATENCY_MS=unset (0)
+13:11:52.320 inspector audio row: 'Stream #1 · AAC · 48000 Hz · stereo · primary'
+13:11:56.890 placed by drag: 205 ms
+13:12:03.916 audio lane pixels: waveform=1712 navy=7759 (linked audio clip with peaks: both > 0)
+13:12:07.399 picture probe area: 679,178 678x333
+13:12:07.657 MARK play
+13:12:12.998 MARK pause
+13:12:15.425 playhead while paused: '00:05.795' then '00:05.795'
+13:12:15.710 MARK resume
+13:12:18.083 MARK pause2
+13:12:19.770 loopback device='Speakers (Realtek(R) Audio)' rate=48000 rms=0.16783 clicks=7 from playhead 1 s: first click 648 ms after Play, start latency 648.5 ms; clicks during pause=0
+13:12:19.771 resume latency 71.2 ms
+13:12:19.792 audible click minus engine clock (ms): n=6 min=50.2 median=50.8 max=51.5 mean=50.7
+13:12:19.798 screen samples=271 every 16.6 ms, flashes=4; A/V offset click-flash (ms): n=4 min=12 median=28.1 max=66 mean=33.3
+13:12:26.182 after seek to 6 s: clicks=4 start latency 114.5 ms; playhead after pause '00:09.005'
+13:12:29.816 split: 180 ms
+13:12:32.118 trimmed from audio: 184 ms
+13:12:34.594 moved: 170 ms
+13:12:38.142 undo move: 165 ms
+13:12:38.731 redo move: 181 ms
+13:12:49.993 across the cut from 8 s: clicks at +1059, +2053, +6053, +7053, +8053 ms after Play minus the media time to the first whole second (timeline 8 s, 9 s, then 13 s, 14 s ...: expect +L, then +4000+L, +5000+L; none for the 10-13 s gap)
+13:12:49.993 across the cut A/V offset (ms): n=4 min=40 median=40.7 max=80.6 mean=50.4, flashes=4
+13:12:57.731 saved clips: video@0+7200000/in0/link82e34e93 ; video@9360000+6480000/in168960/link179a7c09 ; audio@0+7200000/in0/link82e34e93 ; audio@9360000+6480000/in168960/link179a7c09
+13:12:58.462 close after save | exited=True in 730 ms code=0 leftover=0
+13:13:09.536 reopened: 181 ms
+13:13:16.711 reopened title='Untitled project — CutCap' waveform pixels=763 file unchanged=True
+13:13:23.547 reopened playback: rms=0.1851 clicks=3
+13:13:24.200 close after reopen | exited=True in 652 ms code=0 leftover=0
+13:13:35.240 reopened with missing source: 179 ms
+13:14:01.873 relinked: waveform pixels=763
+13:14:04.935 close after relink | exited=True in 658 ms code=0 leftover=0
+13:14:16.560 old schema 1 project: 201 ms title='Untitled project — CutCap' lanes='Track lanes, 2 clips'
+13:14:20.624 old project playing: playhead '00:02.277'
+13:14:22.531 close old project | exited=True in 656 ms code=0 leftover=0
+13:14:22.532 old project file unchanged by opening: True
+13:14:38.673 close during playback and waveform analysis | exited=True in 659 ms code=0 leftover=0
+13:14:40.982 after close: CutCap/FFmpeg/FFprobe processes=0 output rms=0 (silent: the device stream was released)

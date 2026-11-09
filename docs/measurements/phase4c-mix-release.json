@@ -1,0 +1,749 @@
+{
+  "generated_at": "2026-11-09T12:48:43.8280117+08:00",
+  "machine": {
+    "os": "Microsoft Windows NT 10.0.26300.0",
+    "cpu": "Intel(R) Core(TM) Ultra 7 255H",
+    "logical_cores": 16
+  },
+  "build": "Release desktop app over the release engine DLL",
+  "compensation_setting_ms": 0,
+  "runs": [
+    {
+      "tracks": 1,
+      "build_ms": 11629,
+      "window": {
+        "label": "n1-play",
+        "from_s": 1.5,
+        "wall_s": 6.416,
+        "loopback": {
+          "device": "Speakers (Realtek(R) Audio)",
+          "rate": 48000,
+          "rms": 0.19896,
+          "clicks": 6,
+          "clock_map_bracket_ms": 0.001
+        },
+        "start_latency_ms": 363.6,
+        "click_minus_engine_clock_ms": {
+          "n": 6,
+          "min": 51.0,
+          "median": 51.2,
+          "p95": 51.6,
+          "max": 51.6,
+          "mean": 51.3
+        },
+        "click_minus_screen_flash_ms": {
+          "n": 6,
+          "min": 31.4,
+          "median": 31.9,
+          "p95": 32.9,
+          "max": 32.9,
+          "mean": 32.22
+        },
+        "screen": {
+          "flashes": 6,
+          "sample_interval_ms": 16.6
+        },
+        "click_interval_ms": {
+          "n": 5,
+          "min": 999.87,
+          "median": 999.98,
+          "p95": 1000.18,
+          "max": 1000.18,
+          "mean": 1000.0
+        },
+        "engine": {
+          "copied_frames": 173,
+          "copied_per_s": 30.02,
+          "video_late": 0,
+          "internal_av_ms": {
+            "n": 24,
+            "min": -5.88,
+            "median": -4.4,
+            "p95": -3.38,
+            "max": -2.38,
+            "mean": -4.39
+          },
+          "underruns": 0,
+          "padded_ms": 0.0,
+          "buffered_ms": {
+            "n": 24,
+            "min": 150.0,
+            "median": 150.0,
+            "p95": 150.0,
+            "max": 150.0,
+            "mean": 150.0
+          },
+          "compensation_ms": "0",
+          "working_set_mib": {
+            "n": 26,
+            "min": 345.0,
+            "median": 396.0,
+            "p95": 407.0,
+            "max": 407.0,
+            "mean": 394.5
+          }
+        },
+        "cpu": {
+          "app_cores": 0.587,
+          "ffmpeg_cpu_s_alive_at_pause": 2.36,
+          "ffmpeg_processes_at_pause": 2
+        }
+      },
+      "controls": {
+        "seek_to_audio_ms": 438.0,
+        "solo_response_ms": null,
+        "volume_response_ms": null,
+        "mute_response_ms": null
+      },
+      "close": {
+        "exited": true,
+        "exit_after_prompt_ms": 421,
+        "leftover_processes": 0
+      },
+      "trace_at_end": {
+        "decoders_peak": 1,
+        "mixed_peak": 1,
+        "clipped": 162,
+        "over_limit": 0,
+        "blocks": 420,
+        "block_us_total": 2928,
+        "block_us_mean": 7.0,
+        "block_us_max": 536,
+        "period_us_last": 6,
+        "period_us_max": 156,
+        "periods": 1226
+      },
+      "mix_cpu_percent_of_realtime": 0.07,
+      "lanes_draw_us": {
+        "n": 747,
+        "min": 190.0,
+        "median": 235.0,
+        "p95": 397.0,
+        "max": 12761.0,
+        "mean": 278.66
+      },
+      "waveform_columns": {
+        "n": 747,
+        "min": 436.0,
+        "median": 985.0,
+        "p95": 985.0,
+        "max": 985.0,
+        "mean": 984.12
+      }
+    },
+    {
+      "tracks": 2,
+      "build_ms": 48886,
+      "window": {
+        "label": "n2-play",
+        "from_s": 1.5,
+        "wall_s": 6.39,
+        "loopback": {
+          "device": "Speakers (Realtek(R) Audio)",
+          "rate": 48000,
+          "rms": 0.1985,
+          "clicks": 6,
+          "clock_map_bracket_ms": 0.001
+        },
+        "start_latency_ms": 376.2,
+        "click_minus_engine_clock_ms": {
+          "n": 6,
+          "min": 58.6,
+          "median": 59.1,
+          "p95": 59.5,
+          "max": 59.5,
+          "mean": 59.17
+        },
+        "click_minus_screen_flash_ms": {
+          "n": 6,
+          "min": 31.6,
+          "median": 31.8,
+          "p95": 33.0,
+          "max": 33.0,
+          "mean": 32.15
+        },
+        "screen": {
+          "flashes": 6,
+          "sample_interval_ms": 16.6
+        },
+        "click_interval_ms": {
+          "n": 5,
+          "min": 999.98,
+          "median": 1000.0,
+          "p95": 1000.02,
+          "max": 1000.02,
+          "mean": 1000.0
+        },
+        "engine": {
+          "copied_frames": 172,
+          "copied_per_s": 29.93,
+          "video_late": 0,
+          "internal_av_ms": {
+            "n": 24,
+            "min": -14.69,
+            "median": -12.79,
+            "p95": -2.27,
+            "max": -1.19,
+            "mean": -11.94
+          },
+          "underruns": 0,
+          "padded_ms": 0.0,
+          "buffered_ms": {
+            "n": 24,
+            "min": 150.0,
+            "median": 150.0,
+            "p95": 150.0,
+            "max": 150.0,
+            "mean": 150.0
+          },
+          "compensation_ms": "0",
+          "working_set_mib": {
+            "n": 26,
+            "min": 359.0,
+            "median": 401.0,
+            "p95": 407.0,
+            "max": 407.0,
+            "mean": 398.23
+          }
+        },
+        "cpu": {
+          "app_cores": 0.682,
+          "ffmpeg_cpu_s_alive_at_pause": 2.5,
+          "ffmpeg_processes_at_pause": 3
+        }
+      },
+      "controls": {
+        "seek_to_audio_ms": 467.6,
+        "solo_response_ms": null,
+        "volume_response_ms": 243.0,
+        "mute_response_ms": 292.1
+      },
+      "close": {
+        "exited": true,
+        "exit_after_prompt_ms": 411,
+        "leftover_processes": 0
+      },
+      "trace_at_end": {
+        "decoders_peak": 2,
+        "mixed_peak": 2,
+        "clipped": 152,
+        "over_limit": 0,
+        "blocks": 1210,
+        "block_us_total": 13732,
+        "block_us_mean": 11.3,
+        "block_us_max": 259,
+        "period_us_last": 5,
+        "period_us_max": 230,
+        "periods": 1772
+      },
+      "mix_cpu_percent_of_realtime": 0.113,
+      "lanes_draw_us": {
+        "n": 1089,
+        "min": 288.0,
+        "median": 390.0,
+        "p95": 585.0,
+        "max": 12857.0,
+        "mean": 451.89
+      },
+      "waveform_columns": {
+        "n": 1089,
+        "min": 436.0,
+        "median": 1970.0,
+        "p95": 1970.0,
+        "max": 1970.0,
+        "mean": 1958.84
+      }
+    },
+    {
+      "tracks": 4,
+      "build_ms": 71140,
+      "window": {
+        "label": "n4-play",
+        "from_s": 1.5,
+        "wall_s": 6.379,
+        "loopback": {
+          "device": "Speakers (Realtek(R) Audio)",
+          "rate": 48000,
+          "rms": 0.21211,
+          "clicks": 6,
+          "clock_map_bracket_ms": 0.001
+        },
+        "start_latency_ms": 397.7,
+        "click_minus_engine_clock_ms": {
+          "n": 6,
+          "min": 64.9,
+          "median": 65.1,
+          "p95": 65.7,
+          "max": 65.7,
+          "mean": 65.23
+        },
+        "click_minus_screen_flash_ms": {
+          "n": 6,
+          "min": 40.5,
+          "median": 41.1,
+          "p95": 41.6,
+          "max": 41.6,
+          "mean": 41.17
+        },
+        "screen": {
+          "flashes": 6,
+          "sample_interval_ms": 16.6
+        },
+        "click_interval_ms": {
+          "n": 5,
+          "min": 999.95,
+          "median": 999.99,
+          "p95": 1000.04,
+          "max": 1000.04,
+          "mean": 999.99
+        },
+        "engine": {
+          "copied_frames": 172,
+          "copied_per_s": 29.93,
+          "video_late": 0,
+          "internal_av_ms": {
+            "n": 24,
+            "min": -11.56,
+            "median": -10.08,
+            "p95": -8.85,
+            "max": -8.52,
+            "mean": -10.08
+          },
+          "underruns": 0,
+          "padded_ms": 0.0,
+          "buffered_ms": {
+            "n": 24,
+            "min": 150.0,
+            "median": 150.0,
+            "p95": 150.0,
+            "max": 150.0,
+            "mean": 150.0
+          },
+          "compensation_ms": "0",
+          "working_set_mib": {
+            "n": 26,
+            "min": 369.0,
+            "median": 415.0,
+            "p95": 426.0,
+            "max": 427.0,
+            "mean": 411.96
+          }
+        },
+        "cpu": {
+          "app_cores": 0.747,
+          "ffmpeg_cpu_s_alive_at_pause": 2.64,
+          "ffmpeg_processes_at_pause": 5
+        }
+      },
+      "controls": {
+        "seek_to_audio_ms": 431.1,
+        "solo_response_ms": 284.8,
+        "volume_response_ms": 240.4,
+        "mute_response_ms": 291.3
+      },
+      "close": {
+        "exited": true,
+        "exit_after_prompt_ms": 411,
+        "leftover_processes": 0
+      },
+      "trace_at_end": {
+        "decoders_peak": 4,
+        "mixed_peak": 4,
+        "clipped": 186,
+        "over_limit": 0,
+        "blocks": 1245,
+        "block_us_total": 16388,
+        "block_us_mean": 13.2,
+        "block_us_max": 378,
+        "period_us_last": 8,
+        "period_us_max": 118,
+        "periods": 1798
+      },
+      "mix_cpu_percent_of_realtime": 0.132,
+      "lanes_draw_us": {
+        "n": 1104,
+        "min": 311.0,
+        "median": 624.0,
+        "p95": 882.0,
+        "max": 12707.0,
+        "mean": 678.99
+      },
+      "waveform_columns": {
+        "n": 1104,
+        "min": 436.0,
+        "median": 3940.0,
+        "p95": 3940.0,
+        "max": 3940.0,
+        "mean": 3895.08
+      }
+    },
+    {
+      "tracks": 8,
+      "build_ms": 115385,
+      "window": {
+        "label": "n8-play",
+        "from_s": 1.5,
+        "wall_s": 6.392,
+        "loopback": {
+          "device": "Speakers (Realtek(R) Audio)",
+          "rate": 48000,
+          "rms": 0.24229,
+          "clicks": 6,
+          "clock_map_bracket_ms": 0.001
+        },
+        "start_latency_ms": 396.0,
+        "click_minus_engine_clock_ms": {
+          "n": 6,
+          "min": 64.4,
+          "median": 64.8,
+          "p95": 65.2,
+          "max": 65.2,
+          "mean": 64.9
+        },
+        "click_minus_screen_flash_ms": {
+          "n": 6,
+          "min": 38.2,
+          "median": 39.5,
+          "p95": 39.8,
+          "max": 39.8,
+          "mean": 39.23
+        },
+        "screen": {
+          "flashes": 6,
+          "sample_interval_ms": 16.6
+        },
+        "click_interval_ms": {
+          "n": 5,
+          "min": 999.23,
+          "median": 999.98,
+          "p95": 1000.89,
+          "max": 1000.89,
+          "mean": 1000.0
+        },
+        "engine": {
+          "copied_frames": 174,
+          "copied_per_s": 30.04,
+          "video_late": 0,
+          "internal_av_ms": {
+            "n": 24,
+            "min": -13.33,
+            "median": -11.62,
+            "p95": -10.12,
+            "max": -9.31,
+            "mean": -11.71
+          },
+          "underruns": 0,
+          "padded_ms": 0.0,
+          "buffered_ms": {
+            "n": 24,
+            "min": 140.0,
+            "median": 150.0,
+            "p95": 150.0,
+            "max": 150.0,
+            "mean": 147.92
+          },
+          "compensation_ms": "0",
+          "working_set_mib": {
+            "n": 26,
+            "min": 386.0,
+            "median": 438.0,
+            "p95": 439.0,
+            "max": 440.0,
+            "mean": 433.0
+          }
+        },
+        "cpu": {
+          "app_cores": 0.716,
+          "ffmpeg_cpu_s_alive_at_pause": 2.89,
+          "ffmpeg_processes_at_pause": 9
+        }
+      },
+      "controls": {
+        "seek_to_audio_ms": 500.4,
+        "solo_response_ms": 307.3,
+        "volume_response_ms": 251.6,
+        "mute_response_ms": 297.1
+      },
+      "close": {
+        "exited": true,
+        "exit_after_prompt_ms": 411,
+        "leftover_processes": 0
+      },
+      "trace_at_end": {
+        "decoders_peak": 8,
+        "mixed_peak": 8,
+        "clipped": 324,
+        "over_limit": 0,
+        "blocks": 1247,
+        "block_us_total": 39209,
+        "block_us_mean": 31.4,
+        "block_us_max": 491,
+        "period_us_last": 12,
+        "period_us_max": 260,
+        "periods": 1797
+      },
+      "mix_cpu_percent_of_realtime": 0.314,
+      "lanes_draw_us": {
+        "n": 1112,
+        "min": 252.0,
+        "median": 607.0,
+        "p95": 826.0,
+        "max": 13469.0,
+        "mean": 650.76
+      },
+      "waveform_columns": {
+        "n": 1112,
+        "min": 436.0,
+        "median": 3940.0,
+        "p95": 3940.0,
+        "max": 3940.0,
+        "mean": 3872.38
+      }
+    },
+    {
+      "tracks": 16,
+      "build_ms": 203587,
+      "window": {
+        "label": "n16-play",
+        "from_s": 1.5,
+        "wall_s": 6.406,
+        "loopback": {
+          "device": "Speakers (Realtek(R) Audio)",
+          "rate": 48000,
+          "rms": 0.29809,
+          "clicks": 6,
+          "clock_map_bracket_ms": 0.001
+        },
+        "start_latency_ms": 459.8,
+        "click_minus_engine_clock_ms": {
+          "n": 6,
+          "min": 62.3,
+          "median": 62.8,
+          "p95": 63.5,
+          "max": 63.5,
+          "mean": 62.85
+        },
+        "click_minus_screen_flash_ms": {
+          "n": 6,
+          "min": 32.7,
+          "median": 33.6,
+          "p95": 34.1,
+          "max": 34.1,
+          "mean": 33.65
+        },
+        "screen": {
+          "flashes": 6,
+          "sample_interval_ms": 16.6
+        },
+        "click_interval_ms": {
+          "n": 5,
+          "min": 999.91,
+          "median": 1000.0,
+          "p95": 1000.1,
+          "max": 1000.1,
+          "mean": 1000.01
+        },
+        "engine": {
+          "copied_frames": 172,
+          "copied_per_s": 29.92,
+          "video_late": 0,
+          "internal_av_ms": {
+            "n": 24,
+            "min": -15.21,
+            "median": -5.06,
+            "p95": -1.19,
+            "max": -1.15,
+            "mean": -7.28
+          },
+          "underruns": 0,
+          "padded_ms": 0.0,
+          "buffered_ms": {
+            "n": 24,
+            "min": 140.0,
+            "median": 140.0,
+            "p95": 150.0,
+            "max": 150.0,
+            "mean": 145.0
+          },
+          "compensation_ms": "0",
+          "working_set_mib": {
+            "n": 26,
+            "min": 416.0,
+            "median": 473.0,
+            "p95": 485.0,
+            "max": 485.0,
+            "mean": 473.54
+          }
+        },
+        "cpu": {
+          "app_cores": 0.727,
+          "ffmpeg_cpu_s_alive_at_pause": 3.94,
+          "ffmpeg_processes_at_pause": 17
+        }
+      },
+      "controls": {
+        "seek_to_audio_ms": 563.0,
+        "solo_response_ms": 289.2,
+        "volume_response_ms": 231.0,
+        "mute_response_ms": 290.0
+      },
+      "close": {
+        "exited": true,
+        "exit_after_prompt_ms": 409,
+        "leftover_processes": 0
+      },
+      "trace_at_end": {
+        "decoders_peak": 16,
+        "mixed_peak": 16,
+        "clipped": 608,
+        "over_limit": 0,
+        "blocks": 1245,
+        "block_us_total": 90791,
+        "block_us_mean": 72.9,
+        "block_us_max": 1099,
+        "period_us_last": 14,
+        "period_us_max": 70,
+        "periods": 1798
+      },
+      "mix_cpu_percent_of_realtime": 0.729,
+      "lanes_draw_us": {
+        "n": 1130,
+        "min": 242.0,
+        "median": 613.0,
+        "p95": 817.0,
+        "max": 13436.0,
+        "mean": 658.6
+      },
+      "waveform_columns": {
+        "n": 1130,
+        "min": 436.0,
+        "median": 3940.0,
+        "p95": 3940.0,
+        "max": 3940.0,
+        "mean": 3831.61
+      }
+    }
+  ],
+  "one_tone_track": {
+    "seek_to_audio_ms": null,
+    "solo_response_ms": null,
+    "volume_response_ms": 252.6,
+    "mute_response_ms": 288.8
+  },
+  "limit": {
+    "tracks": 17,
+    "message": "17 audible audio tracks overlap at 00:01.500. CutCap mixes at most 16 at once: mute some tracks or shorten clips.",
+    "ffmpeg_processes_while_refused": 0,
+    "close": {
+      "exited": true,
+      "exit_after_prompt_ms": 414,
+      "leftover_processes": 0
+    }
+  },
+  "long": {
+    "label": "long",
+    "from_s": 2.5,
+    "wall_s": 60.417,
+    "loopback": {
+      "device": "Speakers (Realtek(R) Audio)",
+      "rate": 48000,
+      "rms": 0.24456,
+      "clicks": 60,
+      "clock_map_bracket_ms": 0.001
+    },
+    "start_latency_ms": 469.5,
+    "click_minus_engine_clock_ms": {
+      "n": 60,
+      "min": 64.3,
+      "median": 65.1,
+      "p95": 65.6,
+      "max": 66.3,
+      "mean": 65.18
+    },
+    "click_minus_screen_flash_ms": {
+      "n": 60,
+      "min": 36.8,
+      "median": 39.2,
+      "p95": 41.1,
+      "max": 42.2,
+      "mean": 39.22
+    },
+    "screen": {
+      "flashes": 60,
+      "sample_interval_ms": 16.7
+    },
+    "click_interval_ms": {
+      "n": 59,
+      "min": 999.3,
+      "median": 1000.0,
+      "p95": 1000.49,
+      "max": 1000.7,
+      "mean": 1000.01
+    },
+    "engine": {
+      "copied_frames": 1793,
+      "copied_per_s": 29.99,
+      "video_late": 0,
+      "internal_av_ms": {
+        "n": 240,
+        "min": -17.79,
+        "median": -11.46,
+        "p95": -2.79,
+        "max": -0.98,
+        "mean": -10.82
+      },
+      "underruns": 0,
+      "padded_ms": 0.0,
+      "buffered_ms": {
+        "n": 240,
+        "min": 140.0,
+        "median": 150.0,
+        "p95": 150.0,
+        "max": 150.0,
+        "mean": 149.88
+      },
+      "compensation_ms": "0",
+      "working_set_mib": {
+        "n": 242,
+        "min": 366.0,
+        "median": 416.0,
+        "p95": 423.0,
+        "max": 424.0,
+        "mean": 416.03
+      }
+    },
+    "cpu": {
+      "app_cores": 0.659,
+      "ffmpeg_cpu_s_alive_at_pause": 21.44,
+      "ffmpeg_processes_at_pause": 5
+    },
+    "drift": {
+      "clicks": 60,
+      "click_span_wall_ms": 59000.56,
+      "device_vs_system_clock_ppm": 9.5,
+      "click_minus_engine_clock_slope_ms_per_min": -0.039,
+      "click_minus_engine_clock_first10": {
+        "n": 10,
+        "min": 64.7,
+        "median": 65.0,
+        "p95": 65.5,
+        "max": 65.5,
+        "mean": 65.13
+      },
+      "click_minus_engine_clock_last10": {
+        "n": 10,
+        "min": 65.0,
+        "median": 65.1,
+        "p95": 65.4,
+        "max": 65.4,
+        "mean": 65.19
+      }
+    },
+    "close": {
+      "exited": true,
+      "exit_after_prompt_ms": 424,
+      "leftover_processes": 0
+    }
+  },
+  "leftover_processes": 0
+}

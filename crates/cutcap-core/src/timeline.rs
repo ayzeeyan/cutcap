@@ -8,7 +8,8 @@ pub struct TimelineIndex {
     tracks: BTreeMap<TrackId, (Track, Vec<Clip>)>,
     clip_tracks: HashMap<ClipId, TrackId>,
     default: Option<TrackId>,
-    audio: Option<TrackId>,
+    /// Audio tracks in project order: the mixer's deterministic sum order.
+    audio: Vec<TrackId>,
 }
 impl TimelineIndex {
     /// Rebuild only after geometry changes; Project already enforces graph invariants.
@@ -42,8 +43,9 @@ impl TimelineIndex {
             audio: project
                 .tracks()
                 .iter()
-                .find(|t| t.kind == TrackKind::Audio)
-                .map(|t| t.id),
+                .filter(|t| t.kind == TrackKind::Audio)
+                .map(|t| t.id)
+                .collect(),
         }
     }
     /// The video track to monitor: the selected video track (or the track of
@@ -62,12 +64,19 @@ impl TimelineIndex {
         .or(self.default)?;
         self.tracks.get(&id).map(|(track, _)| track)
     }
-    /// The audio track the timeline plays (Phase 4B, no mixing): the first
-    /// audio track in project order.
-    pub fn monitored_audio(&self) -> Option<&Track> {
+    /// Every audio track, in project order (Phase 4C: all of them are mixed).
+    pub fn audio_tracks(&self) -> impl Iterator<Item = &Track> {
         self.audio
-            .and_then(|id| self.tracks.get(&id))
+            .iter()
+            .filter_map(|id| self.tracks.get(id))
             .map(|(track, _)| track)
+    }
+    /// The latest clip end over all audio tracks (zero without audio clips).
+    pub fn audio_end(&self) -> Result<TimelineTime, TimeError> {
+        self.audio_tracks()
+            .try_fold(TimelineTime::ZERO, |end, track| {
+                Ok(end.max(self.end(track.id)?))
+            })
     }
     pub fn track(&self, id: TrackId) -> Option<&Track> {
         self.tracks.get(&id).map(|(t, _)| t)

@@ -5,14 +5,16 @@ use std::{
 
 use cutcap_contracts::{
     ClipId, LinkId, MediaId, ProjectId, SelectionState, SourceTime, TimeError, Timebase,
-    TimelineDuration, TimelineTime, TrackId, TrackKind,
+    TimelineDuration, TimelineTime, TrackControls, TrackId, TrackKind,
 };
 use serde::{Deserialize, Serialize};
 
 /// Schema 2 (Phase 4B) adds an explicit stream per clip and linked
-/// audio/video pairs. Schema 1 documents are migrated on load (every schema 1
-/// clip is a video clip); nothing is written back unless the user saves.
-pub const PROJECT_SCHEMA_VERSION: u32 = 2;
+/// audio/video pairs. Schema 3 (Phase 4C) adds persistent audio track
+/// controls. Older documents are migrated on load (every schema 1 clip is a
+/// video clip; older tracks have default controls); nothing is written back
+/// unless the user saves.
+pub const PROJECT_SCHEMA_VERSION: u32 = 3;
 /// The oldest schema this build migrates.
 pub const OLDEST_SCHEMA_VERSION: u32 = 1;
 pub const MAX_TRACKS: usize = 128;
@@ -26,6 +28,10 @@ pub struct Track {
     pub id: TrackId,
     pub name: String,
     pub kind: TrackKind,
+    /// Volume, mute and solo of an audio track. Absent means defaults; video
+    /// tracks always hold defaults.
+    #[serde(default, skip_serializing_if = "TrackControls::is_default")]
+    pub controls: TrackControls,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -47,8 +53,10 @@ pub struct Clip {
     pub track_id: TrackId,
     pub start: TimelineTime,
     pub duration: TimelineDuration,
-    /// The source instant at `start`, in its own clock. Linked clips share the
-    /// same value, so both streams map a timeline position with one rounding.
+    /// The exact instant on the file's container clock at `start`; `timebase`
+    /// is only its representation. Linked clips share the same value, so both
+    /// streams map a timeline position with one rounding. Unlink keeps it
+    /// verbatim; independently placed audio uses `1/sample_rate`.
     pub source_in: SourceTime,
     /// Schema 1 documents have no field: every schema 1 clip is video.
     #[serde(default)]
@@ -93,9 +101,23 @@ struct ProjectData {
 impl TryFrom<ProjectData> for Project {
     type Error = ProjectError;
     fn try_from(value: ProjectData) -> Result<Self, Self::Error> {
+        let controls_are_new = |tracks: &[Track]| {
+            if tracks.iter().any(|t| !t.controls.is_default()) {
+                Err(ProjectError::Migration(
+                    "documents before schema 3 cannot contain track controls",
+                ))
+            } else {
+                Ok(())
+            }
+        };
         let schema_version = match value.schema_version {
             PROJECT_SCHEMA_VERSION => PROJECT_SCHEMA_VERSION,
+            2 => {
+                controls_are_new(&value.tracks)?;
+                PROJECT_SCHEMA_VERSION
+            }
             1 => {
+                controls_are_new(&value.tracks)?;
                 // Schema 1 has no stream identity: its clips are video clips on
                 // video tracks. Anything else cannot be migrated faithfully.
                 let audio: HashSet<TrackId> = value
@@ -175,11 +197,32 @@ impl Project {
             return Err(ProjectError::Limit("tracks"));
         }
         validate_name(&track.name)?;
+        validate_controls(&track)?;
         if self.tracks.iter().any(|item| item.id == track.id) {
             return Err(ProjectError::DuplicateId);
         }
         self.tracks.push(track);
         Ok(())
+    }
+
+    /// Replaces an audio track's controls, returning the previous ones.
+    pub fn set_track_controls(
+        &mut self,
+        id: TrackId,
+        controls: TrackControls,
+    ) -> Result<TrackControls, ProjectError> {
+        if !controls.gain_in_range() {
+            return Err(ProjectError::InvalidControls);
+        }
+        let track = self
+            .tracks
+            .iter_mut()
+            .find(|t| t.id == id)
+            .ok_or(ProjectError::MissingReference)?;
+        if track.kind != TrackKind::Audio {
+            return Err(ProjectError::InvalidControls);
+        }
+        Ok(std::mem::replace(&mut track.controls, controls))
     }
 
     pub fn add_media(&mut self, asset: MediaAsset) -> Result<(), ProjectError> {
@@ -334,6 +377,7 @@ impl Project {
         let mut tracks = HashMap::with_capacity(self.tracks.len());
         for track in &self.tracks {
             validate_name(&track.name)?;
+            validate_controls(track)?;
             if tracks.insert(track.id, track.kind).is_some() {
                 return Err(ProjectError::DuplicateId);
             }
@@ -413,6 +457,15 @@ fn validate_clip_values(
     Ok(())
 }
 
+fn validate_controls(track: &Track) -> Result<(), ProjectError> {
+    if !track.controls.gain_in_range()
+        || (track.kind != TrackKind::Audio && !track.controls.is_default())
+    {
+        return Err(ProjectError::InvalidControls);
+    }
+    Ok(())
+}
+
 fn validate_name(name: &str) -> Result<(), ProjectError> {
     if name.trim().is_empty()
         || name.chars().count() > MAX_NAME_CHARS
@@ -455,7 +508,9 @@ pub enum ProjectError {
         "a linked group must be one video and one audio clip with the same media, timing and source in-point"
     )]
     InvalidLink,
-    #[error("the schema 1 document cannot be migrated: {0}")]
+    #[error("track gain is outside -60 to +6 dB, or controls are on a video track")]
+    InvalidControls,
+    #[error("the older project document cannot be migrated: {0}")]
     Migration(&'static str),
     #[error(transparent)]
     Time(#[from] TimeError),

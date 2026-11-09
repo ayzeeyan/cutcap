@@ -1,6 +1,39 @@
-# CutCap native engine ABI, version 9
+# CutCap native engine ABI, version 10
 
-## Phase 4B additions (current authority)
+## Phase 4C additions (current authority)
+
+Rust `ABI_VERSION`, managed `NativeMethods.AbiVersion` and `CONTRACT_VERSION` are
+**10** (ADR 026). Project envelope `format_version` remains 1; the core schema is
+**3**. Every ABI 9 export, status number, layout and handle rule is unchanged; the
+bump guards eight exports and new view fields.
+
+| New export | Semantics |
+|---|---|
+| `cutcap_session_place_audio_stream(u64, u8* media, usize, u32 stream, u8* track, usize, i64 position, u32 unit)` | Place one decodable stream of a Ready source as an independent clip. `track` length 0 picks the first audio track free for the whole interval. One undo step. |
+| `cutcap_session_unlink_clip(u64, u8* clip, usize)` | Remove the link of a linked pair. One undo step; no timing changes. |
+| `cutcap_session_link_clips(u64, u8* clip, usize, u8* partner, usize)` | Link one unlinked video clip and one unlinked audio clip with identical media, start, duration and `source_in`. One undo step. |
+| `cutcap_session_set_track_mute(u64, u8* track, usize, u32 muted)` | One undo step; playback continues. |
+| `cutcap_session_set_track_solo(u64, u8* track, usize, u32 soloed)` | One undo step; playback continues. |
+| `cutcap_session_preview_track_gain(u64, u8* track, usize, i32 cdb)` | Transient volume during a drag, −6000..=600 hundredths of a dB. Heard live and shown in the view; no history, no document change. |
+| `cutcap_session_commit_track_gain(u64, u8* track, usize, i32 cdb)` | Ends a drag with one undo step. Equal to the stored value: no entry. |
+| `cutcap_session_cancel_track_gain(u64)` | Ends a drag; the stored value applies again. |
+
+All are acceptance-only and validated before anything is queued. Audio-only
+sources use the existing `place_clip`/`insert_clip` on an audio track.
+
+View additions:
+- `tracks[]`: `gain_cdb` (effective, including a drag), `gain_text`, `muted`,
+  `soloed`, `audible`.
+- `media[]`: `audio_only`, `audio_streams[]` (`index`, `label`, `primary`).
+- `inspector.badge`: `"Video"`, `"Audio"` or empty.
+- `editing`: `can_unlink`, `link_candidate` (clip id of the one exact partner).
+- `history`: `undo_track`, `redo_track`.
+- `audio.mix`: `active_tracks`, `mixed_tracks`, `mixed_tracks_peak`,
+  `decoders_peak`, `clipped_samples`, `peak`, `over_limit`, `blocks`,
+  `block_us_last/max/total`, `mixed_ms`.
+- `audio.output`: `period_us_last/max`, `periods` (render-thread timing).
+
+## Phase 4B additions (ABI 9, retained)
 
 Rust `ABI_VERSION`, managed `NativeMethods.AbiVersion` and `CONTRACT_VERSION`
 are **9** (ADR 025). Project envelope `format_version` remains 1; the core

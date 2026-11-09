@@ -17,6 +17,11 @@
 //! frames. Every edit of either member builds both new values and commits
 //! them in one transaction; placement adds the source's primary audio stream
 //! to the first free audio track or is rejected as a whole.
+//!
+//! Independent audio (Phase 4C): a clip of an audio-only source or a chosen
+//! stream has no partner and uses the stream's sample clock for `source_in`.
+//! Unlink only clears the link; every other value stays exact, so playback of
+//! the audio is unchanged. See `docs/PHASE_4C_AUDIO_MIXING_CONTRACT.md`.
 use cutcap_contracts::*;
 use cutcap_core::edit::{check_source_range, shifted_source, source_step};
 use cutcap_core::{Clip, ClipChange, ClipStream, EditError, Project, SourceRange};
@@ -206,29 +211,199 @@ fn duration(value: i64) -> Result<TimelineDuration, EngineError> {
         .ok_or_else(|| invalid("A clip must keep at least one timeline tick."))
 }
 
-/// The original stream's available range for a clip's media. Unknown metadata
-/// (never verified) allows shrinking but no extension past the current range.
+/// The original stream's available range for a clip's media, in the clip's
+/// own clock. Unknown metadata (never verified) allows shrinking but no
+/// extension past the current range.
 pub fn source_range(media: Option<&MediaSummary>, clip: &Clip, project: Timebase) -> SourceRange {
-    match media.filter(|m| m.metadata.timebase == clip.source_in.timebase) {
-        Some(m) => SourceRange {
-            first: m.metadata.start_pts,
-            end: m
-                .metadata
-                .duration_ticks
-                .and_then(|d| m.metadata.start_pts.checked_add(d)),
-        },
-        None => {
-            // Current exclusive end, rounded up to whole ticks: shrinking stays valid.
-            let end =
-                cutcap_core::map_clip_source(clip, clip.start, project, clip.source_in.timebase)
-                    .ok()
-                    .map(|m| m.end_exclusive.ticks);
-            SourceRange {
-                first: clip.source_in.ticks,
-                end,
-            }
+    // Current exclusive end, rounded up to whole ticks: shrinking stays valid.
+    let current_end =
+        cutcap_core::map_clip_source(clip, clip.start, project, clip.source_in.timebase)
+            .ok()
+            .map(|m| m.end_exclusive.ticks);
+    let known = media.and_then(|m| match (clip.stream, clip.link) {
+        // An independent audio clip is bounded by its own stream. A clip that
+        // already reaches outside it (audio that starts after the picture,
+        // kept through Unlink) stays valid; it just cannot grow further.
+        (ClipStream::Audio { index }, None) => {
+            let audio = m.metadata.audio_stream(index)?;
+            let tb = clip.source_in.timebase;
+            let first = audio.start().rescale(tb, Rounding::Ceil).ok()?.ticks;
+            let end = audio.duration_ticks.and_then(|d| {
+                let end = SourceTime {
+                    ticks: audio.start_pts.checked_add(d)?,
+                    timebase: audio.timebase,
+                };
+                end.rescale(tb, Rounding::Floor).ok().map(|t| t.ticks)
+            });
+            Some(SourceRange {
+                first: first.min(clip.source_in.ticks),
+                end: match (end, current_end) {
+                    (Some(e), Some(c)) => Some(e.max(c)),
+                    (e, c) => e.or(c),
+                },
+            })
         }
+        // Video clips and linked pairs live on the video stream's clock.
+        _ => {
+            let video = m.metadata.video()?;
+            (video.timebase == clip.source_in.timebase).then(|| SourceRange {
+                first: video.start_pts,
+                end: video
+                    .duration_ticks
+                    .and_then(|d| video.start_pts.checked_add(d)),
+            })
+        }
+    });
+    known.unwrap_or(SourceRange {
+        first: clip.source_in.ticks,
+        end: current_end,
+    })
+}
+
+/// A stream's length on the project clock (floor). A stream that reports no
+/// duration of its own uses its source's.
+fn stream_length(
+    summary: &MediaSummary,
+    stream: &AudioStreamMetadata,
+    project: Timebase,
+) -> Result<TimelineDuration, EngineError> {
+    let (ticks, timebase) = stream
+        .duration_ticks
+        .filter(|t| *t > 0)
+        .map(|t| (t, stream.timebase))
+        .or_else(|| {
+            let video = summary.metadata.video()?;
+            Some((video.duration_ticks.filter(|t| *t > 0)?, video.timebase))
+        })
+        .ok_or_else(|| invalid("This audio has no known duration, so it cannot be placed yet."))?;
+    let length = SourceTime { ticks, timebase }
+        .rescale(project, Rounding::Floor)
+        .map_err(|_| invalid("Clip timing overflows the timeline clock."))?;
+    u64::try_from(length.ticks)
+        .ok()
+        .and_then(|t| TimelineDuration::new(t).ok())
+        .ok_or_else(|| invalid("This audio is shorter than one timeline tick."))
+}
+
+/// An independent clip of the whole stream starting at `start`. Its in-point
+/// is the stream's first sample on the `1/sample_rate` clock.
+pub fn independent_audio(
+    project: &Project,
+    summary: &MediaSummary,
+    stream: &AudioStreamMetadata,
+    track_id: TrackId,
+    start: TimelineTime,
+) -> Result<Clip, EngineError> {
+    let audio = ClipStream::Audio {
+        index: stream.stream_index,
+    };
+    track_for(project, track_id, audio)?;
+    let duration = stream_length(summary, stream, project.timebase())?;
+    start
+        .checked_add(duration)
+        .map_err(|_| invalid("Clip timing overflows the timeline clock."))?;
+    let samples = Timebase::new(1, stream.sample_rate)
+        .map_err(|_| invalid("This audio stream has an invalid sample rate."))?;
+    let source_in = stream
+        .start()
+        .rescale(samples, Rounding::Ceil)
+        .map_err(|_| invalid("This audio stream's start cannot be represented."))?;
+    Ok(Clip {
+        id: ClipId::new(),
+        media_id: summary.id,
+        track_id,
+        start,
+        duration,
+        source_in,
+        stream: audio,
+        link: None,
+    })
+}
+
+/// An exact partner for `clip`: the one unlinked clip of the other family
+/// with the same media, start, duration and source in-point.
+pub fn link_candidate<'a>(clips: &'a [ClipSummary], clip: &ClipSummary) -> Option<&'a ClipSummary> {
+    if clip.link.is_some() {
+        return None;
     }
+    let mut found = clips.iter().filter(|c| {
+        c.link.is_none()
+            && c.id != clip.id
+            && c.stream.track_kind() != clip.stream.track_kind()
+            && c.media_id == clip.media_id
+            && c.start == clip.start
+            && c.duration == clip.duration
+            && c.source_in == clip.source_in
+    });
+    let first = found.next()?;
+    found.next().is_none().then_some(first)
+}
+
+/// The first audio track (project order) free for the stream's whole interval.
+fn first_free_audio_track(
+    project: &Project,
+    summary: &MediaSummary,
+    stream: &AudioStreamMetadata,
+    position: TimelineSeek,
+) -> Result<TrackId, EngineError> {
+    let start = resolve(project, position)?;
+    let end = start
+        .checked_add(stream_length(summary, stream, project.timebase())?)
+        .map_err(|_| invalid("Clip timing overflows the timeline clock."))?;
+    project
+        .tracks()
+        .iter()
+        .find(|t| {
+            t.kind == TrackKind::Audio
+                && project
+                    .clips()
+                    .iter()
+                    .filter(|c| c.track_id == t.id)
+                    .all(|c| c.end().is_ok_and(|e| e <= start) || c.start >= end)
+        })
+        .map(|t| t.id)
+        .ok_or_else(|| {
+            invalid(
+                "No audio track is free at this position. Add an audio track or move the playhead.",
+            )
+        })
+}
+
+fn ready<'a>(
+    media: &'a BTreeMap<MediaId, MediaSummary>,
+    availability: &BTreeMap<MediaId, MediaAvailability>,
+    id: MediaId,
+) -> Result<&'a MediaSummary, EngineError> {
+    media
+        .get(&id)
+        .filter(|_| {
+            availability
+                .get(&id)
+                .is_some_and(|a| a.state == Availability::Ready)
+        })
+        .ok_or_else(|| invalid("Only a verified, ready source can be added to the timeline."))
+}
+
+fn place_audio(
+    project: &mut Project,
+    summary: &MediaSummary,
+    stream: &AudioStreamMetadata,
+    track_id: TrackId,
+    position: TimelineSeek,
+) -> Result<Outcome, EngineError> {
+    let start = resolve(project, position)?;
+    let clip = independent_audio(project, summary, stream, track_id, start)?;
+    let id = clip.id;
+    let at = project.clips().len();
+    let change = project
+        .replace_clips(&[], &[(at, clip)])
+        .map_err(project_error)?;
+    Ok(Outcome {
+        change,
+        label: format!("add {}", crate::view::file_name(summary)),
+        notice: None,
+        selection: SelectionState::Clip(id),
+    })
 }
 
 fn name(media: &BTreeMap<MediaId, MediaSummary>, clip: &Clip) -> String {
@@ -270,16 +445,19 @@ pub fn apply(
             track_id,
             position,
         } => {
-            let summary = media
-                .get(&media_id)
-                .filter(|_| {
-                    availability
-                        .get(&media_id)
-                        .is_some_and(|a| a.state == Availability::Ready)
-                })
-                .ok_or_else(|| {
-                    invalid("Only a verified, ready source can be added to the timeline.")
-                })?;
+            let summary = ready(media, availability, media_id)?;
+            // An audio-only source goes on an audio track as an independent clip.
+            if summary.metadata.is_audio_only() {
+                let stream = summary
+                    .metadata
+                    .primary_audio()
+                    .ok_or_else(|| invalid("This source has no decodable audio stream."))?;
+                return place_audio(project, summary, stream, track_id, position);
+            }
+            let video = summary
+                .metadata
+                .video()
+                .ok_or_else(|| invalid("This source has no video stream."))?;
             video_track(project, track_id)?;
             let start = resolve(project, position)?;
             let length = whole_source(summary, tb)?;
@@ -294,10 +472,7 @@ pub fn apply(
                 track_id,
                 start,
                 duration: length,
-                source_in: SourceTime {
-                    ticks: summary.metadata.start_pts,
-                    timebase: summary.metadata.timebase,
-                },
+                source_in: video.start(),
             };
             let id = clip.id;
             let clips = with_linked_audio(project, summary, clip)?;
@@ -318,6 +493,100 @@ pub fn apply(
                 ),
                 notice: None,
                 selection: SelectionState::Clip(id),
+            })
+        }
+        Command::PlaceAudioStream {
+            media_id,
+            stream,
+            track_id,
+            position,
+        } => {
+            let summary = ready(media, availability, media_id)?;
+            let stream = summary
+                .metadata
+                .audio_stream(stream)
+                .ok_or_else(|| invalid("That audio stream cannot be decoded here."))?;
+            let track_id = match track_id {
+                Some(track) => track,
+                None => first_free_audio_track(project, summary, stream, position)?,
+            };
+            place_audio(project, summary, stream, track_id, position)
+        }
+        Command::UnlinkClip { clip_id } => {
+            let members = group(project, clip_id)?;
+            if members.len() != 2 {
+                return Err(invalid("That clip is not linked."));
+            }
+            let (_, clip) = find(project, clip_id)?;
+            let replacements = members
+                .into_iter()
+                .map(|(i, member)| {
+                    let id = member.id;
+                    (
+                        i,
+                        id,
+                        vec![Clip {
+                            link: None,
+                            ..member
+                        }],
+                    )
+                })
+                .collect();
+            let change = replace_group(project, replacements)?;
+            Ok(Outcome {
+                change,
+                label: format!("unlink {}", name(media, &clip)),
+                notice: None,
+                selection: SelectionState::Clip(clip_id),
+            })
+        }
+        Command::LinkClips {
+            clip_id,
+            partner_id,
+        } => {
+            let (a_at, a) = find(project, clip_id)?;
+            let (b_at, b) = find(project, partner_id)?;
+            if a.link.is_some() || b.link.is_some() {
+                return Err(invalid("Unlink those clips before linking them again."));
+            }
+            let stream = [a.stream, b.stream].into_iter().find_map(|s| match s {
+                ClipStream::Audio { index } => Some(index),
+                ClipStream::Video => None,
+            });
+            let decodable = stream.is_some_and(|index| {
+                media
+                    .get(&a.media_id)
+                    .is_some_and(|m| m.metadata.audio_stream(index).is_some())
+            });
+            if a.stream.track_kind() == b.stream.track_kind() || !decodable {
+                return Err(invalid(
+                    "Only a video clip and an audio clip of the same source can be linked.",
+                ));
+            }
+            if a.media_id != b.media_id
+                || a.start != b.start
+                || a.duration != b.duration
+                || a.source_in != b.source_in
+            {
+                return Err(invalid(
+                    "Linked clips must have the same source, timing and in-point.",
+                ));
+            }
+            let link = Some(LinkId::new());
+            let (a_id, b_id) = (a.id, b.id);
+            let label = format!("link {}", name(media, &a));
+            let change = replace_group(
+                project,
+                vec![
+                    (a_at, a_id, vec![Clip { link, ..a }]),
+                    (b_at, b_id, vec![Clip { link, ..b }]),
+                ],
+            )?;
+            Ok(Outcome {
+                change,
+                label,
+                notice: None,
+                selection: SelectionState::Clip(clip_id),
             })
         }
         Command::MoveClip {
@@ -501,14 +770,17 @@ pub fn whole_source(
     source: &MediaSummary,
     project: Timebase,
 ) -> Result<TimelineDuration, EngineError> {
-    let ticks = source
+    let video = source
         .metadata
+        .video()
+        .ok_or_else(|| invalid("This source has no video stream."))?;
+    let ticks = video
         .duration_ticks
         .filter(|t| *t > 0)
         .ok_or_else(|| invalid("This source has no known duration, so it cannot be placed yet."))?;
     let length = SourceTime {
         ticks,
-        timebase: source.metadata.timebase,
+        timebase: video.timebase,
     }
     .rescale(project, Rounding::Floor)
     .map_err(|_| invalid("Clip timing overflows the timeline clock."))?;

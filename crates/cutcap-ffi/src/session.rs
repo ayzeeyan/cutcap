@@ -78,6 +78,12 @@ pub struct Session {
     waveforms: crate::waveforms::WaveformService,
     waveform_slot: Option<crate::waveforms::Done>,
     waveform_stats_seen: crate::waveforms::WaveformStats,
+    /// A volume drag in progress: heard live, not a project change until committed.
+    gain_preview: Option<(TrackId, i32)>,
+    /// The commit that will end the preview once its snapshot arrives.
+    gain_commit: Option<RequestId>,
+    /// The exact partner the selected clip can be linked with (per snapshot).
+    link_candidate: Option<ClipId>,
     closed: bool,
 }
 
@@ -189,6 +195,9 @@ impl Session {
             waveforms: crate::waveforms::WaveformService::start(backend)?,
             waveform_slot: None,
             waveform_stats_seen: Default::default(),
+            gain_preview: None,
+            gain_commit: None,
+            link_candidate: None,
             closed: false,
         };
         session.new_project()?;
@@ -203,13 +212,26 @@ impl Session {
         if self.closed {
             return Err(SessionError::Invalid("The session is shut down."));
         }
-        let invalidate = !matches!(
-            command,
-            Command::GetSnapshot
-                | Command::SaveProject { .. }
-                | Command::SelectMedia { .. }
-                | Command::Select { .. }
-        );
+        // Track controls and their undo steps change only the mix: the
+        // transport keeps playing. (If this snapshot is behind the owner, the
+        // generation check in `pump` still stops playback for a real edit.)
+        let history = self.requests.snapshot.as_ref().map(|s| &s.history);
+        let live_undo = match command {
+            Command::Undo => history.is_some_and(|h| h.undo_track),
+            Command::Redo => history.is_some_and(|h| h.redo_track),
+            _ => false,
+        };
+        let invalidate = !live_undo
+            && !matches!(
+                command,
+                Command::GetSnapshot
+                    | Command::SaveProject { .. }
+                    | Command::SelectMedia { .. }
+                    | Command::Select { .. }
+                    | Command::SetTrackGain { .. }
+                    | Command::SetTrackMute { .. }
+                    | Command::SetTrackSolo { .. }
+            );
         let request_id = RequestId::new();
         let envelope = CommandEnvelope {
             request_id,
@@ -379,6 +401,122 @@ impl Session {
         .map(|_| ())
     }
 
+    /// Places one chosen audio stream as an independent clip (undoable).
+    pub fn place_audio_stream(
+        &mut self,
+        media: MediaId,
+        stream: u32,
+        track: Option<TrackId>,
+        position: TimelineSeek,
+    ) -> Result<(), SessionError> {
+        self.requests.inspecting_media = false;
+        self.submit(Command::PlaceAudioStream {
+            media_id: media,
+            stream,
+            track_id: track,
+            position,
+        })
+        .map(|_| ())
+    }
+
+    pub fn unlink_clip(&mut self, id: ClipId) -> Result<(), SessionError> {
+        self.submit(Command::UnlinkClip { clip_id: id }).map(|_| ())
+    }
+
+    pub fn link_clips(&mut self, id: ClipId, partner: ClipId) -> Result<(), SessionError> {
+        self.submit(Command::LinkClips {
+            clip_id: id,
+            partner_id: partner,
+        })
+        .map(|_| ())
+    }
+
+    pub fn set_track_mute(&mut self, track: TrackId, mute: bool) -> Result<(), SessionError> {
+        self.submit(Command::SetTrackMute {
+            track_id: track,
+            mute,
+        })
+        .map(|_| ())
+    }
+
+    pub fn set_track_solo(&mut self, track: TrackId, solo: bool) -> Result<(), SessionError> {
+        self.submit(Command::SetTrackSolo {
+            track_id: track,
+            solo,
+        })
+        .map(|_| ())
+    }
+
+    fn audio_track(&self, track: TrackId) -> Result<&TrackSummary, SessionError> {
+        self.requests
+            .snapshot
+            .as_ref()
+            .and_then(|s| s.tracks.iter().find(|t| t.id == track))
+            .filter(|t| t.kind == TrackKind::Audio)
+            .ok_or(SessionError::Invalid("Choose an audio track."))
+    }
+
+    /// A volume drag: heard live and shown in the view, never in history.
+    pub fn preview_track_gain(&mut self, track: TrackId, cdb: i32) -> Result<(), SessionError> {
+        self.audio_track(track)?;
+        if !(MIN_GAIN_CDB..=MAX_GAIN_CDB).contains(&cdb) {
+            return Err(SessionError::Invalid("Track gain must be -60 to +6 dB."));
+        }
+        self.gain_preview = Some((track, cdb));
+        self.gain_commit = None;
+        self.push_mix();
+        self.dirty = true;
+        Ok(())
+    }
+
+    /// Ends a volume drag with one undoable change. The preview stays in force
+    /// until the owner's snapshot confirms the new value, so nothing jumps.
+    pub fn commit_track_gain(&mut self, track: TrackId, cdb: i32) -> Result<(), SessionError> {
+        let stored = self.audio_track(track)?.controls.gain_cdb;
+        if !(MIN_GAIN_CDB..=MAX_GAIN_CDB).contains(&cdb) {
+            return Err(SessionError::Invalid("Track gain must be -60 to +6 dB."));
+        }
+        if stored == cdb {
+            return self.cancel_track_gain();
+        }
+        self.gain_preview = Some((track, cdb));
+        self.gain_commit = Some(self.submit(Command::SetTrackGain {
+            track_id: track,
+            gain_cdb: cdb,
+        })?);
+        self.push_mix();
+        Ok(())
+    }
+
+    /// Abandons a volume drag: the stored value is heard and shown again.
+    pub fn cancel_track_gain(&mut self) -> Result<(), SessionError> {
+        self.gain_preview = None;
+        self.gain_commit = None;
+        self.push_mix();
+        self.dirty = true;
+        Ok(())
+    }
+
+    /// Hands the current controls (with any preview) to the mixer.
+    fn push_mix(&self) {
+        let Some(snapshot) = self.requests.snapshot.as_ref() else {
+            return;
+        };
+        let tracks: Vec<(TrackId, TrackControls)> = snapshot
+            .tracks
+            .iter()
+            .filter(|t| t.kind == TrackKind::Audio)
+            .map(|t| {
+                let mut controls = t.controls;
+                if let Some((_, cdb)) = self.gain_preview.filter(|(id, _)| *id == t.id) {
+                    controls.gain_cdb = cdb;
+                }
+                (t.id, controls)
+            })
+            .collect();
+        self.timeline_playback.set_mix(&tracks);
+    }
+
     /// The Rust-owned timeline playhead: the transport clock while timeline
     /// playback is active, otherwise the still-preview position.
     pub fn timeline_playhead(&self) -> TimelineTime {
@@ -407,6 +545,7 @@ impl Session {
                 split_detail: "Select a clip, then place the playhead inside it to split (Ctrl+B)."
                     .into(),
                 notice,
+                ..Default::default()
             };
         };
         let Some(clip) = self
@@ -429,16 +568,22 @@ impl Session {
             duration: clip.duration,
             source_in: clip.source_in,
         };
+        let can_unlink = clip.link.is_some();
+        let link_candidate = self.link_candidate.map(|c| c.to_string());
         match cutcap_core::edit::split_offset(&core, self.timeline_playhead(), snapshot.timebase) {
             Ok(_) => view::EditingView {
                 split_enabled: true,
                 split_detail: "Split the selected clip at the playhead (Ctrl+B)".into(),
                 notice,
+                can_unlink,
+                link_candidate,
             },
             Err(reason) => view::EditingView {
                 split_enabled: false,
                 split_detail: reason.to_string(),
                 notice,
+                can_unlink,
+                link_candidate,
             },
         }
     }
@@ -477,10 +622,20 @@ impl Session {
     }
 
     pub fn select_media(&mut self, id: MediaId) -> Result<(), SessionError> {
+        // The current source again only brings its inspector back: reloading
+        // the monitor would lose its position.
+        let current = self.requests.desired_media == Some(id)
+            && self
+                .requests
+                .snapshot
+                .as_ref()
+                .is_some_and(|snapshot| snapshot.source_media == Some(id));
         self.submit(Command::SelectMedia { media_id: id })?;
         self.requests.desired_media = Some(id);
         self.requests.inspecting_media = true;
-        self.media.pending_selection();
+        if !current {
+            self.media.pending_selection();
+        }
         Ok(())
     }
 
@@ -1145,6 +1300,11 @@ impl Session {
                     self.media.import_finished(imported);
                 }
                 self.set_snapshot(snapshot);
+                if self.gain_commit == Some(request_id) {
+                    self.gain_commit = None;
+                    self.gain_preview = None;
+                    self.push_mix();
+                }
                 self.status = StatusView {
                     text: "Ready".into(),
                     error: false,
@@ -1162,6 +1322,11 @@ impl Session {
             EngineEvent::Failed { request_id, error } => {
                 self.requests.pending.remove(&request_id);
                 self.requests.file_pending.remove(&request_id);
+                if self.gain_commit == Some(request_id) {
+                    self.gain_commit = None;
+                    self.gain_preview = None;
+                    self.push_mix();
+                }
                 tracing::warn!(code = ?error.code, "command failed: {error}");
                 self.status = StatusView {
                     text: error.to_string(),
@@ -1187,6 +1352,8 @@ impl Session {
             self.thumbnail_slot = None;
             self.waveforms.clear();
             self.waveform_slot = None;
+            self.gain_preview = None;
+            self.gain_commit = None;
         }
         let changed = self
             .requests
@@ -1199,9 +1366,19 @@ impl Session {
             .enumerate()
             .map(|(i, c)| (c.id, i))
             .collect();
+        self.link_candidate = match snapshot.selection {
+            SelectionState::Clip(id) => self
+                .clip_lookup
+                .get(&id)
+                .and_then(|i| snapshot.clips.get(*i))
+                .and_then(|clip| crate::edits::link_candidate(&snapshot.clips, clip))
+                .map(|c| c.id),
+            _ => None,
+        };
         self.requests.snapshot = Some(snapshot);
         self.timeline_generation += 1;
         self.timeline_cached = None;
+        self.push_mix();
         if changed {
             self.invalidate_timeline();
         }
@@ -1219,6 +1396,7 @@ impl Session {
         let inspector = match snapshot {
             None => InspectorView {
                 kind: "project",
+                badge: "",
                 title: "Starting…".into(),
                 detail: String::new(),
                 sections: Vec::new(),
@@ -1241,22 +1419,34 @@ impl Session {
                         .iter()
                         .find(|t| t.id == clip.track_id)
                         .map_or_else(String::new, |t| t.name.clone());
+                    let family = match clip.stream {
+                        ClipStream::Video => "Video",
+                        ClipStream::Audio { .. } => "Audio",
+                    };
                     InspectorView {
                         kind: "clip",
+                        badge: family,
                         title: view::clip_name(snapshot, clip.media_id),
-                        detail: format!("Video clip on {track_name}"),
+                        detail: format!("{family} clip on {track_name}"),
                         sections: view::clip_sections(snapshot, clip),
                     }
                 } else if let Some(asset) = source {
+                    let audio_only = asset.metadata.is_audio_only();
                     InspectorView {
                         kind: "source",
+                        badge: if audio_only { "Audio" } else { "Video" },
                         title: view::file_name(asset),
-                        detail: "Source video, read only".into(),
+                        detail: if audio_only {
+                            "Source audio, read only".into()
+                        } else {
+                            "Source video, read only".into()
+                        },
                         sections: view::source_sections(asset),
                     }
                 } else if let Some(track) = track {
                     InspectorView {
                         kind: "track",
+                        badge: "",
                         title: track.name.clone(),
                         detail: match (track.kind, track.clip_count) {
                             (TrackKind::Video, 0) => "Empty video track".into(),
@@ -1271,6 +1461,7 @@ impl Session {
                 } else {
                     InspectorView {
                         kind: "project",
+                        badge: "",
                         title: snapshot.name.clone(),
                         detail: "Project overview".into(),
                         sections: view::project_sections(snapshot),
@@ -1308,7 +1499,9 @@ impl Session {
             }),
             status: self.status.clone(),
             pending: u32::try_from(self.requests.pending.len()).unwrap_or(u32::MAX),
-            tracks: snapshot.map(view::track_views).unwrap_or_default(),
+            tracks: snapshot
+                .map(|s| view::track_views(s, self.gain_preview))
+                .unwrap_or_default(),
             media: snapshot
                 .map(|snapshot| {
                     snapshot
@@ -1420,7 +1613,9 @@ impl Session {
             if view::source_key(snapshot, media) != want.source_key || want.source_key.is_empty() {
                 continue;
             }
-            let meta = &media.metadata;
+            let Some(meta) = media.metadata.video() else {
+                continue;
+            };
             let Ok(position) = (SourceTime {
                 ticks: want.sample_us,
                 timebase: micro,
@@ -1569,7 +1764,7 @@ impl Session {
                     .iter()
                     .flat_map(|m| {
                         m.metadata
-                            .audio
+                            .audio()
                             .iter()
                             .map(|a| view::audio_key(s, m, a.stream_index))
                             .collect::<Vec<_>>()

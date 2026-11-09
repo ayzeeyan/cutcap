@@ -19,7 +19,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             media_id: media.id,
             request_id: RequestId::new(),
         },
-        position: media.metadata.start(),
+        position: media.metadata.video().unwrap().start(),
         media,
     };
     let (mut frames, mut bytes, mut pid, mut first, mut last) = (0_u64, 0_u64, 0_u32, None, None);

@@ -1,6 +1,28 @@
-# UI–engine and media contracts, version 9
+# UI–engine and media contracts, version 10
 
-## Phase 4B audio and waveform contract (current authority)
+## Phase 4C mixing contract (current authority)
+
+ABI/CONTRACT_VERSION are 10 (ADR 026); core schema 3, envelope 1. The binding text
+is `PHASE_4C_AUDIO_MIXING_CONTRACT.md`; exports are in NATIVE_ABI.md.
+
+- **Ownership.** Rust owns gain, mute, solo, audibility, links, stream identity,
+  every sample position and the mix. C# holds a pointer position only during a
+  volume drag and shows the value Rust publishes.
+- **Controls never restart the transport.** Track-control commands and their
+  undo/redo leave the evaluation generation alone and are applied to the running
+  mixer. Structural edits still stop playback, as before.
+- **One gesture, one undo step.** A volume drag is previews ended by one commit.
+- **Stream placement is explicit.** C# sends the chosen stream; Rust validates it
+  and, without a chosen track, picks the first free audio track.
+- **Bounded.** At most 16 audible overlapping tracks, 24 decoders, bounded PCM.
+  Past the limit Play fails with a reason. Nothing is silently dropped.
+- **Length includes audio.** `timeline_preview.extent_*` is the later of the
+  monitored picture's end and the last audio clip's end, so Play is available for
+  a timeline holding only audio.
+- **Selecting the current source again** only returns the inspector to it; the
+  Source monitor keeps its position.
+
+## Phase 4B audio and waveform contract (ABI 9, retained)
 
 ABI/CONTRACT_VERSION are 9 (ADR 025); core schema 2, envelope 1. Exports and
 layouts: NATIVE_ABI.md.

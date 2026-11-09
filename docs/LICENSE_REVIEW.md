@@ -1,5 +1,13 @@
 # Licensing and distribution review
 
+Phase 4C update (2026-11-08): no crate, DLL, codec or font is added. Audio-only
+import decodes WAV, MP3, AAC/M4A and FLAC through the same external development
+FFmpeg 9.0.1 executable; the installed build's MP3 and AAC decoders are not
+distributed by CutCap, and FFmpeg stays unbundled. Patent or distribution questions
+for those decoders therefore remain with the unresolved FFmpeg distribution decision
+below. Subprocess isolation is not treated as resolving them, and no application
+licence is chosen here. Test media are generated tones; the new icons are original.
+
 Phase 4B update (2026-11-07): audio output adds the Rust crate `wasapi 0.27.0`
 (MIT, Windows targets only) and its new transitive `num-integer 0.1.47` (MIT OR
 Apache-2.0); it also uses `windows`/`windows-core 0.62.2` (MIT OR Apache-2.0)

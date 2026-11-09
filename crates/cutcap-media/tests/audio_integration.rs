@@ -295,3 +295,225 @@ fn aac_sources_decode_and_cancellation_reaps_the_decoder() {
             .is_err()
     );
 }
+
+/// An audio-only file: `graph` encoded with `args` into `name`.
+fn audio_file(dir: &Path, name: &str, graph: &str, args: &[&str]) -> MediaSummary {
+    let path = dir.join(name);
+    let status = Command::new(ffmpeg())
+        .args([
+            "-hide_banner",
+            "-v",
+            "error",
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            graph,
+        ])
+        .args(args)
+        .arg(&path)
+        .status()
+        .unwrap();
+    assert!(status.success(), "fixture generation failed for {name}");
+    let probe = FfmpegBackend::default()
+        .probe(&path, &Cancellation::default())
+        .unwrap();
+    MediaSummary {
+        id: MediaId::new(),
+        path,
+        metadata: probe.metadata,
+    }
+}
+
+const PLAYBACK: &[&str] = &[
+    "-af",
+    "aresample=48000:resampler=swr,aformat=sample_fmts=flt:channel_layouts=stereo",
+];
+
+#[test]
+#[ignore = "requires external FFmpeg/FFprobe"]
+fn audio_only_formats_decode_on_the_source_clock_like_an_independent_decode() {
+    let _guard = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+    let dir = tempfile::tempdir().unwrap();
+    let tone = "sine=frequency=440:sample_rate=44100:duration=3";
+    let tone48 = "sine=frequency=440:sample_rate=48000:duration=3";
+    // (file, graph, encoder arguments, expected codec, allowed sample error)
+    let cases: &[(&str, &str, &[&str], &str, f32)] = &[
+        ("s16.wav", tone48, &["-c:a", "pcm_s16le"], "pcm_s16le", 1e-4),
+        ("s24.wav", tone48, &["-c:a", "pcm_s24le"], "pcm_s24le", 1e-4),
+        ("f32.wav", tone48, &["-c:a", "pcm_f32le"], "pcm_f32le", 1e-4),
+        ("flac.flac", tone, &["-c:a", "flac"], "flac", 2e-3),
+        (
+            "lame.mp3",
+            tone,
+            &["-c:a", "libmp3lame", "-b:a", "192k"],
+            "mp3",
+            3e-2,
+        ),
+        (
+            "aac.m4a",
+            tone48,
+            &["-c:a", "aac", "-b:a", "192k"],
+            "aac",
+            3e-2,
+        ),
+    ];
+    for (name, graph, args, codec, tolerance) in cases {
+        let media = audio_file(dir.path(), name, graph, args);
+        assert!(media.metadata.is_audio_only(), "{name}");
+        assert!(media.metadata.video().is_none(), "{name}");
+        let audio = media.metadata.primary_audio().unwrap().clone();
+        assert_eq!(audio.codec, *codec, "{name}");
+        assert!(audio.duration_ticks.is_some(), "{name} needs a duration");
+        // Decode 1.0 s from 0.5 s on the source clock, at the device rate.
+        let origin = audio
+            .start()
+            .rescale(Timebase::new(1, 48_000).unwrap(), Rounding::Ceil)
+            .unwrap()
+            .ticks;
+        let (start, end) = (origin + 24_000, origin + 72_000);
+        let (first, pcm) = contiguous(&decode(&media, start, Some(end), Some(48_000)));
+        assert_eq!(first, start, "{name}: exact first sample");
+        assert_eq!(pcm.len() as i64, (end - start) * 2, "{name}: exact length");
+        let oracle = oracle(&media.path, PLAYBACK);
+        // Skip the resampler/codec settling after the seek.
+        let mut worst = 0.0f32;
+        for frame in 2_400..48_000usize {
+            let index = (first - origin) as usize + frame;
+            for channel in 0..2 {
+                worst = worst.max((pcm[frame * 2 + channel] - oracle[index * 2 + channel]).abs());
+            }
+        }
+        assert!(worst < *tolerance, "{name}: worst sample error {worst}");
+        assert!(pcm.iter().any(|s| s.abs() > 0.05), "{name}: real sound");
+    }
+    // A format outside the verified set is refused for what it is.
+    let ogg = dir.path().join("vorbis.ogg");
+    let status = Command::new(ffmpeg())
+        .args([
+            "-hide_banner",
+            "-v",
+            "error",
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            tone,
+        ])
+        .args(["-c:a", "libvorbis"])
+        .arg(&ogg)
+        .status()
+        .unwrap();
+    if status.success() {
+        assert!(matches!(
+            FfmpegBackend::default().probe(&ogg, &Cancellation::default()),
+            Err(MediaError::Unsupported(_))
+        ));
+    }
+}
+
+#[test]
+#[ignore = "requires external FFmpeg/FFprobe"]
+fn a_non_primary_stream_decodes_and_analyses_its_own_samples() {
+    let _guard = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("two.mkv");
+    let status = Command::new(ffmpeg())
+        .args(["-hide_banner", "-v", "error", "-y"])
+        .args(["-f", "lavfi", "-i", "color=c=gray:s=160x90:r=25:d=2"])
+        .args([
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=440:sample_rate=48000:duration=2",
+        ])
+        .args([
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=1320:sample_rate=48000:duration=2,volume=0.5",
+        ])
+        .args([
+            "-map",
+            "0:v",
+            "-map",
+            "1:a",
+            "-map",
+            "2:a",
+            "-c:v",
+            "ffv1",
+            "-c:a",
+            "pcm_s16le",
+        ])
+        .arg(&path)
+        .status()
+        .unwrap();
+    assert!(status.success());
+    let probe = FfmpegBackend::default()
+        .probe(&path, &Cancellation::default())
+        .unwrap();
+    assert_eq!(probe.metadata.audio().len(), 2);
+    let media = MediaSummary {
+        id: MediaId::new(),
+        path: path.clone(),
+        metadata: probe.metadata,
+    };
+    let second = media.metadata.audio()[1].stream_index;
+    let request = PcmRequest {
+        media: media.clone(),
+        stream_index: second,
+        start_sample: 4_800,
+        end_sample: Some(14_400),
+        rate: Some(48_000),
+        background: false,
+    };
+    let mut chunks = Vec::new();
+    FfmpegBackend::default()
+        .stream_pcm(&request, &Cancellation::default(), &mut |c| {
+            chunks.push(c);
+            Ok(())
+        })
+        .unwrap();
+    let (first, pcm) = contiguous(&chunks);
+    assert_eq!(first, 4_800);
+    let out = Command::new(ffmpeg())
+        .args(["-hide_banner", "-v", "error", "-i"])
+        .arg(&path)
+        .args(["-map", "0:a:1"])
+        .args(PLAYBACK)
+        .args(["-f", "f32le", "-c:a", "pcm_f32le", "-"])
+        .output()
+        .unwrap();
+    let expected: Vec<f32> = out
+        .stdout
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|b| f32::from_le_bytes(*b))
+        .collect();
+    for (i, sample) in pcm.iter().enumerate() {
+        assert!(
+            (sample - expected[4_800 * 2 + i]).abs() < 1e-4,
+            "sample {i}"
+        );
+    }
+    // Two streams of one file give two different peak sets.
+    let backend = FfmpegBackend::default();
+    let cancel = Cancellation::default();
+    let a = backend
+        .audio_peaks(
+            &media,
+            media.metadata.audio()[0].stream_index,
+            0,
+            1,
+            &cancel,
+        )
+        .unwrap();
+    let b = backend.audio_peaks(&media, second, 0, 1, &cancel).unwrap();
+    assert!(
+        a[0].max[100] > b[0].max[100] * 1.5,
+        "{} vs {}",
+        a[0].max[100],
+        b[0].max[100]
+    );
+}

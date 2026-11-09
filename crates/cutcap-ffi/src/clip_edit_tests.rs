@@ -52,7 +52,7 @@ impl Bench {
         let media = MediaSummary {
             id: MediaId::new(),
             path: "C:/clips/take.mkv".into(),
-            metadata: cutcap_media::parse_probe(probe).unwrap(),
+            metadata: cutcap_media::parse_probe(probe).unwrap().into(),
         };
         let id = media.id;
         send(

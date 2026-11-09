@@ -151,7 +151,7 @@ pub(crate) fn run_policy(
     if cancel.is_cancelled() {
         return Err(MediaError::Cancelled);
     }
-    let meta = &request.media.metadata;
+    let meta = crate::backend::video_of(&request.media)?;
     meta.validate().map_err(|e| invalid(&e.to_string()))?;
     let lower = minimum.unwrap_or(request.position);
     if lower.timebase != meta.timebase
