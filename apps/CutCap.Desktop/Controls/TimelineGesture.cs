@@ -135,7 +135,7 @@ public static class TimelineGestures
         start = snapped?.Ms ?? Math.Round(start);
         var position = snapped is { } s ? TimelinePosition.Ticks(s.Ticks) : TimelinePosition.Milliseconds((long)start);
         var end = start + Math.Max(1, media.DurationMs ?? 0);
-        var (ok, trackId, reason) = Lane(lanes, track);
+        var (ok, trackId, reason) = Lane(lanes, track, media.AudioOnly);
         if (ok && !media.Ready) (ok, reason) = (false, $"{media.Name} is unavailable");
         else if (ok && media.DurationMs is not > 0) (ok, reason) = (false, $"{media.Name} has no known duration");
         else if (ok && geometry.Overlaps(track, start, end, null)) (ok, reason) = (false, "Clips cannot overlap");
@@ -145,4 +145,4 @@ public static class TimelineGestures
 }
 
 /// <summary>The in-process payload of a library drag (no file paths or pixels).</summary>
-public sealed record MediaDrag(string Id, string Name, long? DurationMs, bool Ready);
+public sealed record MediaDrag(string Id, string Name, long? DurationMs, bool Ready, bool AudioOnly = false);

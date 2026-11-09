@@ -11,7 +11,7 @@ public sealed class TimelinePreviewTests
     private static readonly PlaybackView Paused = new(PlaybackState.Paused,false,"source-epoch",0,1000,1000,1000,null,null,4,4,4,0,0,2,null,null,"00:00.000","00:01.000","00:01.000",10);
     private static TimelinePreviewView Preview(long ticks=360_001) => new(
         ticks,new(1,720000),500,"00:00.500",$"{ticks} ticks",65000,3000,2160000,"00:03.000",
-        "video1","Video 1","Timeline · Video 1 · single video track","ready","A.mkv · one video track",false,true,
+        "video1","Video 1","Timeline · picture from Video 1","ready","A.mkv · one video track",false,true,
         "clip-a","media-a","A.mkv",0,2160000,new(501,new(1,1000)),new(750,new(1,1000)),"PTS 750","model-epoch",1,100,120,null,1);
     [Fact]
     public void TimelineControlsUseEnginePositionAndPreserveTypedTextAcrossFrameUpdates()

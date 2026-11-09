@@ -275,11 +275,11 @@ public sealed partial class PlayerViewModel : ObservableObject
         Apply(new SourceView(engineReady, timeline.Title, timeline.PositionMs, timeline.SeekMaxMs, false,
             timeline.Busy, timeline.HasFrame, status, timeline.Detail, timeline.Caption), null, false, engineReady);
         State = timelinePlayback?.State ?? PlaybackState.Stopped;
-        CanPlay = engineReady && timeline.TrackId is not null && timeline.ExtentTicks > 0;
+        CanPlay = engineReady && timeline.ExtentTicks > 0;
         CanStop = engineReady && (timeline.PositionTicks != 0 || State != PlaybackState.Stopped);
         ShowPause = timelinePlayback is { DesiredPlaying: true, State: PlaybackState.Starting or PlaybackState.Playing or PlaybackState.Seeking or PlaybackState.Buffering };
         PlayName = ShowPause ? "Pause timeline" : State == PlaybackState.Ended ? "Replay timeline" : "Play timeline";
-        PlayHint = "Video only · plays the monitored track. Source playback keeps its own position.";
+        PlayHint = "Plays one video track's picture and the mix of every audio track. Source playback keeps its own position.";
         PositionText = timeline.PositionText;
         PositionName = $"Timeline position, {timeline.PositionTicks} project ticks. Monitoring {timeline.TrackName}";
         DurationText = timeline.ExtentText;

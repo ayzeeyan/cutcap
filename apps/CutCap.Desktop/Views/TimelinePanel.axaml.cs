@@ -1,5 +1,7 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Input;
+using Avalonia.Interactivity;
 using CutCap.Desktop.ViewModels;
 
 namespace CutCap.Desktop.Views;
@@ -37,6 +39,31 @@ public partial class TimelinePanel : UserControl
         Ruler.PositionPressed += (_, milliseconds) => (DataContext as TimelineViewModel)?.SeekRuler(milliseconds);
         Lanes.ThumbnailDemand += (_, wants) => (DataContext as TimelineViewModel)?.RequestThumbnails(wants);
         Lanes.WaveformDemand += (_, wants) => (DataContext as TimelineViewModel)?.RequestWaveforms(wants);
+        // A volume gesture ends when the pointer or key is released; one commit, one undo step.
+        Headers.AddHandler(PointerReleasedEvent, (_, _) => EndGainGestures(), RoutingStrategies.Tunnel | RoutingStrategies.Bubble, true);
+        Headers.AddHandler(PointerCaptureLostEvent, (_, _) => EndGainGestures(), RoutingStrategies.Direct | RoutingStrategies.Bubble, true);
+        Headers.AddHandler(KeyUpEvent, (_, _) => EndGainGestures(), RoutingStrategies.Tunnel | RoutingStrategies.Bubble, true);
+        Headers.AddHandler(KeyDownEvent, OnHeaderKeyDown, RoutingStrategies.Tunnel);
+    }
+
+    private void EndGainGestures()
+    {
+        foreach (var track in (DataContext as TimelineViewModel)?.Tracks ?? [])
+        {
+            track.CommitGain();
+        }
+    }
+
+    private void OnHeaderKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Escape)
+        {
+            return;
+        }
+        foreach (var track in (DataContext as TimelineViewModel)?.Tracks ?? [])
+        {
+            e.Handled |= track.CancelGain();
+        }
     }
 
     private TimelineViewModel? _timeline;

@@ -12,6 +12,10 @@ public partial class MainWindow : Window
     private bool _allowClose;
     private bool _confirmingClose;
     private static readonly FilePickerFileType Projects = new("CutCap project") { Patterns = ["*.cutcap"] };
+    private static readonly FilePickerFileType Audio = new("Audio")
+    {
+        Patterns = ["*.wav", "*.mp3", "*.m4a", "*.flac", "*.mka"],
+    };
     private static readonly FilePickerFileType Videos = new("Video")
     {
         Patterns = ["*.mp4", "*.mov", "*.m4v", "*.mkv", "*.webm", "*.avi", "*.ts"],
@@ -153,7 +157,7 @@ public partial class MainWindow : Window
         {
             Title = title,
             AllowMultiple = false,
-            FileTypeFilter = [Videos, FilePickerFileTypes.All],
+            FileTypeFilter = [Videos, Audio, FilePickerFileTypes.All],
         });
         return files.Count > 0 ? files[0].TryGetLocalPath() : null;
     }

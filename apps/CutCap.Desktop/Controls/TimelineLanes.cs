@@ -10,7 +10,7 @@ using CutCap.Interop;
 namespace CutCap.Desktop.Controls;
 
 /// <summary>What the lanes need to know about one track; immutable per engine revision.</summary>
-public readonly record struct LaneInfo(bool IsVideo, bool Selected, string LaneLabel, string Id = "");
+public readonly record struct LaneInfo(bool IsVideo, bool Selected, string LaneLabel, string Id = "", bool Audible = true);
 
 /// <summary>
 /// Custom-drawn track lanes, clips, the timeline playhead and editing
@@ -491,6 +491,11 @@ public sealed class TimelineLanes : Control
                 {
                     // The original stays in place, dimmed, until the engine accepts the edit.
                     using (context.PushOpacity(0.35)) DrawClip(context, scale, clip, left, right);
+                }
+                else if (!lane.Audible)
+                {
+                    // A muted or un-soloed track keeps its clips and waveforms, dimmed.
+                    using (context.PushOpacity(0.5)) DrawClip(context, scale, clip, left, right);
                 }
                 else
                 {

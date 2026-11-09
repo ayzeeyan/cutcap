@@ -20,7 +20,7 @@
           <TabStrip SelectedIndex="{Binding PreviewTabIndex, Mode=TwoWay}" ItemContainerTheme="{StaticResource ViewTab}" AutomationProperties.Name="Preview mode">
             <TabStripItem Content="Source" ToolTip.Tip="Real frames decoded from the selected media asset" />
             <TabStripItem Content="Timeline"
-                          ToolTip.Tip="Play or seek one monitored video track. Video only; source position stays independent." />
+                          ToolTip.Tip="Play or seek the timeline: the picture of one video track and the mix of every audio track. Source position stays independent." />
           </TabStrip>
         </StackPanel>
         <Grid Grid.Column="1" ColumnDefinitions="*,Auto" Margin="12,0,0,0" VerticalAlignment="Center">

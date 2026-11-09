@@ -23,13 +23,13 @@ public sealed partial class MainWindowViewModel : ObservableObject
         _engine = engine;
         Library = new MediaLibraryViewModel(engine) { ImportCommand = ImportCommand };
         Player = new PlayerViewModel(engine) { ImportCommand = ImportCommand };
-        Inspector = new InspectorViewModel(engine);
         Timeline = new TimelineViewModel(engine);
+        Inspector = new InspectorViewModel(engine, Timeline);
         Categories =
         [
             new("Media", "Import", true, "", ""),
-            new("Audio", "Music", false, "Audio library is coming later",
-                "Music and audio-only media need audio playback. Videos with sound already import under Media."),
+            new("Audio", "Music", false, "A music library is coming later",
+                "Import your own audio files under Media, then drag them onto an audio track."),
             new("Text", "Text", false, "Text is coming later", "Titles and captions arrive with the editing engine and compositor."),
             new("Stickers", "Sticker", false, "Stickers are coming later", "Overlays arrive with the GPU compositor."),
             new("Effects", "Effects", false, "Effects are coming later", "Effects arrive with the GPU compositor. Nothing here is a working preset yet."),
@@ -147,9 +147,10 @@ public sealed partial class MainWindowViewModel : ObservableObject
         Player.ApplyMonitor(view.Source, view.Playback, view.PreviewMode, view.TimelinePreview, view.EngineReady && !view.Import.Busy, view.EngineReady, view.TimelinePlayback);
         Timeline.ApplyPreview(view.TimelinePreview);
         Timeline.ApplyEditing(view.Editing);
+        Timeline.ApplyAudio(view.Audio);
         if (changes.Inspector)
         {
-            Inspector.Apply(view.Inspector);
+            Inspector.Apply(view.Inspector, view.Media.FirstOrDefault(m => m.Selected));
         }
         if (changes.Timeline)
         {

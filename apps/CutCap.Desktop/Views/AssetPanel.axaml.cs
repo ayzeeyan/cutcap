@@ -26,7 +26,7 @@ public partial class AssetPanel : UserControl
         InitializeComponent();
         MediaGrid.AddHandler(PointerPressedEvent, OnTilePressed, RoutingStrategies.Tunnel);
         MediaGrid.AddHandler(PointerMovedEvent, OnTileMoved, RoutingStrategies.Tunnel);
-        MediaGrid.AddHandler(PointerReleasedEvent, (_, _) => (_press, _item) = (null, null), RoutingStrategies.Tunnel);
+        MediaGrid.AddHandler(PointerReleasedEvent, OnTileReleased, RoutingStrategies.Tunnel);
     }
 
     private void OnTilePressed(object? sender, PointerPressedEventArgs e)
@@ -38,13 +38,26 @@ public partial class AssetPanel : UserControl
         _pressedAt = e.GetPosition(MediaGrid);
     }
 
+    /// <summary>
+    /// The current source stays selected in the list while a clip or track owns
+    /// the inspector, so the list reports no change; a plain click brings it back.
+    /// </summary>
+    private void OnTileReleased(object? sender, PointerReleasedEventArgs e)
+    {
+        if (_press is not null && _item is { } item && DataContext is MainWindowViewModel shell)
+        {
+            shell.Library.ShowSource(item);
+        }
+        (_press, _item) = (null, null);
+    }
+
     private async void OnTileMoved(object? sender, PointerEventArgs e)
     {
         if (_dragging || _press is not { } press || _item is not { } item) return;
         var travel = e.GetPosition(MediaGrid) - _pressedAt;
         if (Math.Abs(travel.X) < TimelineGestures.DragThreshold * 2 && Math.Abs(travel.Y) < TimelineGestures.DragThreshold * 2) return;
         _press = null;
-        var payload = new MediaDrag(item.Id, item.Name, item.Media.DurationMs, item.Media.Availability == "ready");
+        var payload = new MediaDrag(item.Id, item.Name, item.Media.DurationMs, item.Media.Availability == "ready", item.Media.AudioOnly);
         var data = new DataTransfer();
         data.Add(DataTransferItem.Create(TimelineLanes.MediaDragFormat, payload));
         _dragging = true;
