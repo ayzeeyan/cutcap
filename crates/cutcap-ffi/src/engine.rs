@@ -1261,3 +1261,7 @@ mod clip_edit_tests;
 #[cfg(test)]
 #[path = "linked_edit_tests.rs"]
 mod linked_edit_tests;
+
+#[cfg(test)]
+#[path = "audio_edit_tests.rs"]
+mod audio_edit_tests;

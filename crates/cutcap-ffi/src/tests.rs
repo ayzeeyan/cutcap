@@ -794,6 +794,8 @@ fn abi_frame_copy_validates_buffers_generation_and_stride() {
     assert_eq!(cutcap_session_destroy(handle), CUTCAP_OK);
 }
 
+#[path = "mix_session_tests.rs"]
+mod mix_session;
 #[path = "thumbnail_tests.rs"]
 mod thumbnail;
 #[path = "timeline_tests.rs"]
