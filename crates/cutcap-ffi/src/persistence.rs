@@ -20,11 +20,11 @@ const MAX_FILE_BYTES: u64 = 32 * 1024 * 1024 * 1024;
 #[serde(deny_unknown_fields)]
 pub struct SavedSource {
     pub id: MediaId,
-    pub metadata: Option<VideoMetadata>,
+    pub metadata: Option<SourceMetadata>,
     pub fingerprint: Option<SourceFingerprint>,
 }
 
-/// Format version and domain schema are independent. Project remains schema 1.
+/// Format version and domain schema are independent (see PROJECT_FORMAT.md).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Document {
@@ -66,6 +66,14 @@ impl Document {
             }
             if let Some(metadata) = &source.metadata {
                 metadata.validate().map_err(|e| invalid(e.to_string()))?;
+                let video_asset = self
+                    .project
+                    .media()
+                    .iter()
+                    .any(|m| m.id == source.id && m.kind == TrackKind::Video);
+                if video_asset && metadata.is_audio_only() {
+                    return Err(invalid("A video asset cannot have audio-only metadata."));
+                }
             }
             if let Some(hash) = &source.fingerprint
                 && (hash.bytes == 0

@@ -19,7 +19,7 @@ pub use clock::*;
 pub use frame::*;
 pub use latest::*;
 pub use persistent::*;
-pub use probe::parse_probe;
+pub use probe::{audio_only_supported, parse_probe, parse_source_probe};
 pub use thumbnail::*;
 
 #[derive(Debug, thiserror::Error)]

@@ -1,5 +1,8 @@
 use crate::MediaError;
-use cutcap_contracts::{AudioStreamMetadata, Ratio, Rounding, SourceTime, Timebase, VideoMetadata};
+use cutcap_contracts::{
+    AudioOnlyMetadata, AudioStreamMetadata, Ratio, Rounding, SourceMetadata, SourceTime, Timebase,
+    VideoMetadata,
+};
 use serde_json::Value;
 
 pub const MAX_PROBE_BYTES: usize = 1024 * 1024;
@@ -127,6 +130,86 @@ fn audio_details(stream: &Value) -> Result<Option<AudioStreamMetadata>, MediaErr
         default: stream["disposition"]["default"].as_i64() == Some(1),
     };
     Ok(audio.validate().is_ok().then_some(audio))
+}
+
+/// Whether this audio-only container/codec pair is one CutCap has verified
+/// against real files. Extensions are never trusted: FFprobe's names decide.
+pub fn audio_only_supported(container: &str, codec: &str) -> bool {
+    container.split(',').any(|name| match name {
+        "wav" => matches!(codec, "pcm_s16le" | "pcm_s24le" | "pcm_f32le"),
+        "mp3" => codec == "mp3",
+        "flac" => codec == "flac",
+        "mov" | "mp4" | "m4a" => codec == "aac",
+        "matroska" => codec == "pcm_s16le",
+        _ => false,
+    })
+}
+
+/// A file with a real picture stream is a video source; one with only cover
+/// art or no video at all is an audio-only source. Nothing is fabricated for
+/// the missing picture.
+pub fn parse_source_probe(bytes: &[u8]) -> Result<SourceMetadata, MediaError> {
+    if bytes.len() > MAX_PROBE_BYTES {
+        return Err(MediaError::Budget("FFprobe JSON exceeds 1 MiB"));
+    }
+    let root: Value =
+        serde_json::from_slice(bytes).map_err(|_| invalid("FFprobe returned malformed JSON"))?;
+    let streams = root["streams"]
+        .as_array()
+        .ok_or_else(|| invalid("missing streams"))?;
+    if streams.is_empty() || streams.len() > 64 {
+        return Err(MediaError::Budget("stream count must be 1–64"));
+    }
+    let has_picture = streams.iter().any(|s| {
+        text(s, "codec_type") == Some("video")
+            && s["disposition"]["attached_pic"].as_i64() != Some(1)
+    });
+    if has_picture {
+        return parse_probe(bytes).map(Into::into);
+    }
+    let container =
+        text(&root["format"], "format_name").ok_or_else(|| invalid("missing container format"))?;
+    let mut audio = Vec::new();
+    for stream in streams
+        .iter()
+        .filter(|s| text(s, "codec_type") == Some("audio"))
+    {
+        // WAV has no timestamps: by format its first sample is at zero.
+        let mut stream = stream.clone();
+        if container.split(',').any(|name| name == "wav") && integer(&stream, "start_pts").is_none()
+        {
+            stream["start_pts"] = 0.into();
+        }
+        let Some(mut details) = audio_details(&stream)? else {
+            continue;
+        };
+        if details.duration_ticks.is_none()
+            && let Some(seconds) = text(&root["format"], "duration")
+        {
+            // Matroska reports durations only on the container: an estimate.
+            let reported = decimal_time(seconds, details.timebase)?;
+            details.duration_ticks = Some(
+                reported
+                    .checked_sub(details.start_pts.max(0))
+                    .ok_or_else(|| invalid("invalid container duration"))?,
+            );
+            details.duration_is_estimate = true;
+        }
+        if details.validate().is_ok() {
+            audio.push(details);
+        }
+    }
+    if audio.is_empty() {
+        return Err(MediaError::Unsupported(
+            "no video stream and no decodable audio stream".into(),
+        ));
+    }
+    let metadata = AudioOnlyMetadata {
+        container: container.into(),
+        audio,
+    };
+    metadata.validate().map_err(|e| invalid(&e.to_string()))?;
+    Ok(SourceMetadata::Audio(metadata))
 }
 
 pub fn parse_probe(bytes: &[u8]) -> Result<VideoMetadata, MediaError> {
@@ -415,6 +498,108 @@ pub(crate) mod tests {
         let old: VideoMetadata = serde_json::from_value(json).unwrap();
         assert!(old.audio.is_empty());
         assert_eq!(old.audio_streams, vec![1]);
+    }
+    #[test]
+    fn metadata_saved_before_audio_details_matches_a_fresh_probe_of_the_same_file() {
+        let mut root = fixture();
+        root["streams"][1] = audio_stream(1, 1);
+        let fresh: SourceMetadata = parse(&root).unwrap().into();
+        let mut old = fresh.clone();
+        old.video_mut().unwrap().audio.clear();
+        assert!(
+            old.matches_probe(&fresh),
+            "details were simply not saved yet"
+        );
+        assert!(fresh.matches_probe(&fresh));
+        // Anything else that differs is still a changed source.
+        let mut other = old.clone();
+        other.video_mut().unwrap().width = 1280;
+        assert!(!other.matches_probe(&fresh));
+        // Saved details that disagree are not excused.
+        let mut wrong = fresh.clone();
+        wrong.video_mut().unwrap().audio[0].sample_rate = 8000;
+        assert!(!wrong.matches_probe(&fresh));
+    }
+    fn parse_source(value: &Value) -> Result<SourceMetadata, MediaError> {
+        parse_source_probe(&serde_json::to_vec(value).unwrap())
+    }
+    #[test]
+    fn audio_only_files_carry_no_invented_picture_and_cover_art_is_not_video() {
+        let mp3 = serde_json::json!({"streams":[
+            {"index":0,"codec_type":"audio","codec_name":"mp3","sample_rate":"44100","channels":2,
+             "channel_layout":"stereo","sample_fmt":"fltp","time_base":"1/14112000","start_pts":353600,
+             "duration_ts":141120000,"disposition":{"default":1}},
+            {"index":1,"codec_type":"video","codec_name":"mjpeg","width":300,"height":300,
+             "time_base":"1/90000","start_pts":0,"disposition":{"attached_pic":1}}],
+            "format":{"format_name":"mp3","duration":"10.0"}});
+        let parsed = parse_source(&mp3).unwrap();
+        assert!(parsed.is_audio_only() && parsed.video().is_none());
+        assert_eq!(parsed.container(), "mp3");
+        let stream = parsed.primary_audio().unwrap();
+        assert_eq!((stream.stream_index, stream.start_pts), (0, 353600));
+        assert_eq!(stream.duration_ticks, Some(141120000));
+        assert!(!stream.duration_is_estimate);
+        // The on-disk form round-trips and cannot be mistaken for a video source.
+        let json = serde_json::to_string(&parsed).unwrap();
+        assert!(!json.contains("width"));
+        assert_eq!(
+            serde_json::from_str::<SourceMetadata>(&json).unwrap(),
+            parsed
+        );
+
+        // A container-only duration is kept and marked as an estimate.
+        let mut mkv = mp3.clone();
+        mkv["streams"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove("duration_ts");
+        mkv["streams"][0]["time_base"] = "1/1000".into();
+        mkv["streams"][0]["start_pts"] = 0.into();
+        let parsed = parse_source(&mkv).unwrap();
+        let stream = parsed.primary_audio().unwrap();
+        assert_eq!(stream.duration_ticks, Some(10_000));
+        assert!(stream.duration_is_estimate);
+
+        // A real picture stream still makes it a video source.
+        let parsed = parse_source(&fixture()).unwrap();
+        assert!(!parsed.is_audio_only() && parsed.video().is_some());
+
+        // Neither picture nor decodable audio: unsupported, as before.
+        let mut nothing = fixture();
+        nothing["streams"][0]["codec_type"] = "subtitle".into();
+        assert!(matches!(
+            parse_source(&nothing),
+            Err(MediaError::Unsupported(_))
+        ));
+    }
+    #[test]
+    fn only_verified_audio_only_formats_are_accepted() {
+        for (container, codec) in [
+            ("wav", "pcm_s16le"),
+            ("wav", "pcm_s24le"),
+            ("wav", "pcm_f32le"),
+            ("mp3", "mp3"),
+            ("flac", "flac"),
+            ("mov,mp4,m4a,3gp,3g2,mj2", "aac"),
+            ("matroska,webm", "pcm_s16le"),
+        ] {
+            assert!(
+                audio_only_supported(container, codec),
+                "{container} {codec}"
+            );
+        }
+        for (container, codec) in [
+            ("wav", "pcm_mulaw"),
+            ("mp3", "aac"),
+            ("ogg", "vorbis"),
+            ("mov,mp4,m4a,3gp,3g2,mj2", "alac"),
+            ("matroska,webm", "opus"),
+        ] {
+            assert!(
+                !audio_only_supported(container, codec),
+                "{container} {codec}"
+            );
+        }
     }
     #[test]
     fn untrusted_metadata_limits_and_unsupported_streams_are_rejected() {

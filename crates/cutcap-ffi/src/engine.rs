@@ -1,5 +1,5 @@
 //! The lightweight command owner. Future media jobs must not run in this loop.
-use crate::history::{Edit, History, bump};
+use crate::history::{Change, Edit, History, bump};
 use crate::persistence::{Document, FileJob, FileOutput, SavedSource};
 use cutcap_contracts::*;
 use cutcap_core::{Clip, Project, ProjectError, TimelineIndex, Track, map_clip_source};
@@ -51,6 +51,12 @@ impl Engine {
                 | Command::MoveClip { .. }
                 | Command::TrimClip { .. }
                 | Command::SplitClip { .. }
+                | Command::PlaceAudioStream { .. }
+                | Command::UnlinkClip { .. }
+                | Command::LinkClips { .. }
+                | Command::SetTrackGain { .. }
+                | Command::SetTrackMute { .. }
+                | Command::SetTrackSolo { .. }
                 | Command::Undo
                 | Command::Redo
         );
@@ -90,10 +96,20 @@ impl Engine {
             .as_ref()
             .and_then(|i| i.monitor(self.selection))
             .map(|t| t.id);
+        // Track controls change only the mix: the transport keeps running.
         let affects_evaluation = !matches!(
             envelope.command,
-            Command::GetSnapshot | Command::SelectMedia { .. } | Command::Select { .. }
-        );
+            Command::GetSnapshot
+                | Command::SelectMedia { .. }
+                | Command::Select { .. }
+                | Command::SetTrackGain { .. }
+                | Command::SetTrackMute { .. }
+                | Command::SetTrackSolo { .. }
+        ) && !match envelope.command {
+            Command::Undo => self.history.next_is_track(true),
+            Command::Redo => self.history.next_is_track(false),
+            _ => false,
+        };
         if self.file_job.as_ref().is_some_and(|job| !job.saving) {
             return Err(EngineError::new(
                 ErrorCode::Busy,
@@ -115,6 +131,7 @@ impl Engine {
                         id: TrackId::new(),
                         name: name.into(),
                         kind,
+                        controls: Default::default(),
                     })
                     .map_err(domain_error)?;
             }
@@ -170,7 +187,11 @@ impl Engine {
                         .add_media(cutcap_core::MediaAsset {
                             id: media.id,
                             path: media.path.clone(),
-                            kind: TrackKind::Video,
+                            kind: if media.metadata.is_audio_only() {
+                                TrackKind::Audio
+                            } else {
+                                TrackKind::Video
+                            },
                         })
                         .map_err(domain_error)?;
                     self.source_media = Some(media.id);
@@ -219,7 +240,7 @@ impl Engine {
                             return Err(EngineError::new(ErrorCode::Unsupported, "This saved source has no verified video identity. Import supported video as a new asset."));
                         }
                         if source.fingerprint.as_ref() != Some(&verified.fingerprint)
-                            || source.metadata.as_ref() != Some(&verified.media.metadata) {
+                            || !source.metadata.as_ref().is_some_and(|m| m.matches_probe(&verified.media.metadata)) {
                             return Err(EngineError::new(ErrorCode::InvalidInput, "Source content or metadata changed. Relink the original file, or import the changed file as a new asset."));
                         }
                         Ok(verified)
@@ -241,6 +262,10 @@ impl Engine {
                                     detail: "Source verified".into(),
                                 },
                             );
+                            // Metadata saved before Phase 4B gains its audio details.
+                            if let Some(saved) = self.sources.get_mut(&media_id) {
+                                saved.metadata = Some(verified.media.metadata.clone());
+                            }
                             self.media_details.insert(media_id, verified.media);
                         }
                         Err(error) => {
@@ -296,6 +321,7 @@ impl Engine {
                             id,
                             name: format!("{label} {number}"),
                             kind,
+                            controls: Default::default(),
                         })
                         .map_err(domain_error)?;
                     self.selection = SelectionState::Track(id);
@@ -316,10 +342,24 @@ impl Engine {
                                 "Only a verified, ready source can be added to the timeline.",
                             )
                         })?;
-                    let clip = append_clip(project, summary, track_id)?;
-                    let id = clip.id;
-                    // Phase 4B: the source's primary audio joins as a linked clip.
-                    let clips = crate::edits::with_linked_audio(project, summary, clip)?;
+                    let clips = if summary.metadata.is_audio_only() {
+                        // Phase 4C: audio-only sources append to an audio track.
+                        let stream = summary.metadata.primary_audio().ok_or_else(|| {
+                            EngineError::new(
+                                ErrorCode::InvalidInput,
+                                "This source has no decodable audio stream.",
+                            )
+                        })?;
+                        let start = project.track_end(track_id).map_err(domain_error)?;
+                        vec![crate::edits::independent_audio(
+                            project, summary, stream, track_id, start,
+                        )?]
+                    } else {
+                        // Phase 4B: the source's primary audio joins as a linked clip.
+                        let clip = append_clip(project, summary, track_id)?;
+                        crate::edits::with_linked_audio(project, summary, clip)?
+                    };
+                    let id = clips[0].id;
                     let label = format!(
                         "add {}{}",
                         crate::view::file_name(summary),
@@ -336,7 +376,7 @@ impl Engine {
                     let after = bump(&mut self.next_revision, &mut self.document.revision);
                     self.selection = SelectionState::Clip(id);
                     self.history.record(Edit {
-                        change,
+                        change: change.into(),
                         before,
                         after,
                         label,
@@ -361,7 +401,7 @@ impl Engine {
                         self.selection = SelectionState::None;
                     }
                     self.history.record(Edit {
-                        change,
+                        change: change.into(),
                         before,
                         after,
                         label,
@@ -370,7 +410,10 @@ impl Engine {
                 command @ (Command::PlaceClip { .. }
                 | Command::MoveClip { .. }
                 | Command::TrimClip { .. }
-                | Command::SplitClip { .. }) => {
+                | Command::SplitClip { .. }
+                | Command::PlaceAudioStream { .. }
+                | Command::UnlinkClip { .. }
+                | Command::LinkClips { .. }) => {
                     let outcome = crate::edits::apply(
                         project,
                         command,
@@ -382,11 +425,75 @@ impl Engine {
                     self.selection = outcome.selection;
                     notice = outcome.notice;
                     self.history.record(Edit {
-                        change: outcome.change,
+                        change: outcome.change.into(),
                         before,
                         after,
                         label: outcome.label,
                     });
+                }
+                command @ (Command::SetTrackGain { .. }
+                | Command::SetTrackMute { .. }
+                | Command::SetTrackSolo { .. }) => {
+                    let (track_id, change): (TrackId, fn(&mut TrackControls, i32)) = match command {
+                        Command::SetTrackGain { track_id, .. } => (track_id, |c, v| c.gain_cdb = v),
+                        Command::SetTrackMute { track_id, .. } => {
+                            (track_id, |c, v| c.mute = v != 0)
+                        }
+                        Command::SetTrackSolo { track_id, .. } => {
+                            (track_id, |c, v| c.solo = v != 0)
+                        }
+                        _ => unreachable!("matched above"),
+                    };
+                    let value = match command {
+                        Command::SetTrackGain { gain_cdb, .. } => gain_cdb,
+                        Command::SetTrackMute { mute: v, .. }
+                        | Command::SetTrackSolo { solo: v, .. } => i32::from(v),
+                        _ => unreachable!("matched above"),
+                    };
+                    let track = project
+                        .tracks()
+                        .iter()
+                        .find(|t| t.id == track_id)
+                        .ok_or_else(|| {
+                            EngineError::new(ErrorCode::NotFound, "That track no longer exists.")
+                        })?;
+                    if track.kind != TrackKind::Audio {
+                        return Err(EngineError::new(
+                            ErrorCode::InvalidInput,
+                            "Only audio tracks have volume, mute and solo.",
+                        ));
+                    }
+                    let name = track.name.clone();
+                    let controls = track.controls;
+                    let mut updated = controls;
+                    change(&mut updated, value);
+                    if updated != controls {
+                        project
+                            .set_track_controls(track_id, updated)
+                            .map_err(domain_error)?;
+                        let label = match command {
+                            Command::SetTrackGain { .. } => format!(
+                                "set {name} volume to {}",
+                                crate::view::gain_text(updated.gain_cdb)
+                            ),
+                            Command::SetTrackMute { mute: true, .. } => format!("mute {name}"),
+                            Command::SetTrackMute { .. } => format!("unmute {name}"),
+                            Command::SetTrackSolo { solo: true, .. } => format!("solo {name}"),
+                            _ => format!("unsolo {name}"),
+                        };
+                        let before = self.document.revision;
+                        let after = bump(&mut self.next_revision, &mut self.document.revision);
+                        self.history.record(Edit {
+                            change: Change::Track {
+                                id: track_id,
+                                before: controls,
+                                after: updated,
+                            },
+                            before,
+                            after,
+                            label,
+                        });
+                    }
                 }
                 Command::Undo | Command::Redo => {
                     let undo = matches!(envelope.command, Command::Undo);
@@ -455,20 +562,12 @@ impl Engine {
         let index = self.evaluation_index.as_ref().ok_or_else(|| {
             EngineError::new(ErrorCode::Internal, "Timeline index is unavailable.")
         })?;
-        // Phase 4B: the transport also plays the monitored audio track, which
-        // may extend past the monitored video track.
-        let audio_end = index
-            .monitored_audio()
-            .map(|t| index.end(t.id))
-            .transpose()
-            .map_err(|e| EngineError::new(ErrorCode::InvalidInput, e.to_string()))?
-            .unwrap_or(TimelineTime::ZERO);
         Ok(crate::timeline_plan::TimelinePlan {
             project: evaluation.project_id,
             generation: evaluation.generation,
             timebase: evaluation.timebase,
             track: evaluation.track,
-            extent: evaluation.extent.max(audio_end),
+            extent: evaluation.extent,
             position: evaluation.position,
             index: index.clone(),
             media: self.media_details.clone(),
@@ -537,8 +636,11 @@ impl Engine {
             ),
             None => index.monitor(self.selection),
         };
+        // Every audio track plays, so audio may outlast the monitored picture
+        // or be all there is.
         let extent = track
             .map_or(Ok(TimelineTime::ZERO), |t| index.end(t.id))
+            .and_then(|picture| Ok(picture.max(index.audio_end()?)))
             .map_err(|e| invalid(e.to_string()))?;
         let clip = track
             .map_or(Ok(None), |t| index.active(project.id(), t.id, position))
@@ -566,9 +668,13 @@ impl Engine {
                     ),
                 }
             } else if let Some(media) = self.media_details.get(&clip.media_id) {
-                let mapping =
-                    map_clip_source(clip, position, project.timebase(), media.metadata.timebase)
-                        .map_err(|e| invalid(e.to_string()))?;
+                let clock = media
+                    .metadata
+                    .video()
+                    .ok_or_else(|| invalid("This clip's source has no video stream.".into()))?
+                    .timebase;
+                let mapping = map_clip_source(clip, position, project.timebase(), clock)
+                    .map_err(|e| invalid(e.to_string()))?;
                 if mapping.requested.ticks >= mapping.end_exclusive.ticks {
                     TimelineTarget::NoFrame {
                         clip: summary,
@@ -631,6 +737,7 @@ impl Engine {
                     name: track.name.clone(),
                     kind: track.kind,
                     clip_count: clip_counts.get(&track.id).copied().unwrap_or(0),
+                    controls: track.controls,
                 })
                 .collect(),
             media_count: project.media().len(),
@@ -839,7 +946,9 @@ fn append_clip(
             "Video sources can only be added to a video track.",
         ));
     }
-    let info = &source.metadata;
+    let info = source.metadata.video().ok_or_else(|| {
+        EngineError::new(ErrorCode::InvalidInput, "This source has no video stream.")
+    })?;
     let ticks = info
         .duration_ticks
         .filter(|ticks| *ticks > 0)
@@ -1028,7 +1137,7 @@ mod tests {
         let media = MediaSummary {
             id: MediaId::new(),
             path: "C:/source video.mkv".into(),
-            metadata,
+            metadata: metadata.into(),
         };
         let register = |asset: MediaSummary| Command::RegisterMedia {
             media: Box::new(asset),
@@ -1046,7 +1155,7 @@ mod tests {
         ));
         assert_eq!(engine.snapshot().unwrap(), initial);
         let mut invalid = media.clone();
-        invalid.metadata.width = 0;
+        invalid.metadata.video_mut().unwrap().width = 0;
         assert!(matches!(
             request(&mut engine, Some(initial.id), register(invalid)),
             EngineEvent::Failed { .. }

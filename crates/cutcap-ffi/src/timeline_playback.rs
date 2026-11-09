@@ -327,13 +327,27 @@ impl TimelinePlayback {
             if let Some(error) = audio.failed() {
                 self.audio_note = Some(format!("Audio output unavailable: {error}"));
             } else {
-                audio.begin(crate::audio_transport::plan_for(&plan), self.position);
+                let mix = crate::audio_transport::plan_for(&plan);
+                if let Err(message) = audio.check_limit(&mix, self.position) {
+                    self.view.clock_source = "system";
+                    self.plan = Some(plan);
+                    self.fail(message);
+                    return Ok(());
+                }
+                audio.begin(mix, self.position);
                 self.audio_master = true;
             }
         }
         self.view.clock_source = if self.audio_master { "audio" } else { "system" };
         self.plan = Some(plan);
         Ok(())
+    }
+
+    /// New track controls: applied by the mixer without touching the epoch.
+    pub fn set_mix(&self, tracks: &[(TrackId, TrackControls)]) {
+        if let Some(audio) = &self.audio {
+            audio.set_controls(tracks);
+        }
     }
 
     /// The audio master's position (frozen at `position` until the device
@@ -485,15 +499,14 @@ impl TimelinePlayback {
             request_id: RequestId::new(),
         };
         let mapped = media
+            .and_then(|media| media.metadata.video())
             .ok_or_else(|| "Timeline source metadata is missing".to_string())
-            .and_then(|media| {
-                let bounds =
-                    map_clip_source(&clip, clip.start, plan.timebase, media.metadata.timebase)
-                        .map_err(|e| e.to_string())?;
-                let requested =
-                    map_clip_source(&clip, position, plan.timebase, media.metadata.timebase)
-                        .map_err(|e| e.to_string())?
-                        .requested;
+            .and_then(|video| {
+                let bounds = map_clip_source(&clip, clip.start, plan.timebase, video.timebase)
+                    .map_err(|e| e.to_string())?;
+                let requested = map_clip_source(&clip, position, plan.timebase, video.timebase)
+                    .map_err(|e| e.to_string())?
+                    .requested;
                 Ok((bounds, requested))
             });
         let (bounds, requested, mapping_error) = match mapped {
@@ -833,7 +846,7 @@ impl TimelinePlayback {
                 if self.audio_master {
                     "Video and audio · audio clock".into()
                 } else {
-                    "Video only · one monitored track".into()
+                    "Picture only · no audio output".into()
                 }
             }),
             actual: self.frame.as_ref().map(|f| f.actual),
@@ -857,7 +870,7 @@ impl TimelinePlayback {
                 .track
                 .as_ref()
                 .map_or_else(|| "No video track".into(), |t| t.name.clone());
-            v.title = format!("Timeline · {} · single video track", v.track_name);
+            v.title = format!("Timeline · picture from {}", v.track_name);
             v.evaluation_generation = Some(plan.generation.to_string());
             if let Some(slot) = &self.active {
                 v.clip_id = Some(slot.clip.id.to_string());
@@ -875,12 +888,16 @@ impl TimelinePlayback {
                     } else if let Some(note) = &self.audio_note {
                         format!("{} · video only · {note}", v.source_name)
                     } else {
-                        format!("{} · video only · one monitored track", v.source_name)
+                        format!("{} · picture only · no audio output", v.source_name)
                     };
                 }
             } else if self.view.state == "playing" {
                 v.state = "blank";
-                v.detail = "Timeline gap · clock advancing".into();
+                v.detail = if self.audio_master {
+                    "No picture here · audio clock".into()
+                } else {
+                    "Timeline gap · clock advancing".into()
+                };
             }
             if self.frame.is_none() && self.active.as_ref().is_some_and(|s| s.eof) {
                 v.detail = "No eligible frame inside this clip · clock advancing".into();

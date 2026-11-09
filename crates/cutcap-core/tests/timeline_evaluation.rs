@@ -10,12 +10,14 @@ fn fixture() -> (Project, TrackId, TrackId, MediaId) {
         id: video,
         name: "Video".into(),
         kind: TrackKind::Video,
+        controls: Default::default(),
     })
     .unwrap();
     p.add_track(Track {
         id: audio,
         name: "Audio".into(),
         kind: TrackKind::Audio,
+        controls: Default::default(),
     })
     .unwrap();
     p.add_media(MediaAsset {
@@ -82,7 +84,10 @@ fn half_open_cuts_gaps_and_empty_regions_are_exact() {
         index.active(p.id(), audio, TimelineTime(0)),
         Ok(None)
     ));
-    assert_eq!(index.monitored_audio().map(|t| t.id), Some(audio));
+    assert_eq!(
+        index.audio_tracks().map(|t| t.id).collect::<Vec<_>>(),
+        vec![audio]
+    );
     assert_ne!(
         index.monitor(SelectionState::Track(audio)).map(|t| t.id),
         Some(audio)
@@ -151,6 +156,7 @@ fn monitoring_uses_selected_video_clip_track_or_first_video() {
         id: second,
         name: "Second".into(),
         kind: TrackKind::Video,
+        controls: Default::default(),
     })
     .unwrap();
     let c = clip(second, media, 0, 1000);

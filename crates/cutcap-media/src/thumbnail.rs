@@ -125,7 +125,7 @@ impl FfmpegBackend {
         if batch.is_empty() || batch.len() > MAX_BATCH {
             return Err(MediaError::Budget("thumbnail batch size"));
         }
-        let metadata = &media.metadata;
+        let metadata = crate::backend::video_of(media)?;
         metadata
             .validate()
             .map_err(|e| MediaError::Invalid(e.to_string()))?;

@@ -37,7 +37,7 @@ fn editor(engine: &mut Engine, probe: &[u8]) -> (ProjectId, MediaId, TrackId, Tr
     let media = MediaSummary {
         id: MediaId::new(),
         path: "C:/clips/source video.mkv".into(),
-        metadata: cutcap_media::parse_probe(probe).unwrap(),
+        metadata: cutcap_media::parse_probe(probe).unwrap().into(),
     };
     let id = media.id;
     send(

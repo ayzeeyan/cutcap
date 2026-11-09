@@ -317,6 +317,125 @@ impl AudioStreamMetadata {
     }
 }
 
+/// An audio-only source: a container and its decodable audio streams. It has
+/// no picture, so nothing here describes one.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AudioOnlyMetadata {
+    pub container: String,
+    pub audio: Vec<AudioStreamMetadata>,
+}
+
+impl AudioOnlyMetadata {
+    pub fn validate(&self) -> Result<(), MetadataError> {
+        if self.container.is_empty()
+            || self.container.len() > 256
+            || self.container.chars().any(char::is_control)
+        {
+            return Err(MetadataError::Invalid("missing or invalid container"));
+        }
+        if self.audio.is_empty() || self.audio.len() > 64 {
+            return Err(MetadataError::Invalid(
+                "an audio-only source needs 1-64 decodable streams",
+            ));
+        }
+        for audio in &self.audio {
+            audio.validate()?;
+            if self
+                .audio
+                .iter()
+                .filter(|a| a.stream_index == audio.stream_index)
+                .count()
+                != 1
+            {
+                return Err(MetadataError::Invalid("duplicate audio stream"));
+            }
+        }
+        Ok(())
+    }
+}
+
+/// What a source holds. Video sources keep their exact Phase 1-4B shape on
+/// disk; the two shapes share no required field, so reading is unambiguous.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum SourceMetadata {
+    Video(Box<VideoMetadata>),
+    Audio(AudioOnlyMetadata),
+}
+
+impl From<VideoMetadata> for SourceMetadata {
+    fn from(value: VideoMetadata) -> Self {
+        Self::Video(Box::new(value))
+    }
+}
+
+impl SourceMetadata {
+    pub fn validate(&self) -> Result<(), MetadataError> {
+        match self {
+            Self::Video(video) => video.validate(),
+            Self::Audio(audio) => audio.validate(),
+        }
+    }
+    /// The picture stream's details; `None` for an audio-only source.
+    pub fn video(&self) -> Option<&VideoMetadata> {
+        match self {
+            Self::Video(video) => Some(video),
+            Self::Audio(_) => None,
+        }
+    }
+    pub fn video_mut(&mut self) -> Option<&mut VideoMetadata> {
+        match self {
+            Self::Video(video) => Some(video),
+            Self::Audio(_) => None,
+        }
+    }
+    pub fn is_audio_only(&self) -> bool {
+        matches!(self, Self::Audio(_))
+    }
+    pub fn container(&self) -> &str {
+        match self {
+            Self::Video(video) => &video.container,
+            Self::Audio(audio) => &audio.container,
+        }
+    }
+    /// The decodable audio streams.
+    pub fn audio(&self) -> &[AudioStreamMetadata] {
+        match self {
+            Self::Video(video) => &video.audio,
+            Self::Audio(audio) => &audio.audio,
+        }
+    }
+    pub fn audio_stream(&self, index: u32) -> Option<&AudioStreamMetadata> {
+        self.audio().iter().find(|a| a.stream_index == index)
+    }
+    /// The container's default audio stream, otherwise the lowest index.
+    pub fn primary_audio(&self) -> Option<&AudioStreamMetadata> {
+        self.audio()
+            .iter()
+            .filter(|a| a.default)
+            .min_by_key(|a| a.stream_index)
+            .or_else(|| self.audio().iter().min_by_key(|a| a.stream_index))
+    }
+    /// Whether saved metadata still describes a freshly probed source. Saved
+    /// metadata from before Phase 4B has no per-stream audio details: it
+    /// matches when everything else does (the content fingerprint is checked
+    /// separately), so old projects with audio do not read as changed.
+    pub fn matches_probe(&self, probed: &Self) -> bool {
+        if self == probed {
+            return true;
+        }
+        match (self, probed) {
+            (Self::Video(saved), Self::Video(fresh)) if saved.audio.is_empty() => {
+                let mut fresh = fresh.clone();
+                fresh.audio.clear();
+                saved == &fresh
+            }
+            _ => false,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum MetadataError {
     #[error("{0}")]
@@ -328,5 +447,5 @@ pub enum MetadataError {
 pub struct MediaSummary {
     pub id: MediaId,
     pub path: PathBuf,
-    pub metadata: VideoMetadata,
+    pub metadata: SourceMetadata,
 }

@@ -61,7 +61,7 @@ fn media(name: &str) -> MediaSummary {
     MediaSummary {
         id: MediaId::new(),
         path: name.into(),
-        metadata: parse_probe(PROBE).unwrap(),
+        metadata: parse_probe(PROBE).unwrap().into(),
     }
 }
 
@@ -72,7 +72,7 @@ fn job(token: u64, media: &MediaSummary, key: &str, ticks: i64) -> Job {
         source_key: key.into(),
         position: SourceTime {
             ticks,
-            timebase: media.metadata.timebase,
+            timebase: media.metadata.video().unwrap().timebase,
         },
         height: 40,
     }

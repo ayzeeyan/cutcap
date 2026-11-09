@@ -1,12 +1,14 @@
 //! Bounded clip-edit history owned by the project command owner.
 //!
-//! Each entry is one complete user gesture — an insertion, removal, move,
-//! trim or split — stored as an exact [`ClipChange`]: every clip value it
-//! removed and inserted, with their positions in the project's clip order. So
-//! one undo restores identity, timing, source mapping and order exactly, and
-//! one redo reproduces the same identities. Only successful edits are
-//! recorded; selection, playback, probing and failed commands never are. A new
-//! edit discards the redo branch.
+//! Each entry is one complete user gesture. A clip edit — an insertion,
+//! removal, move, trim, split, unlink or link — is stored as an exact
+//! [`ClipChange`]: every clip value it removed and inserted, with their
+//! positions in the project's clip order. So one undo restores identity,
+//! timing, source mapping and order exactly, and one redo reproduces the same
+//! identities. A track-control gesture (a finished volume drag, one mute or
+//! solo toggle) is stored as the track's controls before and after. Only
+//! successful edits are recorded; selection, playback, probing, gain previews
+//! and failed commands never are. A new edit discards the redo branch.
 //!
 //! Document revisions: an edit moves the document from `before` to `after`.
 //! Undo returns to `before` only if the document is still exactly at `after`
@@ -14,7 +16,7 @@
 //! Save → Insert → Undo is clean again, while Save → Insert → Add track → Undo
 //! stays dirty. Revisions are unique per session (`next` only grows), so a
 //! restored revision can never be confused with a different state.
-use cutcap_contracts::{HistoryStatus, SelectionState};
+use cutcap_contracts::{HistoryStatus, SelectionState, TrackControls, TrackId};
 use cutcap_core::{ClipChange, Project, ProjectError};
 use std::collections::VecDeque;
 
@@ -22,9 +24,44 @@ use std::collections::VecDeque;
 /// small and fixed regardless of project size.
 pub const MAX_HISTORY: usize = 200;
 
+/// What one history entry changes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Change {
+    Clips(ClipChange),
+    Track {
+        id: TrackId,
+        before: TrackControls,
+        after: TrackControls,
+    },
+}
+
+impl From<ClipChange> for Change {
+    fn from(change: ClipChange) -> Self {
+        Self::Clips(change)
+    }
+}
+
+impl Change {
+    fn revert(&self, project: &mut Project) -> Result<(), ProjectError> {
+        match self {
+            Self::Clips(change) => project.revert_change(change),
+            Self::Track { id, before, .. } => project.set_track_controls(*id, *before).map(|_| ()),
+        }
+    }
+    fn apply(&self, project: &mut Project) -> Result<(), ProjectError> {
+        match self {
+            Self::Clips(change) => project.apply_change(change),
+            Self::Track { id, after, .. } => project.set_track_controls(*id, *after).map(|_| ()),
+        }
+    }
+    fn is_track(&self) -> bool {
+        matches!(self, Self::Track { .. })
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Edit {
-    pub change: ClipChange,
+    pub change: Change,
     pub before: u64,
     pub after: u64,
     pub label: String,
@@ -64,7 +101,19 @@ impl History {
             undo: self.undo.back().map(|edit| edit.label.clone()),
             redo: self.redo.last().map(|edit| edit.label.clone()),
             depth: self.undo.len(),
+            undo_track: self.undo.back().is_some_and(|e| e.change.is_track()),
+            redo_track: self.redo.last().is_some_and(|e| e.change.is_track()),
         }
+    }
+
+    /// The next undo (or redo) only changes track controls.
+    pub fn next_is_track(&self, undo: bool) -> bool {
+        let edit = if undo {
+            self.undo.back()
+        } else {
+            self.redo.last()
+        };
+        edit.is_some_and(|e| e.change.is_track())
     }
 
     /// Reverses the newest edit. Returns the selection that should follow, or
@@ -79,7 +128,7 @@ impl History {
         let Some(edit) = self.undo.pop_back() else {
             return Ok(None);
         };
-        match project.revert_change(&edit.change) {
+        match edit.change.revert(project) {
             Ok(()) => {
                 if *revision == edit.after {
                     *revision = edit.before;
@@ -108,7 +157,7 @@ impl History {
         let Some(edit) = self.redo.pop() else {
             return Ok(None);
         };
-        match project.apply_change(&edit.change) {
+        match edit.change.apply(project) {
             Ok(()) => {
                 if *revision == edit.before {
                     *revision = edit.after;
@@ -133,7 +182,10 @@ impl History {
 /// Selection after undo (`reverting`) or redo: the first clip that reappears
 /// is selected; otherwise the selection is kept unless it named a clip that
 /// just disappeared.
-fn follow(selection: SelectionState, change: &ClipChange, reverting: bool) -> SelectionState {
+fn follow(selection: SelectionState, change: &Change, reverting: bool) -> SelectionState {
+    let Change::Clips(change) = change else {
+        return selection;
+    };
     let (gone, back) = if reverting {
         (&change.inserted, &change.removed)
     } else {

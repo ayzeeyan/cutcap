@@ -34,6 +34,10 @@ pub const CHANNELS: usize = 2;
 const RING_MS: u64 = 400;
 /// Frames the ring must hold before the device starts (start latency budget).
 pub const PREFILL_MS: u64 = 120;
+/// How far ahead of the device the mixer writes on a real device. Controls act
+/// on what has not been mixed yet, so this bounds their audible latency; the
+/// decoded PCM queues, not this ring, ride out decoder jitter.
+pub const MIX_LEAD_MS: u64 = 150;
 /// Clock extrapolation between device position samples.
 pub const MAX_EXTRAPOLATION_MS: u64 = 40;
 /// Upper bound for the output latency compensation setting.
@@ -132,6 +136,10 @@ pub struct OutputStatus {
     pub padded_ms: f64,
     pub played_ms: f64,
     pub error: Option<String>,
+    /// Render-thread time per device period (take from the ring, write).
+    pub period_us_last: u64,
+    pub period_us_max: u64,
+    pub periods: u64,
 }
 
 #[derive(Default)]
@@ -149,6 +157,9 @@ struct State {
     padded: u64,
     latency_ms: f64,
     error: Option<String>,
+    period_us_last: u64,
+    period_us_max: u64,
+    periods: u64,
     /// Virtual device (tests): every frame it played, padding included.
     #[cfg(test)]
     tap: Vec<f32>,
@@ -162,6 +173,8 @@ struct Shared {
     capacity: usize,
     /// Device frames the clock is held back by (output latency compensation).
     compensation: u64,
+    /// Frames the mixer may have queued ahead of the device.
+    lead: usize,
 }
 
 /// Handle to one output (WASAPI device or a virtual test device).
@@ -186,6 +199,12 @@ impl AudioOutput {
                 device,
                 capacity,
                 compensation: u64::from(rate) * compensation_ms.min(MAX_COMPENSATION_MS) / 1000,
+                // Tests drive a virtual device in large steps, so it may fill the ring.
+                lead: if virtual_device {
+                    capacity / CHANNELS
+                } else {
+                    (u64::from(rate) * MIX_LEAD_MS / 1000) as usize
+                },
             }),
             worker: None,
             virtual_device,
@@ -196,6 +215,25 @@ impl AudioOutput {
     #[cfg(test)]
     pub fn virtual_device(rate: u32) -> Self {
         Self::with(rate, "Virtual test output".into(), true, 0)
+    }
+
+    /// A virtual device with a real device's bounded mix-ahead.
+    #[cfg(test)]
+    pub fn virtual_device_with_lead(rate: u32, lead_ms: u64) -> Self {
+        let mut output = Self::with(rate, "Virtual test output".into(), true, 0);
+        if let Some(shared) = Arc::get_mut(&mut output.shared) {
+            shared.lead = (u64::from(rate) * lead_ms / 1000) as usize;
+        }
+        output
+    }
+
+    /// Virtual device (tests): the endpoint fails.
+    #[cfg(test)]
+    pub fn simulate_failure(&self, message: &str) {
+        let mut state = self.state();
+        state.error = Some(message.to_owned());
+        state.run = false;
+        state.started = false;
     }
 
     /// A virtual device whose clock is compensated by `ms`.
@@ -222,9 +260,15 @@ impl AudioOutput {
         self.shared.rate
     }
     /// Free ring space in frames.
+    #[cfg(test)]
     pub fn space(&self) -> usize {
         let state = self.state();
         (self.shared.capacity - state.ring.len()) / CHANNELS
+    }
+    /// Frames the mixer may still queue ahead of the device.
+    pub fn mix_room(&self) -> usize {
+        let buffered = self.state().ring.len() / CHANNELS;
+        self.shared.lead.saturating_sub(buffered)
     }
     #[cfg(test)]
     pub fn buffered_frames(&self) -> usize {
@@ -238,7 +282,8 @@ impl AudioOutput {
         state.ring.extend(&samples[..frames * CHANNELS]);
         frames
     }
-    /// Appends `frames` of real timeline silence (a gap between clips).
+    /// Appends `frames` of real timeline silence.
+    #[cfg(test)]
     pub fn push_silence(&self, frames: usize) -> usize {
         let mut state = self.state();
         let room = (self.shared.capacity - state.ring.len()) / CHANNELS;
@@ -336,6 +381,9 @@ impl AudioOutput {
             padded_ms: ms(state.padded),
             played_ms: ms(state.anchor.map_or(0, |(p, _)| state.map.timeline_at(p))),
             error: state.error.clone(),
+            period_us_last: state.period_us_last,
+            period_us_max: state.period_us_max,
+            periods: state.periods,
         }
     }
 
@@ -557,6 +605,7 @@ mod wasapi_thread {
                     // Shared-mode events stop when the stream is stopped; re-check state.
                     continue;
                 }
+                let began = Instant::now();
                 let space = client.get_available_space_in_frames().map_err(fail)? as usize;
                 let mut state = lock();
                 if !state.started || state.reset {
@@ -574,6 +623,10 @@ mod wasapi_thread {
                     state.anchor = Some((played, now));
                     state.map.prune(played);
                 }
+                let spent = now.saturating_duration_since(began).as_micros();
+                state.period_us_last = spent.min(u128::from(u64::MAX)) as u64;
+                state.period_us_max = state.period_us_max.max(state.period_us_last);
+                state.periods += 1;
             }
         })();
         if let Err(error) = result {
@@ -632,6 +685,90 @@ mod tests {
                 .collect();
             (rate, samples, started)
         })
+    }
+
+    /// Amplitude of `frequency` in `samples` (Goertzel, whole cycles).
+    fn tone_amplitude(samples: &[f32], rate: u32, frequency: f64) -> f64 {
+        let w = 2.0 * std::f64::consts::PI * frequency / f64::from(rate);
+        let (mut s1, mut s2) = (0.0f64, 0.0f64);
+        for x in samples {
+            let s0 = f64::from(*x) + 2.0 * w.cos() * s1 - s2;
+            s2 = s1;
+            s1 = s0;
+        }
+        (s1 * s1 + s2 * s2 - 2.0 * w.cos() * s1 * s2)
+            .max(0.0)
+            .sqrt()
+            * 2.0
+            / samples.len() as f64
+    }
+
+    /// Bypasses the mixer entirely: known sines are written straight to the
+    /// default endpoint and measured at the loopback tap, so what the
+    /// endpoint's own processing does to level is visible on its own.
+    #[cfg(windows)]
+    #[test]
+    #[ignore = "plays quiet test tones on the default Windows output and records them by loopback"]
+    fn the_endpoint_chain_is_characterized_by_known_tones() {
+        // (400 Hz amplitude, 800 Hz amplitude), two seconds each.
+        let cases = [
+            (0.18, 0.18),
+            (0.0, 0.18),
+            (0.18, 0.045),
+            (0.0, 0.045),
+            (0.09, 0.09),
+        ];
+        let seconds = cases.len() as f64 * 2.0;
+        let recording = loopback(seconds + 2.0);
+        std::thread::sleep(Duration::from_millis(300));
+        let output = AudioOutput::open_default().expect("an audio output endpoint");
+        let rate = output.rate();
+        let per_case = rate as usize * 2;
+        let tau = 2.0 * std::f64::consts::PI;
+        let tone: Vec<f32> = (0..per_case * cases.len())
+            .flat_map(|n| {
+                let (a, b) = cases[n / per_case];
+                let t = n as f64 / f64::from(rate);
+                let v = (a * (tau * 400.0 * t).sin() + b * (tau * 800.0 * t).sin()) as f32;
+                [v, v]
+            })
+            .collect();
+        let mut sent = output.push(&tone);
+        output.start();
+        while sent < per_case * cases.len() {
+            sent += output.push(&tone[sent * 2..]);
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        output.finish();
+        std::thread::sleep(Duration::from_millis(600));
+        let status = output.status();
+        drop(output);
+        let (loop_rate, captured, _) = recording.join().unwrap();
+        assert_eq!(loop_rate, rate);
+        let onset = captured.iter().position(|x| x.abs() > 0.005).unwrap();
+        for (index, (a, b)) in cases.iter().enumerate() {
+            // The last second of each two-second case, on whole cycles.
+            let from = onset + per_case * index + rate as usize;
+            let window = &captured[from..from + rate as usize];
+            let (m400, m800) = (
+                tone_amplitude(window, rate, 400.0),
+                tone_amplitude(window, rate, 800.0),
+            );
+            let db = |measured: f64, sent: f64| {
+                if sent > 0.0 {
+                    format!("{:+.2} dB", 20.0 * (measured / sent).log10())
+                } else {
+                    "-".into()
+                }
+            };
+            println!(
+                "sent 400 Hz {a:.3}, 800 Hz {b:.3}; measured {m400:.4} ({}), {m800:.4} ({})",
+                db(m400, *a),
+                db(m800, *b)
+            );
+            assert!(m800 > 0.001, "the tone reached the endpoint");
+        }
+        println!("underruns {}", status.underruns);
     }
 
     /// Goertzel power of `frequency` relative to total power.

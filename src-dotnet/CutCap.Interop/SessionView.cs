@@ -36,11 +36,16 @@ public sealed record SessionView(
 /// </summary>
 public sealed record AudioView(
     string State, string Clock, AudioOutputStatus Output, ulong Epoch, int Decoders, ulong DecoderStarts,
-    double SourceSilenceMs, ulong SilentClips, string? Detail);
+    double SourceSilenceMs, ulong SilentClips, string? Detail, MixView? Mix = null);
+
+/// <summary>Mixer diagnostics for the current epoch (ABI 10); never project data.</summary>
+public sealed record MixView(
+    int ActiveTracks, int MixedTracks, int MixedTracksPeak, int DecodersPeak, ulong ClippedSamples, float Peak,
+    ulong OverLimit, ulong Blocks, ulong BlockUsLast, ulong BlockUsMax, ulong BlockUsTotal, double MixedMs);
 
 public sealed record AudioOutputStatus(
     string State, string Device, uint Rate, double StreamLatencyMs, double LatencyCompensationMs, double BufferedMs, ulong Underruns,
-    double PaddedMs, double PlayedMs, string? Error);
+    double PaddedMs, double PlayedMs, string? Error, ulong PeriodUsLast = 0, ulong PeriodUsMax = 0, ulong Periods = 0);
 
 /// <summary>Waveform worker diagnostics (ABI 9); never project data.</summary>
 public sealed record WaveformStats(
@@ -66,7 +71,8 @@ public sealed record ThumbnailStats(
 public sealed record ThumbnailWant(ulong Token, string MediaId, string SourceKey, long SampleUs, int Height);
 
 /// <summary>Editing affordances that depend on Rust-owned time (ABI 7).</summary>
-public sealed record EditingView(bool SplitEnabled, string SplitDetail, string? Notice = null);
+public sealed record EditingView(bool SplitEnabled, string SplitDetail, string? Notice = null,
+    bool CanUnlink = false, string? LinkCandidate = null);
 
 /// <summary>Project-tick clock and copied frame identity; no clip semantics or pixels in managed state.</summary>
 public sealed record TimelinePlaybackView(
@@ -89,7 +95,8 @@ public sealed record TimelinePreviewView(
     ulong? EvaluationUs, ulong? DecodeUs, ulong? RequestToReadyUs, uint? ProcessId, ulong FramesCopied);
 
 /// <summary>Rust-owned clip-edit history; labels describe the next undo/redo.</summary>
-public sealed record HistoryStatus(bool CanUndo, bool CanRedo, string? Undo, string? Redo, int Depth);
+public sealed record HistoryStatus(bool CanUndo, bool CanRedo, string? Undo, string? Redo, int Depth,
+    bool UndoTrack = false, bool RedoTrack = false);
 
 /// <summary>The clip list, fetched separately when <see cref="SessionView.TimelineGeneration"/> changes.</summary>
 public sealed record TimelineView(ulong Generation, IReadOnlyList<ClipView> Clips);
@@ -128,7 +135,8 @@ public sealed record DocumentStatus(string? Path, ulong Revision, ulong? SavedRe
 
 public sealed record StatusView(string Text, bool Error);
 
-public sealed record TrackView(string Id, string Name, string Kind, string Badge, bool Selected, string LaneLabel = "")
+public sealed record TrackView(string Id, string Name, string Kind, string Badge, bool Selected, string LaneLabel = "",
+    int GainCdb = 0, string GainText = "0.0 dB", bool Muted = false, bool Soloed = false, bool Audible = true)
 {
     public bool IsVideo => Kind == "video";
 }
@@ -143,11 +151,15 @@ public sealed record MediaView(
     bool Estimated,
     bool HasAudio,
     bool Selected,
-    string Availability = "ready", string Detail = "", string Path = "");
+    string Availability = "ready", string Detail = "", string Path = "",
+    bool AudioOnly = false, IReadOnlyList<AudioStreamView>? AudioStreams = null);
+
+/// <summary>One decodable audio stream of a source, for explicit placement.</summary>
+public sealed record AudioStreamView(uint Index, string Label, bool Primary);
 
 public sealed record ImportView(bool Busy, bool Error, string Message);
 
-public sealed record InspectorView(string Kind, string Title, string Detail, IReadOnlyList<SectionView> Sections);
+public sealed record InspectorView(string Kind, string Title, string Detail, IReadOnlyList<SectionView> Sections, string Badge = "");
 
 public sealed record SectionView(string Title, IReadOnlyList<RowView> Rows);
 

@@ -31,6 +31,38 @@ impl ClipStream {
     }
 }
 
+/// Quietest stored track gain: -60.00 dB (a real gain; mute is separate).
+pub const MIN_GAIN_CDB: i32 = -6000;
+/// Loudest stored track gain: +6.00 dB.
+pub const MAX_GAIN_CDB: i32 = 600;
+
+/// Persistent controls of an audio track (schema 3). `gain_cdb` is hundredths
+/// of a decibel, an exact integer so documents compare and round-trip exactly.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, default)]
+pub struct TrackControls {
+    pub gain_cdb: i32,
+    pub mute: bool,
+    pub solo: bool,
+}
+
+impl TrackControls {
+    pub fn is_default(&self) -> bool {
+        *self == Self::default()
+    }
+    pub fn gain_in_range(&self) -> bool {
+        (MIN_GAIN_CDB..=MAX_GAIN_CDB).contains(&self.gain_cdb)
+    }
+    /// Mute wins over solo: a muted, soloed track is silent.
+    pub fn audible(&self, any_solo: bool) -> bool {
+        !self.mute && (!any_solo || self.solo)
+    }
+    /// Amplitude gain: `10^(dB / 20)`. Never zero; inaudibility is `audible`.
+    pub fn linear_gain(&self) -> f32 {
+        10f64.powf(f64::from(self.gain_cdb) / 2000.0) as f32
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TimelineSeek {
     Ticks(TimelineTime),

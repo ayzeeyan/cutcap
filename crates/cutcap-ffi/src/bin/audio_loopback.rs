@@ -10,6 +10,10 @@
 //! bracket width is reported), so a click is dated to about a millisecond. The
 //! older read-time envelope estimate is reported for comparison. Loopback taps
 //! the endpoint mix: speaker/DAC latency after the mix is not included.
+//!
+//! `--tones 400,800,1200` adds the amplitude of each frequency per 10 ms
+//! window (Goertzel over whole cycles when the frequency is a multiple of
+//! 100 Hz, so the tones do not leak into each other).
 #[cfg(windows)]
 fn main() {
     use std::{
@@ -25,6 +29,12 @@ fn main() {
         .expect("usage: cutcap-audio-loopback <out.wav> <seconds> [click_hz]");
     let seconds: f64 = args.get(2).and_then(|s| s.parse().ok()).unwrap_or(10.0);
     let click_hz: f64 = args.get(3).and_then(|s| s.parse().ok()).unwrap_or(2000.0);
+    let tones: Vec<u32> = args
+        .iter()
+        .position(|a| a == "--tones")
+        .and_then(|i| args.get(i + 1))
+        .map(|list| list.split(',').filter_map(|t| t.parse().ok()).collect())
+        .unwrap_or_default();
 
     initialize_mta().ok().expect("COM");
     let device = DeviceEnumerator::new()
@@ -132,6 +142,41 @@ fn main() {
     let rms =
         (mono.iter().map(|x| f64::from(*x).powi(2)).sum::<f64>() / mono.len().max(1) as f64).sqrt();
 
+    // Tone amplitudes per 10 ms window, dated like the clicks.
+    let tone_window = (f64::from(rate) * 0.010) as usize;
+    let level = |hz: u32| -> Vec<String> {
+        let w = 2.0 * std::f64::consts::PI * f64::from(hz) / f64::from(rate);
+        mono.chunks_exact(tone_window)
+            .map(|block| {
+                let (mut s1, mut s2) = (0.0f64, 0.0f64);
+                for &x in block {
+                    let s0 = f64::from(x) + 2.0 * w.cos() * s1 - s2;
+                    s2 = s1;
+                    s1 = s0;
+                }
+                let power = (s1 * s1 + s2 * s2 - 2.0 * w.cos() * s1 * s2)
+                    .max(0.0)
+                    .sqrt();
+                format!("{:.5}", power * 2.0 / block.len() as f64)
+            })
+            .collect()
+    };
+    let tone_json = tones
+        .iter()
+        .map(|hz| format!("\"{hz}\":[{}]", level(*hz).join(",")))
+        .collect::<Vec<_>>()
+        .join(",");
+    let tone_times = (0..mono.len() / tone_window.max(1))
+        .step_by(1)
+        .map(|i| {
+            format!(
+                "{:.1}",
+                dated(i * tone_window).unwrap_or(envelope_origin + i as f64 * 10.0)
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(",");
+
     // 16-bit mono WAV of the first channel.
     let mut file = std::fs::File::create(out).expect("create wav");
     let data = (mono.len() * 2) as u32;
@@ -155,7 +200,7 @@ fn main() {
         .collect();
     file.write_all(&samples).expect("write wav");
     println!(
-        "{{\"device\":{:?},\"rate\":{rate},\"frames\":{},\"rms\":{rms:.5},\"origin_unix_ms\":{origin:.3},\"envelope_origin_unix_ms\":{envelope_origin:.3},\"packets\":{},\"clock_map_bracket_ms\":{:.3},\"clicks_unix_ms\":[{}]}}",
+        "{{\"device\":{:?},\"rate\":{rate},\"frames\":{},\"rms\":{rms:.5},\"origin_unix_ms\":{origin:.3},\"envelope_origin_unix_ms\":{envelope_origin:.3},\"packets\":{},\"clock_map_bracket_ms\":{:.3},\"clicks_unix_ms\":[{}],\"tone_times_unix_ms\":[{}],\"tones\":{{{}}}}}",
         name,
         mono.len(),
         packets.len(),
@@ -164,7 +209,13 @@ fn main() {
             .iter()
             .map(|c| format!("{c:.3}"))
             .collect::<Vec<_>>()
-            .join(",")
+            .join(","),
+        if tones.is_empty() {
+            String::new()
+        } else {
+            tone_times
+        },
+        tone_json,
     );
 }
 

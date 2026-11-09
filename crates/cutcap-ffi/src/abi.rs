@@ -39,7 +39,7 @@ use std::{
 /// filmstrip clip-row and thumbnail-diagnostics view fields.
 /// ABI 9 (Phase 4B): waveform demand/next/copy exports; clip rows add stream,
 /// link and waveform fields; the view adds audio-output and waveform state.
-pub const ABI_VERSION: u32 = 9;
+pub const ABI_VERSION: u32 = 10;
 
 pub const CUTCAP_OK: i32 = 0;
 pub const CUTCAP_INVALID_ARGUMENT: i32 = 1;
@@ -466,6 +466,160 @@ pub unsafe extern "C" fn cutcap_session_place_clip(
         let position = seek(position, unit)?;
         with_session(handle, |s| Ok(s.place_clip(media, track, position)?))
     })
+}
+
+/// Phase 4C (ABI 10): places one chosen audio stream of a Ready source as an
+/// independent clip, on `track` or (with `track_len` 0) on the first audio
+/// track free for its whole interval. One undo step. Rejections arrive as view
+/// status; nothing changes.
+///
+/// # Safety
+/// `media`/`track` must be valid for reads of their lengths.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn cutcap_session_place_audio_stream(
+    handle: u64,
+    media: *const u8,
+    media_len: usize,
+    stream: u32,
+    track: *const u8,
+    track_len: usize,
+    position: i64,
+    unit: u32,
+) -> i32 {
+    guard(|| {
+        // SAFETY: forwarded caller contract.
+        let text = unsafe { input_str(media, media_len) }?;
+        let media = MediaId::try_from(parse_uuid(text)?)
+            .map_err(|_| Fail::argument("Invalid media identifier."))?;
+        let track = if track_len == 0 {
+            None
+        } else {
+            // SAFETY: forwarded caller contract.
+            Some(unsafe { track_id(track, track_len) }?)
+        };
+        let position = seek(position, unit)?;
+        with_session(handle, |s| {
+            Ok(s.place_audio_stream(media, stream, track, position)?)
+        })
+    })
+}
+
+/// Phase 4C (ABI 10): removes the link of a linked pair. One undo step; no
+/// timing changes.
+///
+/// # Safety
+/// `clip` must be valid for reads of `clip_len` bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn cutcap_session_unlink_clip(
+    handle: u64,
+    clip: *const u8,
+    clip_len: usize,
+) -> i32 {
+    guard(|| {
+        // SAFETY: forwarded caller contract.
+        let id = unsafe { clip_id(clip, clip_len) }?;
+        with_session(handle, |s| Ok(s.unlink_clip(id)?))
+    })
+}
+
+/// Phase 4C (ABI 10): links two compatible unlinked clips. One undo step.
+///
+/// # Safety
+/// `clip`/`partner` must be valid for reads of their lengths.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn cutcap_session_link_clips(
+    handle: u64,
+    clip: *const u8,
+    clip_len: usize,
+    partner: *const u8,
+    partner_len: usize,
+) -> i32 {
+    guard(|| {
+        // SAFETY: forwarded caller contract.
+        let (a, b) = unsafe { (clip_id(clip, clip_len)?, clip_id(partner, partner_len)?) };
+        with_session(handle, |s| Ok(s.link_clips(a, b)?))
+    })
+}
+
+/// Phase 4C (ABI 10): mutes (nonzero) or unmutes an audio track. One undo
+/// step; playback continues.
+///
+/// # Safety
+/// `track` must be valid for reads of `track_len` bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn cutcap_session_set_track_mute(
+    handle: u64,
+    track: *const u8,
+    track_len: usize,
+    muted: u32,
+) -> i32 {
+    guard(|| {
+        // SAFETY: forwarded caller contract.
+        let id = unsafe { track_id(track, track_len) }?;
+        with_session(handle, |s| Ok(s.set_track_mute(id, muted != 0)?))
+    })
+}
+
+/// Phase 4C (ABI 10): solos (nonzero) or unsolos an audio track. One undo
+/// step; playback continues.
+///
+/// # Safety
+/// `track` must be valid for reads of `track_len` bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn cutcap_session_set_track_solo(
+    handle: u64,
+    track: *const u8,
+    track_len: usize,
+    soloed: u32,
+) -> i32 {
+    guard(|| {
+        // SAFETY: forwarded caller contract.
+        let id = unsafe { track_id(track, track_len) }?;
+        with_session(handle, |s| Ok(s.set_track_solo(id, soloed != 0)?))
+    })
+}
+
+/// Phase 4C (ABI 10): a volume drag in progress, in hundredths of a dB. Heard
+/// live and shown in the view; never in history or the document.
+///
+/// # Safety
+/// `track` must be valid for reads of `track_len` bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn cutcap_session_preview_track_gain(
+    handle: u64,
+    track: *const u8,
+    track_len: usize,
+    cdb: i32,
+) -> i32 {
+    guard(|| {
+        // SAFETY: forwarded caller contract.
+        let id = unsafe { track_id(track, track_len) }?;
+        with_session(handle, |s| Ok(s.preview_track_gain(id, cdb)?))
+    })
+}
+
+/// Phase 4C (ABI 10): ends a volume drag with one undoable change.
+///
+/// # Safety
+/// `track` must be valid for reads of `track_len` bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn cutcap_session_commit_track_gain(
+    handle: u64,
+    track: *const u8,
+    track_len: usize,
+    cdb: i32,
+) -> i32 {
+    guard(|| {
+        // SAFETY: forwarded caller contract.
+        let id = unsafe { track_id(track, track_len) }?;
+        with_session(handle, |s| Ok(s.commit_track_gain(id, cdb)?))
+    })
+}
+
+/// Phase 4C (ABI 10): abandons a volume drag; the stored value applies again.
+#[unsafe(no_mangle)]
+pub extern "C" fn cutcap_session_cancel_track_gain(handle: u64) -> i32 {
+    guard(|| with_session(handle, |s| Ok(s.cancel_track_gain()?)))
 }
 
 /// Phase 3E (ABI 7): moves a clip so that its `anchor` edge (0 start, 1 end)

@@ -77,7 +77,7 @@ fn audio_media() -> MediaSummary {
     MediaSummary {
         id: MediaId::new(),
         path: "C:/clips/tone.mkv".into(),
-        metadata: cutcap_media::parse_probe(probe).unwrap(),
+        metadata: cutcap_media::parse_probe(probe).unwrap().into(),
     }
 }
 

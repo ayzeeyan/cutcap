@@ -10,6 +10,7 @@ fn fixture() -> (Project, Clip) {
             id: track_id,
             name: "Video 1".into(),
             kind: TrackKind::Video,
+            controls: Default::default(),
         })
         .unwrap();
     project
@@ -91,7 +92,7 @@ fn malformed_graphs_and_future_schemas_are_rejected_on_load() {
     let (mut project, clip) = fixture();
     project.insert_clip(clip).unwrap();
     let value = serde_json::to_value(&project).unwrap();
-    for replacement in [0, 3, 999] {
+    for replacement in [0, 4, 999] {
         let mut bad = value.clone();
         bad["schema_version"] = replacement.into();
         assert!(serde_json::from_value::<Project>(bad).is_err());
@@ -142,9 +143,9 @@ fn schema_one_migrates_to_explicit_video_streams_with_exact_timing() {
     );
     assert_eq!(loaded.stream, ClipStream::Video);
     assert_eq!(loaded.link, None);
-    // Saving writes schema 2 with an explicit stream.
+    // Saving writes the current schema with an explicit stream.
     let saved = serde_json::to_value(&migrated).unwrap();
-    assert_eq!(saved["schema_version"], 2);
+    assert_eq!(saved["schema_version"], PROJECT_SCHEMA_VERSION);
     assert_eq!(saved["clips"][0]["stream"]["kind"], "video");
     assert!(saved["clips"][0].get("link").is_none());
 
@@ -177,6 +178,7 @@ fn linked() -> (Project, Clip, Clip) {
             id: audio_track,
             name: "Audio 1".into(),
             kind: TrackKind::Audio,
+            controls: Default::default(),
         })
         .unwrap();
     let link = Some(LinkId::new());
@@ -312,6 +314,7 @@ fn selection_names_ids_and_limits_are_validated() {
                 id: TrackId::new(),
                 name: "Track".into(),
                 kind: TrackKind::Audio,
+                controls: Default::default(),
             })
             .unwrap();
     }
@@ -319,7 +322,8 @@ fn selection_names_ids_and_limits_are_validated() {
         project.add_track(Track {
             id: TrackId::new(),
             name: "Track".into(),
-            kind: TrackKind::Video
+            kind: TrackKind::Video,
+            controls: Default::default(),
         }),
         Err(ProjectError::Limit("tracks"))
     );
@@ -404,4 +408,171 @@ fn restoring_at_an_index_still_validates_overlap_and_kinds() {
         Err(ProjectError::Time(_))
     ));
     assert_eq!(project, before);
+}
+
+#[test]
+fn schema_two_gains_default_controls_and_refuses_controls_it_cannot_have() {
+    let (mut project, clip) = fixture();
+    project.insert_clip(clip).unwrap();
+    let mut old = serde_json::to_value(&project).unwrap();
+    old["schema_version"] = 2.into();
+    let migrated: Project = serde_json::from_value(old.clone()).unwrap();
+    assert!(migrated.tracks().iter().all(|t| t.controls.is_default()));
+    assert_eq!(
+        serde_json::to_value(&migrated).unwrap()["schema_version"],
+        PROJECT_SCHEMA_VERSION
+    );
+    assert!(
+        serde_json::to_value(&migrated).unwrap()["tracks"][0]
+            .get("controls")
+            .is_none(),
+        "default controls are not written"
+    );
+    for schema in [1, 2] {
+        let mut forged = old.clone();
+        forged["schema_version"] = schema.into();
+        forged["tracks"][0]["controls"] = serde_json::json!({"mute": true});
+        let error = serde_json::from_value::<Project>(forged).unwrap_err();
+        assert!(error.to_string().contains("track controls"), "{error}");
+    }
+}
+
+fn audio_track(project: &mut Project) -> TrackId {
+    let id = TrackId::new();
+    project
+        .add_track(Track {
+            id,
+            name: "A".into(),
+            kind: TrackKind::Audio,
+            controls: Default::default(),
+        })
+        .unwrap();
+    id
+}
+
+#[test]
+fn track_controls_round_trip_exactly_and_are_validated() {
+    let (mut project, _) = fixture();
+    let audio = audio_track(&mut project);
+    let controls = TrackControls {
+        gain_cdb: -1234,
+        mute: true,
+        solo: true,
+    };
+    assert_eq!(
+        project.set_track_controls(audio, controls).unwrap(),
+        TrackControls::default()
+    );
+    let json = serde_json::to_value(&project).unwrap();
+    let back: Project = serde_json::from_value(json.clone()).unwrap();
+    assert_eq!(back, project);
+    assert_eq!(
+        back.tracks()
+            .iter()
+            .find(|t| t.id == audio)
+            .unwrap()
+            .controls,
+        controls
+    );
+    // Range and track family are enforced by the API and by loading.
+    for gain_cdb in [MIN_GAIN_CDB - 1, MAX_GAIN_CDB + 1] {
+        let bad = TrackControls {
+            gain_cdb,
+            ..controls
+        };
+        assert_eq!(
+            project.set_track_controls(audio, bad),
+            Err(ProjectError::InvalidControls)
+        );
+    }
+    for gain_cdb in [MIN_GAIN_CDB, MAX_GAIN_CDB] {
+        let edge = TrackControls {
+            gain_cdb,
+            ..controls
+        };
+        assert!(project.set_track_controls(audio, edge).is_ok());
+    }
+    let video = project.tracks()[0].id;
+    assert_eq!(
+        project.set_track_controls(video, controls),
+        Err(ProjectError::InvalidControls)
+    );
+    let mut bad = json.clone();
+    bad["tracks"][0]["controls"] = serde_json::json!({"mute": true});
+    assert!(
+        serde_json::from_value::<Project>(bad).is_err(),
+        "video track"
+    );
+    let index = json["tracks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .position(|t| t["kind"] == "Audio")
+        .unwrap();
+    let mut bad = json.clone();
+    bad["tracks"][index]["controls"]["gain_cdb"] = 601.into();
+    assert!(
+        serde_json::from_value::<Project>(bad).is_err(),
+        "out of range"
+    );
+    assert!(matches!(
+        project.set_track_controls(TrackId::new(), controls),
+        Err(ProjectError::MissingReference)
+    ));
+}
+
+#[test]
+fn mute_wins_over_solo_and_gain_is_amplitude_not_power() {
+    let c = |mute, solo| TrackControls {
+        gain_cdb: 0,
+        mute,
+        solo,
+    };
+    assert!(c(false, false).audible(false));
+    assert!(!c(true, false).audible(false));
+    assert!(!c(false, false).audible(true), "another track is soloed");
+    assert!(c(false, true).audible(true));
+    assert!(!c(true, true).audible(true), "a muted solo stays silent");
+    let gain = |gain_cdb| {
+        f64::from(
+            TrackControls {
+                gain_cdb,
+                ..Default::default()
+            }
+            .linear_gain(),
+        )
+    };
+    assert_eq!(gain(0), 1.0);
+    assert!((gain(-600) - 0.501_187).abs() < 1e-5, "-6 dB amplitude");
+    assert!((gain(600) - 1.995_262).abs() < 1e-5, "+6 dB amplitude");
+    assert!((gain(-6000) - 0.001).abs() < 1e-8, "-60 dB is not silence");
+}
+
+#[test]
+fn audio_tracks_are_listed_in_project_order_and_extend_the_audio_end() {
+    let (mut project, _) = fixture();
+    let first = audio_track(&mut project);
+    let second = audio_track(&mut project);
+    let media = project.media()[0].id;
+    let clip = |track, start: i64, ticks: u64| Clip {
+        id: ClipId::new(),
+        media_id: media,
+        track_id: track,
+        start: TimelineTime(start),
+        duration: TimelineDuration::new(ticks).unwrap(),
+        source_in: SourceTime {
+            ticks: 0,
+            timebase: Timebase::new(1, 48_000).unwrap(),
+        },
+        stream: ClipStream::Audio { index: 1 },
+        link: None,
+    };
+    project.insert_clip(clip(second, 100, 900)).unwrap();
+    project.insert_clip(clip(first, 0, 10)).unwrap();
+    let index = TimelineIndex::new(&project);
+    assert_eq!(
+        index.audio_tracks().map(|t| t.id).collect::<Vec<_>>(),
+        vec![first, second]
+    );
+    assert_eq!(index.audio_end().unwrap(), TimelineTime(1000));
 }

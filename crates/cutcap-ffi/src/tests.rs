@@ -22,6 +22,9 @@ const PROBE: &[u8] = br#"{"streams":[{"index":0,"codec_type":"video","codec_name
 /// Files whose name contains "av" also carry a 48 kHz stereo audio stream (#1).
 const AV_PROBE: &[u8] = br#"{"streams":[{"index":0,"codec_type":"video","codec_name":"ffv1","width":320,"height":180,"time_base":"1/1000","start_pts":0,"duration_ts":3000},{"index":1,"codec_type":"audio","codec_name":"flac","sample_rate":"48000","channels":2,"time_base":"1/48000","start_pts":0,"duration_ts":144000,"disposition":{"default":1}}],"format":{"format_name":"matroska"}}"#;
 
+/// Files whose name contains "song" are audio-only: 6 s of stereo MP3 at 44.1 kHz.
+const SONG_PROBE: &[u8] = br#"{"streams":[{"index":0,"codec_type":"audio","codec_name":"mp3","sample_rate":"44100","channels":2,"channel_layout":"stereo","sample_fmt":"fltp","time_base":"1/14112000","start_pts":353600,"duration_ts":84672000,"disposition":{"default":1}}],"format":{"format_name":"mp3","duration":"6.0"}}"#;
+
 #[path = "timeline_preview_tests.rs"]
 mod timeline_preview;
 
@@ -77,7 +80,7 @@ impl MediaBackend for Controlled {
             thread::sleep(Duration::from_millis(2));
         }
         self.thumbnail_batches.fetch_add(1, Ordering::SeqCst);
-        let (width, height) = thumbnail_size(&media.metadata, height)?;
+        let (width, height) = thumbnail_size(media.metadata.video().unwrap(), height)?;
         Ok(batch
             .iter()
             .map(|r| {
@@ -185,7 +188,11 @@ impl MediaBackend for Controlled {
             .unwrap_or_default();
         Ok(ProbeResult {
             path: path.to_owned(),
-            metadata: parse_probe(if name.contains("av") { AV_PROBE } else { PROBE })?,
+            metadata: if name.contains("song") {
+                parse_source_probe(SONG_PROBE)?
+            } else {
+                parse_probe(if name.contains("av") { AV_PROBE } else { PROBE })?.into()
+            },
             probe_us: 7,
         })
     }
@@ -503,7 +510,7 @@ fn shutdown_does_not_wait_forever_for_an_uninterruptible_source_inspection() {
                 .unwrap();
             Ok(ProbeResult {
                 path: path.to_owned(),
-                metadata: parse_probe(PROBE)?,
+                metadata: parse_probe(PROBE)?.into(),
                 probe_us: 1,
             })
         }
@@ -791,6 +798,7 @@ fn abi_frame_copy_validates_buffers_generation_and_stride() {
 mod thumbnail;
 #[path = "timeline_tests.rs"]
 mod timeline;
+
 #[path = "timeline_edit_session_tests.rs"]
 mod timeline_edit_session;
 #[path = "waveform_tests.rs"]

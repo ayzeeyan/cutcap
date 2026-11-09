@@ -14,6 +14,7 @@ fn indexed_evaluation_cost_and_response_size() {
                 id: track,
                 name: "Video 1".into(),
                 kind: TrackKind::Video,
+                controls: Default::default(),
             })
             .unwrap();
         project
@@ -39,7 +40,7 @@ fn indexed_evaluation_cost_and_response_size() {
             MediaSummary {
                 id: media,
                 path: "owned-fixture.mkv".into(),
-                metadata: metadata.clone(),
+                metadata: metadata.clone().into(),
             },
         );
         engine.availability.insert(
