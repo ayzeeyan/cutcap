@@ -1,5 +1,19 @@
 # CutCap architecture — Avalonia frontend over the Rust engine
 
+Phase 4C current addition: **ABI/contract 10, core schema 3**, multi-track audio.
+`ffi/audio_transport.rs` is now a bounded mixer: one feeder thread lays out every
+audio track's clips as sample spans, schedules at most 24 decoder processes, and
+sums each 10 ms block in project track order with per-track gain ramps into one
+ring and one WASAPI stream; the device position remains the clock
+(`PHASE_4C_AUDIO_MIXING_CONTRACT.md`). Contracts add `TrackControls` and
+`SourceMetadata` (video or audio-only); core validates controls and migrates
+schemas 1 and 2; `ffi/history.rs` records clip changes and control changes in one
+stack; `ffi/edits.rs` adds independent audio placement, chosen streams, Unlink and
+validated Link. The session applies controls to the running mixer without touching
+the epoch and keeps a volume drag as a transient preview. In Avalonia, audio track
+headers host Mute, Solo and a volume slider bound to engine state, inaudible lanes
+dim, and the inspector offers Unlink and per-stream placement.
+
 Phase 4B current addition: **ABI/contract 9, core schema 2**, real audio.
 Contracts add `ClipStream`, `LinkId` and `AudioStreamMetadata`; core validates
 stream kinds and link groups inside every transaction and migrates schema 1 in

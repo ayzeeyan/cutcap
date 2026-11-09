@@ -1,0 +1,16 @@
+12:49:26.957 n=1, tone only: volume 252.6 ms, mute 288.8 ms
+12:49:28.351 close n=1 tone | exited=True, exit 412 ms after the discard prompt (prompt at 200 ms) leftover=0
+12:50:22.014 close n=1 | exited=True, exit 420 ms after the discard prompt (prompt at 231 ms) leftover=0
+12:50:22.041 n=1: underruns 0 late 0 | click-clock median 51.2 ms, click-flash median 31.9 ms | start 363.6 ms, seek 438 ms, solo  ms, volume  ms, mute  ms | app cores 0.587, decoders peak 1, mixed peak 1, clipped 162 | mix 0.07% of real time (block mean 7 us, max 536 us), device period max 156 us
+12:51:52.802 close n=2 | exited=True, exit 409 ms after the discard prompt (prompt at 241 ms) leftover=0
+12:51:52.819 n=2: underruns 0 late 0 | click-clock median 59.1 ms, click-flash median 31.8 ms | start 376.2 ms, seek 467.6 ms, solo  ms, volume 243 ms, mute 292.1 ms | app cores 0.682, decoders peak 2, mixed peak 2, clipped 152 | mix 0.113% of real time (block mean 11.3 us, max 259 us), device period max 230 us
+12:53:46.050 close n=4 | exited=True, exit 410 ms after the discard prompt (prompt at 248 ms) leftover=0
+12:53:46.062 n=4: underruns 0 late 0 | click-clock median 65.1 ms, click-flash median 41.1 ms | start 397.7 ms, seek 431.1 ms, solo 284.8 ms, volume 240.4 ms, mute 291.3 ms | app cores 0.747, decoders peak 4, mixed peak 4, clipped 186 | mix 0.132% of real time (block mean 13.2 us, max 378 us), device period max 118 us
+12:56:23.466 close n=8 | exited=True, exit 411 ms after the discard prompt (prompt at 250 ms) leftover=0
+12:56:23.479 n=8: underruns 0 late 0 | click-clock median 64.8 ms, click-flash median 39.5 ms | start 396 ms, seek 500.4 ms, solo 307.3 ms, volume 251.6 ms, mute 297.1 ms | app cores 0.716, decoders peak 8, mixed peak 8, clipped 324 | mix 0.314% of real time (block mean 31.4 us, max 491 us), device period max 260 us
+13:00:28.880 close n=16 | exited=True, exit 408 ms after the discard prompt (prompt at 247 ms) leftover=0
+13:00:28.891 n=16: underruns 0 late 0 | click-clock median 62.8 ms, click-flash median 33.6 ms | start 459.8 ms, seek 563 ms, solo 289.2 ms, volume 231 ms, mute 290 ms | app cores 0.727, decoders peak 16, mixed peak 16, clipped 608 | mix 0.729% of real time (block mean 72.9 us, max 1099 us), device period max 70 us
+13:04:17.816 limit: at 17 tracks the app says: '17 audible audio tracks overlap at 00:01.500. CutCap mixes at most 16 at once: mute some tracks or shorten clips.'
+13:04:19.786 close limit | exited=True, exit 414 ms after the discard prompt (prompt at 266 ms) leftover=0
+13:06:48.966 long 60 s, 4 tracks: clicks=60, device-vs-system 9.5 ppm, click-clock slope -0.039 ms/min, underruns 0, late 0, peak working set 424 MiB
+13:06:50.483 close long | exited=True, exit 424 ms after the discard prompt (prompt at 229 ms) leftover=0

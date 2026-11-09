@@ -1,4 +1,19 @@
-# CutCap project documents — format 1, core schema 2
+# CutCap project documents — format 1, core schema 3
+
+**Phase 4C: core schema 3.** A track may carry `controls` —
+`{"gain_cdb": -600, "mute": true, "solo": false}` — on audio tracks only.
+`gain_cdb` is hundredths of a decibel, `-6000..=600`; absent means default and
+defaults are not written. A source's `metadata` is either the video shape or, for
+an audio-only file, `{"container": ..., "audio": [...]}` with no picture fields;
+its `MediaAsset.kind` is `Audio`. Independently placed audio clips keep `source_in`
+on `1/sample_rate`; clips that were linked keep their exact value after Unlink.
+
+Migration to 3 is in memory on open. Schema 1 follows the Phase 4B rules; schema 2
+gains default controls. A schema 1 or 2 document that carries non-default controls
+is refused and the file is left untouched. Opening never writes; the next save
+writes `schema_version: 3`. Other schemas are rejected. Saved source metadata
+without per-stream audio details (pre-Phase 4B) still verifies against a fresh
+probe and gains those details. The envelope is unchanged.
 
 **Phase 4B: core schema 2.** Each clip gains `stream` — `{"kind":"video"}` or
 `{"kind":"audio","index":N}` (N is the media's audio stream index) — and an

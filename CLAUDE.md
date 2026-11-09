@@ -1,5 +1,12 @@
 # Claude onboarding
 
+Phase 4C current handoff: ABI/contract 10, core schema 3 add a bounded multi-track
+mixer (docs/PHASE_4C_AUDIO_MIXING_CONTRACT.md and report, ADR 026). All audio tracks
+sum in project order into one WASAPI stream with one device clock; volume, mute and
+solo are persistent Rust state applied live without touching the epoch. Audio-only
+sources, explicit stream placement and Unlink/Link are in. Native checks use
+scripts/native-ui/mix-ui.ps1 and mix-bench-ui.ps1.
+
 Phase 4B current handoff: ABI/contract 9, core schema 2 add real audio
 (docs/PHASE_4B_AUDIO_WAVEFORMS_REPORT.md, ADR 025). Placed sources with audio
 become linked video/audio pairs edited as one transaction; schema 1 migrates in
