@@ -409,11 +409,53 @@ made, and other audio devices or slower disks may behave differently.
 
 ## 16. Git commit hashes
 
-Recorded by the follow-up commit that also records the pull request.
+On branch `claude/phase-4c-audio-mixing`, on top of `eb03725`:
+
+| Commit | Subject |
+|---|---|
+| `626004d` | test(audio): wait for the epoch end before counting starvation |
+| `90d4275` | feat(audio): add bounded multi-track mixing and independent audio clips |
+| `afb1c76` | feat(ui): add functional track mixer controls and unlink editing |
+| `3b04ecb` | test(audio): verify multi-track output and project compatibility |
+| `0c7c242` | docs: report Phase 4C audio mixing |
+
+A final commit, "docs: record the Phase 4C pull request", adds this section and §17.
+
+Each feature, test and docs commit was checked on its own in a clean worktree, with
+`--all-features --locked` and no audio device, as CI runs it:
+
+| Commit | Format, clippy | `cargo test` | .NET build | `dotnet test` |
+|---|---|---|---|---|
+| `90d4275` | clean | 197 passed | 0 errors | Desktop 57, Interop 52 passed |
+| `afb1c76` | clean | 197 passed | 0 errors | Desktop 57, Interop 52 passed |
+| `3b04ecb` | clean | 220 passed | 0 errors | Desktop 63, Interop 57 passed |
+| `0c7c242` | clean | 220 passed | 0 errors | Desktop 63, Interop 57 passed |
+
+**Departure from the suggested commits.** The suggested `feat(core)` and
+`feat(audio)` commits are one commit. The schema, the source metadata and the mixer
+share engine types (`SourceMetadata` alone reaches every engine module), so a split
+would have meant authoring intermediate trees that never existed. The ABI bump and
+the interop layer travel with it, as they must. The mixer's oracle tests also stay
+with the mixer, because they use a test-only output helper.
+
+**Excluded from the commits:** generated media, recordings and screenshots
+(`.artifacts/`, git-ignored), build outputs and the publish folder, and caches.
+Measurement logs were copied into `docs/measurements` after checking that they
+contain no user paths.
 
 ## 17. PR URL and number
 
-Recorded by the same follow-up commit.
+- **PR:** [#6](https://github.com/ayzeeyan/cutcap/pull/6) "feat: implement
+  multi-track audio mixing and independent audio editing (Phase 4C)": base `main`,
+  head `claude/phase-4c-audio-mixing`.
+- **State at creation:** open, not a draft, auto-merge off, head `0c7c242`,
+  mergeable.
+- **Push:** `git push -u` without force. The remote head was verified equal to the
+  local one, and `origin/main` (`eb03725`) is an ancestor.
+- **CI:** the GitHub workflow was still running when this was written. Its result is
+  on the pull request.
+- **For the owner:** left open for review. Neither `main` nor the feature branch is
+  deleted.
 
 ## 18. Recommended next milestone
 
